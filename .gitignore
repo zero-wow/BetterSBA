@@ -1,0 +1,7 @@
+# Documentation / AI
+*.md
+.claude/
+
+# Build artifacts
+*.tar.gz
+*.zip

@@ -1,6 +1,130 @@
 local ADDON_NAME, NS = ...
 
 ----------------------------------------------------------------
+-- Debug output
+----------------------------------------------------------------
+local DEBUG_PREFIX = "|cFF66B8D9[BetterSBA Debug]|r "
+local debugVerbose = false  -- toggled on for periodic dumps
+
+function NS.DebugPrint(...)
+    if not NS.db or not NS.db.debug then return end
+    -- Pipeline debug only prints during verbose windows
+    if not debugVerbose then return end
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[i] = NS.tostring(select(i, ...))
+    end
+    print(DEBUG_PREFIX .. NS.table_concat(parts, " "))
+end
+
+-- Always print (for click events and important messages)
+function NS.DebugPrintAlways(...)
+    if not NS.db or not NS.db.debug then return end
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[i] = NS.tostring(select(i, ...))
+    end
+    print(DEBUG_PREFIX .. NS.table_concat(parts, " "))
+end
+
+-- Periodic debug dump: runs one verbose update every 3 seconds
+local debugDumpTicker = nil
+local debugDumpedAPI = false
+
+function NS.StartDebugDump()
+    if debugDumpTicker then return end
+    debugDumpTicker = C_Timer.NewTicker(3, function()
+        if not NS.db or not NS.db.debug then
+            NS.StopDebugDump()
+            return
+        end
+        -- One-time API availability dump
+        if not debugDumpedAPI then
+            debugDumpedAPI = true
+            local ac = NS.C_AssistedCombat
+            NS.DebugPrintAlways("--- |cFF44FF44API CHECK|r ---")
+            NS.DebugPrintAlways("C_AssistedCombat:", ac and "EXISTS" or "|cFFFF4444NIL|r")
+            if ac then
+                NS.DebugPrintAlways("  .GetNextCastSpell:", ac.GetNextCastSpell and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("  .GetActionSpell:", ac.GetActionSpell and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("  .GetRotationSpells:", ac.GetRotationSpells and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("  .IsAvailable:", ac.IsAvailable and "yes" or "|cFFFF4444no|r")
+                if ac.IsAvailable then
+                    local ok, avail = NS.pcall(ac.IsAvailable)
+                    NS.DebugPrintAlways("  .IsAvailable():", ok and NS.tostring(avail) or "ERROR")
+                end
+            end
+            NS.DebugPrintAlways("C_ActionBar.FindAssistedCombatActionButtons:",
+                (NS.C_ActionBar and NS.C_ActionBar.FindAssistedCombatActionButtons) and "yes" or "|cFFFF4444no|r")
+            NS.DebugPrintAlways("SBA Spell ID:", NS.SBA_SPELL_ID)
+            NS.DebugPrintAlways("SBA Spell Name:", NS.GetSBASpellName())
+        end
+        -- Override keybind status (macro text is shown on actual clicks via PreClick)
+        if NS._overrideKeys and #NS._overrideKeys > 0 then
+            local keyStr = NS.table_concat(NS._overrideKeys, ", ")
+            NS.DebugPrintAlways("Override: |cFF44FF44[" .. keyStr .. "]|r → BetterSBA_MainButton (slot " .. (NS._overrideSlot or "?") .. ")")
+            -- Verify WoW actually has our binding active
+            if GetBindingAction then
+                local action = GetBindingAction(NS._overrideKeys[1])
+                if action and action:find("BetterSBA") then
+                    NS.DebugPrintAlways("  Binding verified: |cFF44FF44" .. action .. "|r")
+                else
+                    NS.DebugPrintAlways("  |cFFFF4444Binding LOST|r: [" .. NS._overrideKeys[1] .. "] → " .. (action or "nil"))
+                end
+            end
+            -- Verify secure button is shown
+            local sec = NS.secureButton
+            if sec then
+                NS.DebugPrintAlways("  SecureButton: " .. (sec:IsShown() and "|cFF44FF44shown|r" or "|cFFFF4444HIDDEN|r"))
+            end
+        else
+            NS.DebugPrintAlways("Override: |cFFFF4444not active|r — keybind interception OFF")
+        end
+
+        -- Run one verbose update cycle
+        NS.DebugPrintAlways("--- |cFF44FF44SPELL UPDATE|r ---")
+        debugVerbose = true
+        local spellID = NS.GetDisplaySpell()
+        debugVerbose = false
+        if spellID then
+            local name = NS.C_Spell and NS.C_Spell.GetSpellName and NS.C_Spell.GetSpellName(spellID)
+            NS.DebugPrintAlways("Display:", name or "?", "(ID:", spellID, ")")
+        elseif NS._fallbackTexture then
+            NS.DebugPrintAlways("Display: |cFFFFCC00fallback texture|r", NS._fallbackTexture)
+        else
+            NS.DebugPrintAlways("Display: |cFFFF4444nothing|r")
+        end
+    end)
+end
+
+function NS.StopDebugDump()
+    if debugDumpTicker then
+        debugDumpTicker:Cancel()
+        debugDumpTicker = nil
+    end
+    debugDumpedAPI = false
+    debugVerbose = false
+end
+
+----------------------------------------------------------------
+-- Masque integration
+----------------------------------------------------------------
+function NS.InitMasque()
+    local MSQ = LibStub and LibStub("Masque", true)
+    if not MSQ then return end
+    NS.masque = MSQ
+    NS.masqueMainGroup = MSQ:Group("BetterSBA", "Main Button")
+    NS.masqueQueueGroup = MSQ:Group("BetterSBA", "Rotation")
+    NS.masqueAnimGroup = MSQ:Group("BetterSBA", "Animated Button")
+end
+
+function NS.MasqueReSkin()
+    if NS.masqueMainGroup then NS.masqueMainGroup:ReSkin() end
+    if NS.masqueQueueGroup then NS.masqueQueueGroup:ReSkin() end
+    if NS.masqueAnimGroup then NS.masqueAnimGroup:ReSkin() end
+end
+
+----------------------------------------------------------------
 -- Safe API wrapper
 ----------------------------------------------------------------
 function NS.SafeCall(fn, ...)
@@ -26,27 +150,118 @@ function NS.GetSBASpellName()
 end
 
 ----------------------------------------------------------------
--- Spell collection (three-tier fallback)
+-- SBA action bar slot scanning
+----------------------------------------------------------------
+local sbaActionSlot = nil
+
+function NS.FindSBAActionSlot()
+    -- Use dedicated API if available (11.1.7+)
+    if NS.C_ActionBar and NS.C_ActionBar.FindAssistedCombatActionButtons then
+        local ok, slots = NS.pcall(NS.C_ActionBar.FindAssistedCombatActionButtons)
+        if ok and slots and slots[1] then
+            NS.DebugPrint("SBA slot via FindAssistedCombatActionButtons:", slots[1])
+            sbaActionSlot = slots[1]
+            return slots[1]
+        end
+    end
+    -- Manual scan: match by spell ID
+    local sbaName = NS.GetSBASpellName()
+    for i = 1, 180 do
+        local actionType, id = NS.GetActionInfo(i)
+        if actionType == "spell" and id == NS.SBA_SPELL_ID then
+            NS.DebugPrint("SBA slot via ID match:", i)
+            sbaActionSlot = i
+            return i
+        end
+        -- Also check by spell name (ID may differ between patches)
+        if actionType == "spell" and id and NS.C_Spell and NS.C_Spell.GetSpellName then
+            local name = NS.C_Spell.GetSpellName(id)
+            if name and name == sbaName then
+                NS.DebugPrint("SBA slot via name match:", i, "(ID:", id, ")")
+                sbaActionSlot = i
+                return i
+            end
+        end
+    end
+    -- Check if SBA might be stored as a different action type
+    for i = 1, 180 do
+        if HasAction(i) then
+            local actionType, id = NS.GetActionInfo(i)
+            if actionType and actionType ~= "spell" and id then
+                local tex = GetActionTexture(i)
+                local sbaIcon = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(NS.SBA_SPELL_ID)
+                if tex and sbaIcon and tex == sbaIcon then
+                    NS.DebugPrint("SBA slot via icon match:", i, "type:", actionType, "id:", id)
+                    sbaActionSlot = i
+                    return i
+                end
+            end
+        end
+    end
+    NS.DebugPrint("|cFFFF4444SBA slot NOT FOUND|r on any action bar")
+    sbaActionSlot = nil
+    return nil
+end
+
+function NS.ClearSBASlotCache()
+    sbaActionSlot = nil
+end
+
+----------------------------------------------------------------
+-- Spell collection (three-tier fallback + action bar)
 ----------------------------------------------------------------
 function NS.CollectNextSpell()
     local ac = NS.C_AssistedCombat
-    if not ac then return nil end
+    if not ac then
+        NS.DebugPrint("|cFFFF4444C_AssistedCombat is nil|r")
+        return nil
+    end
 
-    local check = NS.db and NS.db.checkVisibleButton or false
-
+    -- GetNextCastSpell WITHOUT visible check first — our button isn't
+    -- registered via SetActionUIButton so the visible check would fail
     if ac.GetNextCastSpell then
-        local ok, sid = NS.SafeCall(ac.GetNextCastSpell, check)
-        if ok and sid and sid ~= 0 then return sid end
+        local ok, sid = NS.pcall(ac.GetNextCastSpell, false)
+        if ok and sid and sid ~= 0 then
+            NS.DebugPrint("GetNextCastSpell(false) →", sid)
+            return sid
+        end
+        NS.DebugPrint("GetNextCastSpell(false):", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
+    else
+        NS.DebugPrint("|cFFFF4444GetNextCastSpell does not exist|r")
     end
 
-    if ac.GetRotationSpells then
-        local ok, spells = NS.SafeCall(ac.GetRotationSpells)
-        if ok and spells and spells[1] and spells[1] ~= 0 then return spells[1] end
-    end
-
+    -- GetActionSpell: the current "action spell" set by the system
     if ac.GetActionSpell then
-        local ok, sid = NS.SafeCall(ac.GetActionSpell)
-        if ok and sid and sid ~= 0 then return sid end
+        local ok, sid = NS.pcall(ac.GetActionSpell)
+        if ok and sid and sid ~= 0 then
+            NS.DebugPrint("GetActionSpell() →", sid)
+            return sid
+        end
+        NS.DebugPrint("GetActionSpell():", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
+    else
+        NS.DebugPrint("|cFFFF4444GetActionSpell does not exist|r")
+    end
+
+    -- GetNextCastSpell WITH visible check — works if SBA is on a Blizzard bar
+    if ac.GetNextCastSpell then
+        local ok, sid = NS.pcall(ac.GetNextCastSpell, true)
+        if ok and sid and sid ~= 0 then
+            NS.DebugPrint("GetNextCastSpell(true) →", sid)
+            return sid
+        end
+        NS.DebugPrint("GetNextCastSpell(true):", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
+    end
+
+    -- Last resort: first rotation spell
+    if ac.GetRotationSpells then
+        local ok, spells = NS.pcall(ac.GetRotationSpells)
+        if ok and spells and spells[1] and spells[1] ~= 0 then
+            NS.DebugPrint("Rotation spell fallback →", spells[1])
+            return spells[1]
+        end
+        NS.DebugPrint("GetRotationSpells():", ok and ("returned " .. NS.tostring(spells and #spells or "nil") .. " spells") or "ERROR")
+    else
+        NS.DebugPrint("|cFFFF4444GetRotationSpells does not exist|r")
     end
 
     return nil
@@ -55,7 +270,7 @@ end
 function NS.CollectRotationSpells()
     local ac = NS.C_AssistedCombat
     if not ac or not ac.GetRotationSpells then return {} end
-    local ok, spells = NS.SafeCall(ac.GetRotationSpells)
+    local ok, spells = NS.pcall(ac.GetRotationSpells)
     if ok and spells then return spells end
     return {}
 end
@@ -89,8 +304,8 @@ function NS.RebuildMacroText()
         NS._pendingMacroRebuild = true
         return
     end
-    if NS.mainButton then
-        NS.mainButton:SetAttribute("macrotext", NS.BuildMacroText())
+    if NS.secureButton then
+        NS.secureButton:SetAttribute("macrotext", NS.BuildMacroText())
     end
     NS._pendingMacroRebuild = false
 end
@@ -192,8 +407,616 @@ function NS.ScanKeybinds()
             end
         end
     end
+
+    -- Override the SBA keybind to redirect through our button
+    NS.OverrideSBAKeybind()
 end
 
 function NS.GetKeybindForSpell(spellID)
     return keybindCache[spellID]
+end
+
+----------------------------------------------------------------
+-- SBA keybind override: redirect existing SBA keybind to our
+-- secure button so targeting/petattack/channel protection work
+-- even when the user presses their normal action bar keybind.
+----------------------------------------------------------------
+function NS.OverrideSBAKeybind()
+    if NS.InCombatLockdown() then
+        NS._pendingKeybindOverride = true
+        return
+    end
+
+    local secure = NS.secureButton
+    if not secure then return end
+
+    -- Find the SBA slot — do NOT clear overrides until we have replacements
+    local slot = sbaActionSlot or NS.FindSBAActionSlot()
+    if not slot then
+        -- Keep existing overrides if we have them — they may still be valid
+        if NS._overrideKeys and #NS._overrideKeys > 0 then
+            return
+        end
+        NS.UpdateKeybindStatus()
+        return
+    end
+
+    -- Collect keybinds for the slot
+    local keys = {}
+
+    -- Bartender4
+    if _G["Bartender4"] then
+        local key1, key2 = NS.GetBindingKey("CLICK BT4Button" .. slot .. ":Keybind")
+        if key1 then keys[#keys + 1] = key1 end
+        if key2 then keys[#keys + 1] = key2 end
+
+    -- ElvUI
+    elseif _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
+        for bar = 1, 15 do
+            for btn = 1, 12 do
+                local elvBtn = _G["ElvUI_Bar" .. bar .. "Button" .. btn]
+                if elvBtn and elvBtn._state_action == slot then
+                    local binding = elvBtn.bindstring or elvBtn.keyBoundTarget
+                        or ("CLICK " .. elvBtn:GetName() .. ":LeftButton")
+                    local key1, key2 = NS.GetBindingKey(binding)
+                    if key1 then keys[#keys + 1] = key1 end
+                    if key2 then keys[#keys + 1] = key2 end
+                end
+            end
+        end
+
+    -- Dominos / Default Blizzard bars
+    else
+        local barIndex = NS.math_floor((slot - 1) / 12)
+        local btnIndex = ((slot - 1) % 12) + 1
+        local bindingName = BINDING_BARS[barIndex + 1]
+        if bindingName then
+            bindingName = bindingName .. btnIndex
+            local key1, key2 = NS.GetBindingKey(bindingName)
+            if key1 then keys[#keys + 1] = key1 end
+            if key2 then keys[#keys + 1] = key2 end
+        end
+    end
+
+    if #keys == 0 then
+        -- Slot found but no keybind — keep existing overrides if any
+        if NS._overrideKeys and #NS._overrideKeys > 0 then
+            return
+        end
+        NS.UpdateKeybindStatus()
+        return
+    end
+
+    -- SUCCESS: we have slot + keys. NOW clear old overrides and set new ones.
+    ClearOverrideBindings(secure)
+
+    -- isPriority = true so we take precedence over Blizzard's action bar bindings
+    for _, key in NS.ipairs(keys) do
+        SetOverrideBindingClick(secure, true, key, "BetterSBA_MainButton", "LeftButton")
+    end
+
+    NS._overrideKeys = keys
+    NS._overrideSlot = slot
+    NS.UpdateKeybindStatus()
+
+    -- Verify: check that WoW actually registered our override
+    if GetBindingAction then
+        local action = GetBindingAction(keys[1])
+        if action and action:find("BetterSBA") then
+            NS.DebugPrintAlways("|cFF44FF44Override verified|r: [" .. keys[1] .. "] → " .. action)
+        else
+            NS.DebugPrintAlways("|cFFFF4444Override FAILED|r: [" .. keys[1] .. "] → " .. (action or "nil") .. " (expected BetterSBA)")
+        end
+    end
+end
+
+-- Placeholder — Config.lua replaces this with the real updater
+function NS.UpdateKeybindStatus() end
+
+----------------------------------------------------------------
+-- Font system (LibSharedMedia with fallback)
+----------------------------------------------------------------
+local DEFAULT_FONTS = {
+    ["Friz Quadrata TT"]  = "Fonts\\FRIZQT__.TTF",
+    ["Arial Narrow"]      = "Fonts\\ARIALN.TTF",
+    ["Morpheus"]          = "Fonts\\MORPHEUS.TTF",
+    ["Skurri"]            = "Fonts\\SKURRI.TTF",
+    ["2002"]              = "Fonts\\2002.TTF",
+    ["2002 Bold"]         = "Fonts\\2002B.TTF",
+}
+local DEFAULT_FONT_ORDER = { "Friz Quadrata TT", "Arial Narrow", "Morpheus", "Skurri", "2002", "2002 Bold" }
+
+function NS.GetFontPath(fontName)
+    fontName = fontName or (NS.db and NS.db.fontFace) or "Friz Quadrata TT"
+    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+    if LSM then
+        local path = LSM:Fetch("font", fontName)
+        if path then return path end
+    end
+    return DEFAULT_FONTS[fontName] or "Fonts\\FRIZQT__.TTF"
+end
+
+function NS.GetFontList()
+    local LSM = LibStub and LibStub("LibSharedMedia-3.0", true)
+    if LSM then return LSM:List("font") end
+    return DEFAULT_FONT_ORDER
+end
+
+----------------------------------------------------------------
+-- Font outline helper
+----------------------------------------------------------------
+-- Outline display names → WoW SetFont flags
+NS.FONT_OUTLINE_OPTIONS = { "NONE", "OUTLINE", "THICKOUTLINE", "MONOCHROME", "MONO OUTLINE", "MONO THICKOUTLINE" }
+
+local OUTLINE_MAP = {
+    ["NONE"]               = "",
+    ["OUTLINE"]            = "OUTLINE",
+    ["THICKOUTLINE"]       = "THICKOUTLINE",
+    ["MONOCHROME"]         = "MONOCHROME",
+    ["MONO OUTLINE"]       = "MONOCHROME, OUTLINE",
+    ["MONO THICKOUTLINE"]  = "MONOCHROME, THICKOUTLINE",
+}
+
+function NS.GetFontOutline()
+    local outline = NS.db and NS.db.fontOutline or "OUTLINE"
+    return OUTLINE_MAP[outline] or outline
+end
+
+----------------------------------------------------------------
+-- Spell importance classification (base cooldown cache)
+----------------------------------------------------------------
+local baseCDCache = {}
+
+function NS.ClearBaseCDCache()
+    baseCDCache = {}
+end
+
+function NS.GetSpellBaseCooldown(spellID)
+    if not spellID or spellID == 0 then return 0 end
+    if baseCDCache[spellID] then return baseCDCache[spellID] end
+
+    -- Try C_Spell.GetSpellBaseCooldown (11.0+ namespaced API, returns ms)
+    if NS.C_Spell and NS.C_Spell.GetSpellBaseCooldown then
+        local ok, ms = NS.pcall(NS.C_Spell.GetSpellBaseCooldown, spellID)
+        if ok and ms then
+            ms = tonumber(ms) or 0
+            if ms > 0 then
+                local sec = ms / 1000
+                baseCDCache[spellID] = sec
+                return sec
+            end
+        end
+    end
+
+    -- Try global GetSpellBaseCooldown (older API, returns baseCooldownMS, gcdMS)
+    if GetSpellBaseCooldown then
+        local ok, baseCDms = NS.pcall(GetSpellBaseCooldown, spellID)
+        if ok and baseCDms then
+            baseCDms = tonumber(baseCDms) or 0
+            if baseCDms > 0 then
+                local sec = baseCDms / 1000
+                baseCDCache[spellID] = sec
+                return sec
+            end
+        end
+    end
+
+    -- Fallback: observe current cooldown duration
+    if NS.C_Spell and NS.C_Spell.GetSpellCooldown then
+        local ok, cdInfo = NS.pcall(NS.C_Spell.GetSpellCooldown, spellID)
+        if ok and cdInfo then
+            local dur = cdInfo.duration and tonumber(tostring(cdInfo.duration)) or 0
+            if dur > 1.5 then
+                baseCDCache[spellID] = dur
+                return dur
+            end
+        end
+    end
+
+    -- Don't cache zero — retry next time
+    return 0
+end
+
+function NS.GetSpellImportanceKey(spellID)
+    if not spellID or spellID == 0 then return "FILLER" end
+    if spellID == NS.AUTO_ATTACK_SPELL_ID then return "AUTO_ATTACK" end
+
+    local cd = NS.GetSpellBaseCooldown(spellID)
+    if cd <= 10 then return "FILLER" end
+    if cd <= 30 then return "SHORT_CD" end
+    if cd <= 120 then return "LONG_CD" end
+    return "MAJOR_CD"
+end
+
+-- Map importance key → db color key
+local IMPORT_DB_KEYS = {
+    AUTO_ATTACK = "importColorAutoAttack",
+    FILLER      = "importColorFiller",
+    SHORT_CD    = "importColorShortCD",
+    LONG_CD     = "importColorLongCD",
+    MAJOR_CD    = "importColorMajorCD",
+}
+
+function NS.GetSpellBorderColor(spellID)
+    local key = NS.GetSpellImportanceKey(spellID)
+    -- Read from user-configurable DB, fallback to hardcoded
+    local dbKey = IMPORT_DB_KEYS[key]
+    if dbKey and NS.db and NS.db[dbKey] then
+        return NS.db[dbKey]
+    end
+    return NS.SPELL_IMPORTANCE[key]
+end
+
+function NS.GetSpellBorderColorBright(spellID)
+    local key = NS.GetSpellImportanceKey(spellID)
+    return NS.SPELL_IMPORTANCE_BRIGHT[key]
+end
+
+----------------------------------------------------------------
+-- Action bar texture fallback: read what Blizzard is showing
+----------------------------------------------------------------
+function NS.GetDisplaySpellFromActionBar()
+    local slot = sbaActionSlot or NS.FindSBAActionSlot()
+    if not slot then
+        NS.DebugPrint("ActionBar fallback: |cFFFF4444no SBA slot|r")
+        return nil, nil
+    end
+
+    local tex = GetActionTexture(slot)
+    if not tex then
+        NS.DebugPrint("ActionBar fallback: slot", slot, "has |cFFFF4444no texture|r")
+        return nil, nil
+    end
+
+    NS.DebugPrint("ActionBar slot", slot, "texture:", tex)
+
+    -- Match texture against rotation spells to find the spell ID
+    local rotationSpells = NS.CollectRotationSpells()
+    for _, sid in NS.ipairs(rotationSpells) do
+        if sid and sid ~= 0 then
+            local spellTex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(sid)
+            if spellTex and spellTex == tex then
+                NS.DebugPrint("ActionBar texture matched spell", sid)
+                return sid, tex
+            end
+        end
+    end
+
+    NS.DebugPrint("ActionBar texture matched |cFFFF4444no rotation spell|r — using raw texture")
+    -- No spell ID match, return just the texture
+    return nil, tex
+end
+
+----------------------------------------------------------------
+-- Display spell (auto-attack fallback when recommended is on CD)
+----------------------------------------------------------------
+function NS.GetDisplaySpell()
+    local recommended = NS.CollectNextSpell()
+
+    -- Fallback: try reading the action bar directly
+    if not recommended or recommended == 0 then
+        NS.DebugPrint("API returned nothing — trying action bar fallback")
+        local abSpell, abTex = NS.GetDisplaySpellFromActionBar()
+        if abSpell then
+            recommended = abSpell
+        elseif abTex then
+            -- Have action bar texture but couldn't match spell ID
+            NS._fallbackTexture = abTex
+            return nil
+        end
+    end
+
+    -- Nothing recommended → auto-attack
+    if not recommended or recommended == 0 then
+        NS._fallbackTexture = nil
+        NS.DebugPrint("Final result: |cFFFF4444auto-attack fallback|r")
+        return NS.AUTO_ATTACK_SPELL_ID
+    end
+
+    NS._fallbackTexture = nil
+
+    -- Check if recommended is on a real cooldown
+    if NS.C_Spell and NS.C_Spell.GetSpellCooldown then
+        local ok, cdInfo = NS.pcall(NS.C_Spell.GetSpellCooldown, recommended)
+        if ok and cdInfo then
+            local dur = cdInfo.duration and tonumber(tostring(cdInfo.duration)) or 0
+            if dur > 1.5 then
+                -- Recommended is on CD, look for a ready rotation spell
+                local rotationSpells = NS.CollectRotationSpells()
+                for _, sid in NS.ipairs(rotationSpells) do
+                    if sid and sid ~= 0 and sid ~= recommended then
+                        local ok2, cdInfo2 = NS.pcall(NS.C_Spell.GetSpellCooldown, sid)
+                        if ok2 and cdInfo2 then
+                            local dur2 = cdInfo2.duration and tonumber(tostring(cdInfo2.duration)) or 0
+                            if dur2 <= 1.5 then
+                                return sid
+                            end
+                        end
+                    end
+                end
+                -- Nothing ready → auto-attack
+                return NS.AUTO_ATTACK_SPELL_ID
+            end
+        end
+    end
+
+    return recommended
+end
+
+----------------------------------------------------------------
+-- Cast animation system (multiple animation types)
+----------------------------------------------------------------
+local animPool = {}
+
+local ANIM_CONFIGS = {
+    DRIFT = function(ag)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(0.3, 0.3); s:SetDuration(0.8); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        t:SetOffset(-80, -15); t:SetDuration(0.8); t:SetSmoothing("OUT"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.8); a:SetSmoothing("IN"); a:SetStartDelay(0.05)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    PULSE = function(ag)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(2.0, 2.0); s:SetDuration(0.45); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.45); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    SPIN = function(ag)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(0.15, 0.15); s:SetDuration(0.7); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.7); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        r:SetDegrees(360); r:SetDuration(0.7); r:SetSmoothing("OUT"); r:SetStartDelay(0)
+    end,
+    ZOOM = function(ag)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(3.5, 3.5); s:SetDuration(0.55); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, 25); t:SetDuration(0.55); t:SetSmoothing("OUT"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.55); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    SLAM = function(ag)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(1.6, 1.6); s:SetDuration(0.12); s:SetSmoothing("IN_OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, -40); t:SetDuration(0.5); t:SetSmoothing("IN"); t:SetStartDelay(0.12)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.5); a:SetSmoothing("IN"); a:SetStartDelay(0.12)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+}
+
+----------------------------------------------------------------
+-- Hidden reference button for Masque "Animated Button" group
+----------------------------------------------------------------
+local animRefButton
+
+local function EnsureAnimRefButton()
+    if animRefButton or not NS.masqueAnimGroup then return end
+
+    local ref = NS.CreateFrame("Button", nil, NS.UIParent)
+    ref:SetSize(36, 36)
+    ref:SetPoint("CENTER")
+    ref:Hide()
+
+    ref.icon = ref:CreateTexture(nil, "ARTWORK")
+    ref.icon:SetAllPoints()
+
+    local normalTex = ref:CreateTexture()
+    normalTex:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+    normalTex:SetSize(36 * 1.7, 36 * 1.7)
+    normalTex:SetPoint("CENTER")
+    ref:SetNormalTexture(normalTex)
+
+    local pushedTex = ref:CreateTexture()
+    pushedTex:SetColorTexture(0, 0, 0, 0.5)
+    pushedTex:SetAllPoints(ref.icon)
+    ref:SetPushedTexture(pushedTex)
+
+    local hlTex = ref:CreateTexture()
+    hlTex:SetColorTexture(1, 1, 1, 0.15)
+    hlTex:SetAllPoints(ref.icon)
+    ref:SetHighlightTexture(hlTex)
+
+    local flashTex = ref:CreateTexture(nil, "OVERLAY")
+    flashTex:SetColorTexture(1, 0, 0, 0.3)
+    flashTex:SetAllPoints(ref.icon)
+    flashTex:Hide()
+    ref.Flash = flashTex
+
+    local borderTex = ref:CreateTexture(nil, "OVERLAY")
+    borderTex:SetAllPoints(ref.icon)
+    borderTex:Hide()
+    ref.Border = borderTex
+
+    NS.masqueAnimGroup:AddButton(ref, {
+        Icon = ref.icon,
+        Normal = normalTex,
+        Pushed = pushedTex,
+        Highlight = hlTex,
+        Flash = flashTex,
+        Border = borderTex,
+    })
+
+    animRefButton = ref
+end
+
+local function AcquireAnimFrame()
+    for _, f in NS.ipairs(animPool) do
+        if not f._inUse then
+            f._inUse = true
+            return f
+        end
+    end
+
+    local f = NS.CreateFrame("Button", nil, NS.UIParent, "BackdropTemplate")
+    f:SetFrameStrata("HIGH")
+    f:Hide()
+    f:EnableMouse(false)  -- don't intercept clicks during animation
+
+    f.icon = f:CreateTexture(nil, "ARTWORK")
+    if NS.masque then
+        f.icon:SetAllPoints()
+    else
+        f.icon:SetAllPoints()
+        f.icon:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
+    end
+
+    -- Register with Masque animated button group
+    if NS.masqueAnimGroup then
+        local size = NS.db.buttonSize or 48
+
+        local normalTex = f:CreateTexture()
+        normalTex:SetTexture("Interface\\Buttons\\UI-Quickslot2")
+        normalTex:SetSize(size * 1.7, size * 1.7)
+        normalTex:SetPoint("CENTER")
+        f:SetNormalTexture(normalTex)
+
+        local pushedTex = f:CreateTexture()
+        pushedTex:SetColorTexture(0, 0, 0, 0.5)
+        pushedTex:SetAllPoints(f.icon)
+        f:SetPushedTexture(pushedTex)
+
+        local hlTex = f:CreateTexture()
+        hlTex:SetColorTexture(1, 1, 1, 0.15)
+        hlTex:SetAllPoints(f.icon)
+        f:SetHighlightTexture(hlTex)
+
+        local flashTex = f:CreateTexture(nil, "OVERLAY")
+        flashTex:SetColorTexture(1, 0, 0, 0.3)
+        flashTex:SetAllPoints(f.icon)
+        flashTex:Hide()
+        f.Flash = flashTex
+
+        local borderTex = f:CreateTexture(nil, "OVERLAY")
+        borderTex:SetAllPoints(f.icon)
+        borderTex:Hide()
+        f.Border = borderTex
+
+        NS.masqueAnimGroup:AddButton(f, {
+            Icon = f.icon,
+            Normal = normalTex,
+            Pushed = pushedTex,
+            Highlight = hlTex,
+            Flash = flashTex,
+            Border = borderTex,
+        })
+
+        f:SetBackdrop(nil)
+    else
+        f:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        f:SetBackdropColor(0, 0, 0, 0.6)
+        f:SetBackdropBorderColor(NS.unpack(NS.THEME.BORDER))
+    end
+
+    local ag = f:CreateAnimationGroup()
+    ag._scale = ag:CreateAnimation("Scale")
+    ag._trans = ag:CreateAnimation("Translation")
+    ag._alpha = ag:CreateAnimation("Alpha")
+    ag._rot = ag:CreateAnimation("Rotation")
+    ag._rot:SetOrigin("CENTER", 0, 0)
+
+    ag:SetScript("OnFinished", function()
+        f:Hide()
+        f:ClearAllPoints()
+        f._inUse = false
+    end)
+
+    f.ag = ag
+    f._inUse = true
+    animPool[#animPool + 1] = f
+    return f
+end
+
+-- Tracks active RECREATE fade-in (prevents ticker from overriding alpha)
+NS._recreateFading = false
+NS._recreateFadeStart = 0
+
+function NS.PlayCastAnimation(spellID)
+    local btn = NS.mainButton
+    if not btn or not btn:IsShown() then return end
+
+    local animType = NS.db and NS.db.castAnimation or "NONE"
+    if animType == "NONE" then return end
+
+    local config = ANIM_CONFIGS[animType]
+    if not config then return end
+
+    local style = NS.db and NS.db.castAnimStyle or "RECREATE"
+
+    -- For RECREATE: grab the CURRENT button texture (what the user sees right now)
+    -- For KEEP: grab the cast spell's texture
+    local tex
+    if style == "RECREATE" and btn.icon then
+        tex = btn.icon:GetTexture()
+    end
+    if not tex then
+        tex = spellID and NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(spellID)
+    end
+    if not tex and btn.icon then
+        tex = btn.icon:GetTexture()
+    end
+    if not tex then return end
+
+    local anim = AcquireAnimFrame()
+
+    -- 1. Size and position
+    if style == "RECREATE" then
+        local size = NS.db.buttonSize or 48
+        anim:SetSize(size, size)
+    else
+        local size = (NS.db.buttonSize or 48) * 0.7
+        anim:SetSize(size, size)
+    end
+    anim:ClearAllPoints()
+    anim:SetPoint("CENTER", btn, "CENTER")
+
+    -- 2. Set the icon texture
+    anim.icon:SetTexture(tex)
+
+    -- 3. ReSkin Masque at current size
+    if NS.masqueAnimGroup then
+        NS.masqueAnimGroup:ReSkin()
+    end
+
+    -- 4. RECREATE: hide the real icon — animation frame IS the button now
+    if style == "RECREATE" then
+        btn.icon:SetAlpha(0)
+        NS._recreateFading = true
+        NS._recreateFadeStart = GetTime() + 0.15  -- delay before fade-in starts
+    end
+
+    -- 5. Show and play
+    anim:Show()
+    anim:SetAlpha(1)
+    anim.ag:Stop()
+    config(anim.ag)
+    anim.ag:Play()
+
+    -- 6. RECREATE: fade the new icon in via OnUpdate (avoids animation alpha flicker)
+    if style == "RECREATE" then
+        local fadeDuration = 0.3
+        local fadeFrame = NS._fadeFrame
+        if not fadeFrame then
+            fadeFrame = NS.CreateFrame("Frame")
+            NS._fadeFrame = fadeFrame
+        end
+        fadeFrame:SetScript("OnUpdate", function(self, elapsed)
+            local now = GetTime()
+            if now < NS._recreateFadeStart then return end  -- still in delay
+            local elapsed = now - NS._recreateFadeStart
+            local pct = elapsed / fadeDuration
+            if pct >= 1 then
+                btn.icon:SetAlpha(1)
+                NS._recreateFading = false
+                self:SetScript("OnUpdate", nil)
+            else
+                btn.icon:SetAlpha(pct)
+            end
+        end)
+    end
 end

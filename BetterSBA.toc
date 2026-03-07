@@ -1,16 +1,17 @@
 ## Interface: 110207, 120001
 ## Title: |cFF66B8D9Better|r|cFFFFFFFFSBA|r
-## Version: R1.2603.0100
+## Version: R1.3899.84fdbb4.0003.2
 ## Notes: Enhanced Single-Button Assistant with auto-targeting, pet attack, and ability queue display.
 ## Author: |cFF9B59B6fostot|r
 ## SavedVariables: BetterSBA_DB
-## IconTexture: Interface\Icons\Ability_Warrior_Charge
-## OptionalDeps: Bartender4, Dominos, ElvUI
+## IconTexture: Interface\AddOns\BetterSBA\IMG\BetterSBA
+## OptionalDeps: Bartender4, Dominos, ElvUI, Masque, LibSharedMedia-3.0, LibDBIcon-1.0, LibDataBroker-1.1
 
 # Core
 Core\Constants.lua
 Core\Database.lua
 Core\Functions.lua
+Core\LDB.lua
 
 # GUI
 GUI\Framework.lua
