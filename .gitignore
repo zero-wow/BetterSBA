@@ -1,5 +1,6 @@
-# Documentation / AI
+# Documentation (keep README for GitHub)
 *.md
+!README.md
 .claude/
 
 # Build artifacts
