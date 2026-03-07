@@ -107,7 +107,7 @@ Also responds to `/bsba` and `/bettersba`.
 │  BetterSBA SecureActionButton           │
 │    ↓                                    │
 │  macrotext:                             │
-│    /targetenemy [noharm][dead]           │
+│    /targetenemy [noharm][dead]          │
 │    /petattack                           │
 │    /stopmacro [channeling]              │
 │    /cast Single-Button Assistant        │
