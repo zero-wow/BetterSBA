@@ -61,9 +61,10 @@ function NS.InitLDB()
                 if icon.SetBlendMode then
                     icon:SetBlendMode("ADD")
                 end
-                -- Scale icon larger than the button size for visibility
+                -- 256x256 TGA with black padding (24bpp, no alpha) — crop to content
+                icon:SetTexCoord(0.25, 0.75, 0.25, 0.75)
                 local w, h = mmButton:GetSize()
-                icon:SetSize(w * 3.6, h * 3.6)
+                icon:SetSize(w, h)
                 icon:ClearAllPoints()
                 icon:SetPoint("CENTER")
             end

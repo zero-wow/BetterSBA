@@ -978,28 +978,47 @@ function NS.PlayCastAnimation(spellID)
     -- 2. Set the icon texture
     anim.icon:SetTexture(tex)
 
-    -- 3. ReSkin Masque at current size
+    -- 3. Set importance border color on animated frame
+    if NS.db.importanceBorders and spellID then
+        local borderColor = NS.GetSpellBorderColor(spellID)
+        if borderColor then
+            if anim.Border then
+                anim.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+                anim.Border:Show()
+            elseif anim.SetBackdropBorderColor then
+                anim:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+            end
+        end
+    end
+
+    -- 4. ReSkin Masque at current size
     if NS.masqueAnimGroup then
         NS.masqueAnimGroup:ReSkin()
     end
 
-    -- 4. RECREATE: hide the real icon — animation frame IS the button now
+    -- 5. RECREATE: hide ALL button visuals — animation frame IS the button now
     if style == "RECREATE" then
         btn.icon:SetAlpha(0)
+        btn.cooldown:SetAlpha(0)
+        if btn.hotkey then btn.hotkey:SetAlpha(0) end
+        if not NS.masque then
+            btn:SetBackdropColor(0, 0, 0, 0)
+            btn:SetBackdropBorderColor(0, 0, 0, 0)
+        end
         NS._recreateFading = true
-        NS._recreateFadeStart = GetTime() + 0.15  -- delay before fade-in starts
+        NS._recreateFadeStart = GetTime() + 0.25
     end
 
-    -- 5. Show and play
+    -- 6. Show and play
     anim:Show()
     anim:SetAlpha(1)
     anim.ag:Stop()
     config(anim.ag)
     anim.ag:Play()
 
-    -- 6. RECREATE: fade the new icon in via OnUpdate (avoids animation alpha flicker)
+    -- 7. RECREATE: fade the new button in via OnUpdate (avoids animation alpha flicker)
     if style == "RECREATE" then
-        local fadeDuration = 0.3
+        local fadeDuration = 0.35
         local fadeFrame = NS._fadeFrame
         if not fadeFrame then
             fadeFrame = NS.CreateFrame("Frame")
@@ -1008,14 +1027,28 @@ function NS.PlayCastAnimation(spellID)
         fadeFrame:SetScript("OnUpdate", function(self, elapsed)
             local now = GetTime()
             if now < NS._recreateFadeStart then return end  -- still in delay
-            local elapsed = now - NS._recreateFadeStart
-            local pct = elapsed / fadeDuration
+            local t = now - NS._recreateFadeStart
+            local pct = t / fadeDuration
             if pct >= 1 then
+                -- Fully restore all button visuals
                 btn.icon:SetAlpha(1)
+                btn.cooldown:SetAlpha(1)
+                if btn.hotkey then btn.hotkey:SetAlpha(1) end
+                if not NS.masque then
+                    btn:SetBackdropColor(NS.unpack(NS.db.buttonBgColor))
+                    -- Border color restored by next UpdateButton tick
+                    btn:SetBackdropBorderColor(NS.unpack(NS.THEME.BORDER))
+                end
                 NS._recreateFading = false
                 self:SetScript("OnUpdate", nil)
             else
                 btn.icon:SetAlpha(pct)
+                btn.cooldown:SetAlpha(pct)
+                if btn.hotkey then btn.hotkey:SetAlpha(pct) end
+                if not NS.masque then
+                    local r, g, b, a = NS.unpack(NS.db.buttonBgColor)
+                    btn:SetBackdropColor(r, g, b, a * pct)
+                end
             end
         end)
     end

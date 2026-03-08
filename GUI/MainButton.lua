@@ -359,22 +359,38 @@ local function UpdateVisibility()
     -- (it's visually invisible — all template textures are stripped)
     if secure and not inCombat then secure:Show() end
 
+    -- Display button inherits protection from the secure button's anchor.
+    -- During combat: NEVER call Show()/Hide() — use alpha only.
+    -- Out of combat: Show() so the frame is visible, then use alpha.
+
     if not db.enabled then
-        btn:Hide()
+        if inCombat then
+            btn:SetAlpha(0)
+        else
+            btn:Hide()
+        end
         return
     end
 
     if db.hideInVehicle and UnitInVehicle("player") then
-        btn:Hide()
+        if inCombat then
+            btn:SetAlpha(0)
+        else
+            btn:Hide()
+        end
         return
     end
 
     if db.onlyInCombat and not inCombat then
+        -- Ensure frame is shown (so alpha works when combat starts)
+        btn:Show()
         btn:SetAlpha(0)
         return
     end
 
-    btn:Show()
+    if not inCombat then
+        btn:Show()
+    end
     btn:SetAlpha(inCombat and db.alphaCombat or db.alphaOOC)
 end
 
