@@ -32,7 +32,7 @@ function NS:CreateQueueDisplay()
 
     -- Label
     f.label = f:CreateFontString(nil, "OVERLAY")
-    f.label:SetFont(NS.GetFontPath(), NS.db.queueLabelFontSize, NS.GetFontOutline())
+    f.label:SetFont(NS.ResolveFontPath("queueLabelFont"), NS.db.queueLabelFontSize, NS.ResolveFontOutline("queueLabelFont", "queueLabelOutline"))
     f.label:SetTextColor(NS.unpack(T.TEXT_DIM))
     f.label:SetText("ROTATION")
 
@@ -80,6 +80,18 @@ function NS:CreateQueueDisplay()
     f:SetScript("OnDragStart", function() QueueDragStart() end)
     f:SetScript("OnDragStop", function() QueueDragStop() end)
 
+    -- Modifier+scroll scaling (Ctrl+MouseWheel adjusts queue scale)
+    f:EnableMouseWheel(true)
+    f:SetScript("OnMouseWheel", function(_, delta)
+        if not NS.db.modifierScaling or not IsControlKeyDown() then return end
+        local scale = NS.db.queueScale or 1.0
+        scale = scale + delta * 0.05
+        scale = math.max(0.5, math.min(2.0, scale))
+        scale = tonumber(string.format("%.2f", scale))
+        NS.db.queueScale = scale
+        f:SetScale(scale)
+    end)
+
     -- Create icon slots (Button type for Masque compatibility)
     for i = 1, MAX_QUEUE_ICONS do
         local icon = NS.CreateFrame("Button", nil, f, "BackdropTemplate")
@@ -104,6 +116,11 @@ function NS:CreateQueueDisplay()
         icon.cd:SetAllPoints(icon.tex)
         icon.cd:SetDrawEdge(false)
         icon.cd:SetHideCountdownNumbers(false)
+
+        icon.hotkey = icon:CreateFontString(nil, "OVERLAY")
+        icon.hotkey:SetFont(NS.ResolveFontPath("queueKeybindFont"), NS.db.queueKeybindFontSize, NS.ResolveFontOutline("queueKeybindFont", "queueKeybindOutline"))
+        icon.hotkey:SetPoint("TOPRIGHT", -1, -1)
+        icon.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
         icon.spellID = nil
         icon:Hide()
@@ -203,6 +220,7 @@ function NS:CreateQueueDisplay()
     end
 
     self.queueFrame = f
+    f:SetScale(NS.db.queueScale or 1.0)
     NS.LayoutQueue()
     NS.UpdateDetachOverlay()
 
@@ -630,6 +648,28 @@ function NS.PlaySnapEffect()
 end
 
 ----------------------------------------------------------------
+-- Apply font settings to queue label + icon keybind text
+----------------------------------------------------------------
+function NS.ApplyQueueFonts()
+    local f = NS.queueFrame
+    if not f then return end
+    if f.label then
+        f.label:SetFont(
+            NS.ResolveFontPath("queueLabelFont"),
+            NS.db.queueLabelFontSize,
+            NS.ResolveFontOutline("queueLabelFont", "queueLabelOutline"))
+    end
+    for _, icon in NS.ipairs(queueIcons) do
+        if icon.hotkey then
+            icon.hotkey:SetFont(
+                NS.ResolveFontPath("queueKeybindFont"),
+                NS.db.queueKeybindFontSize,
+                NS.ResolveFontOutline("queueKeybindFont", "queueKeybindOutline"))
+        end
+    end
+end
+
+----------------------------------------------------------------
 -- Update queue icons with rotation spells
 ----------------------------------------------------------------
 function NS.UpdateQueueDisplay()
@@ -710,19 +750,25 @@ function NS.UpdateQueueDisplay()
             icon.tex:SetDesaturated(false)
             icon.tex:SetVertexColor(isNext and 1 or 0.7, isNext and 1 or 0.7, isNext and 1 or 0.7)
 
-            -- Cooldown (pcall + tonumber(tostring()) to handle taint during combat)
-            if NS.C_Spell and NS.C_Spell.GetSpellCooldown then
-                local ok, cdInfo = NS.pcall(NS.C_Spell.GetSpellCooldown, spellID)
-                if ok and cdInfo then
-                    local dur = cdInfo.duration and tonumber(tostring(cdInfo.duration)) or 0
-                    local start = cdInfo.startTime and tonumber(tostring(cdInfo.startTime)) or 0
-                    if dur > 1.5 then
-                        icon.cd:SetCooldown(start, dur)
-                    else
-                        icon.cd:Clear()
-                    end
+            -- Cooldown (uses per-tick cache to avoid API table garbage)
+            -- pcall guards comparison — cdInfo fields may be tainted secret numbers
+            local cdInfo = NS.GetCooldownCached(spellID)
+            if cdInfo then
+                local ok, isLong = pcall(NS._durGT, cdInfo, 1.5)
+                if ok and isLong then
+                    icon.cd:SetCooldown(cdInfo.startTime, cdInfo.duration)
+                else
+                    icon.cd:Clear()
                 end
-                -- If pcall failed or cdInfo nil, leave cooldown display as-is
+            end
+
+            -- Keybind text
+            if NS.db.showQueueKeybinds then
+                local key = NS.GetKeybindForSpell(spellID)
+                icon.hotkey:SetText(key or "")
+                icon.hotkey:Show()
+            else
+                icon.hotkey:Hide()
             end
 
             icon:Show()

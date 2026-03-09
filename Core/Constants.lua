@@ -8,8 +8,8 @@ _G.BetterSBA = NS
 --   version = feature/milestone version (manual, bump via .scripts/version.sh bump)
 --   build   = total commit count (auto)
 NS.VERSION_RELEASE = 1
-NS.VERSION_PATCH   = 4       -- bump this for feature milestones
-NS.VERSION = "R1.3949.551bc59.0004.6"
+NS.VERSION_PATCH   = 5       -- bump this for feature milestones
+NS.VERSION = "R1.7504.04d087b.0005.8"
 NS.ADDON_NAME = ADDON_NAME
 
 -- SBA Spell
@@ -73,12 +73,13 @@ BINDING_HEADER_BETTERSBA = "BetterSBA"
 -- Defaults
 NS.defaults = {
     enabled = true,
-    locked = false,
+    locked = true,
     buttonSize = 48,
     scale = 1.0,
     position = nil,
 
     -- Combat
+    enableDismount = true,
     enableTargeting = true,
     enablePetAttack = true,
     enableChannelProtection = true,
@@ -94,6 +95,8 @@ NS.defaults = {
     queueIconSize = 28,
     queueSpacing = 3,
     queuePosition = "RIGHT",
+    showQueueKeybinds = false,
+    queueKeybindFontSize = 8,
     queueDetached = false,
     queueFreePosition = nil,
     queueOffsetX = 0,
@@ -107,10 +110,27 @@ NS.defaults = {
     hideInVehicle = true,
     queueAlphaOOC = 0.6,
 
-    -- Font
+    -- Font (per-context, with override toggles)
     fontFace = "Friz Quadrata TT",
     fontOutline = "OUTLINE",
+    keybindFont = "Friz Quadrata TT",
+    keybindOutline = "OUTLINE",
+    keybindFontOverride = false,
+    queueKeybindFont = "Friz Quadrata TT",
+    queueKeybindOutline = "OUTLINE",
+    queueKeybindFontOverride = false,
+    queueLabelFont = "Friz Quadrata TT",
+    queueLabelOutline = "OUTLINE",
+    queueLabelFontOverride = false,
     queueLabelFontSize = 8,
+    pauseSymbolFont = "Friz Quadrata TT",
+    pauseSymbolOutline = "OUTLINE",
+    pauseSymbolFontOverride = false,
+    pauseSymbolFontSize = 14,
+    pauseReasonFont = "Friz Quadrata TT",
+    pauseReasonOutline = "OUTLINE",
+    pauseReasonFontOverride = false,
+    pauseReasonFontSize = 9,
 
     -- Queue label offset
     queueLabelOffsetX = 0,
@@ -129,25 +149,55 @@ NS.defaults = {
     importColorLongCD     = { 0.64, 0.21, 0.93, 1.0 },
     importColorMajorCD    = { 1.00, 0.50, 0.00, 1.0 },
 
+    -- Section theme colors (config panel groups)
+    sectionColorCombat     = { 1.00, 0.45, 0.15, 1.0 },
+    sectionColorAppearance = { 0.72, 0.52, 0.95, 1.0 },
+    sectionColorActive     = { 0.30, 0.78, 1.00, 1.0 },
+    sectionColorQueue      = { 0.20, 0.90, 0.45, 1.0 },
+    sectionColorVisibility = { 0.30, 0.95, 0.80, 1.0 },
+    sectionColorImportance = { 1.00, 0.82, 0.20, 1.0 },
+    sectionColorAdvanced   = { 1.00, 0.30, 0.30, 1.0 },
+    sectionColorProfiles   = { 0.85, 0.65, 0.30, 1.0 },
+    -- (subColor* keys removed — sub-headers now use parent section color)
+
+    -- Config panel font
+    configPanelFont = "Friz Quadrata TT",
+    configPanelOutline = "",
+    configPanelFontOverride = false,
+
     -- Animation
     castAnimation = "DRIFT",
     castAnimStyle = "RECREATE",
+
+    -- Config panel animation toggles
+    cfgAnimTransitions = true,
 
     -- Advanced
     updateRate = 0.1,
     checkVisibleButton = true,
 
-    -- Minimap
+    -- Minimap / LDB
     minimap = { hide = false },
+    showMinimapButton = true,
+    ldbShowText = true,
+    minimapIconSize = 19,
+    minimapIconOffsetX = 0,
+    minimapIconOffsetY = 0,
 
     -- Debug
     debug = false,
+
+    -- Modifier scaling
+    modifierScaling = true,
+    configPanelScale = 1.0,
+    queueScale = 1.0,
 }
 
 -- Theme
 NS.THEME = {
     BG            = { 0.06, 0.06, 0.08, 0.95 },
     BG_DARK       = { 0.03, 0.03, 0.04, 0.97 },
+    BG_CARD       = { 0.08, 0.08, 0.11, 0.95 },
     BG_HEADER     = { 0.08, 0.08, 0.10, 0.98 },
     BG_HOVER      = { 0.12, 0.12, 0.16, 1.0 },
 

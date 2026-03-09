@@ -3,26 +3,26 @@ local ADDON_NAME, NS = ...
 local T = NS.THEME
 NS.Config = {}
 
-local function ApplyAll()
-    NS.ApplyButtonSettings()
-    NS.LayoutQueue()
-    NS.UpdateNow()
-end
-
 local function ApplyFont()
     NS.ApplyButtonSettings()
-    if NS.queueFrame and NS.queueFrame.label then
-        NS.queueFrame.label:SetFont(NS.GetFontPath(), NS.db.queueLabelFontSize, NS.GetFontOutline())
+    -- If config panel override is off, global font also affects the panel
+    if not (NS.db and NS.db.configPanelFontOverride) then
+        NS.UpdateAllConfigFonts()
     end
 end
 
 ----------------------------------------------------------------
--- Create the config panel
+-- Create the config panel (dual-panel: left nav + right content)
 ----------------------------------------------------------------
 function NS.Config:Create()
-    local panelW = 300
+    local panelW = 500
+    local leftW = 150
+    local rightW = panelW - leftW
     local maxH = NS.db.configPanelHeight or 600
     local titleH = 28
+    local statusH = 18
+    local scrollBarW = 6
+    local contentW = rightW - scrollBarW - 2
 
     local f = NS.CreatePanel("BetterSBA_ConfigPanel", NS.UIParent, panelW, maxH)
     f:SetPoint("CENTER")
@@ -34,7 +34,9 @@ function NS.Config:Create()
     f:EnableMouse(true)
     f:Hide()
 
+    ----------------------------------------------------------------
     -- Title bar
+    ----------------------------------------------------------------
     local titleBar = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
     titleBar:SetHeight(titleH)
     titleBar:SetPoint("TOPLEFT", 0, 0)
@@ -47,39 +49,37 @@ function NS.Config:Create()
     titleBar:SetBackdropColor(NS.unpack(T.BG_HEADER))
     titleBar:SetBackdropBorderColor(NS.unpack(T.BORDER))
 
-    -- "Better" in obsidian blue-gray with standard font outline
+    -- "Better" in obsidian blue-gray (subtle breathing animation)
     local titleBetter = titleBar:CreateFontString(nil, "OVERLAY")
     titleBetter:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
     titleBetter:SetPoint("LEFT", 10, 0)
-    titleBetter:SetTextColor(0.42, 0.49, 0.56, 1)  -- obsidian blue-gray
+    titleBetter:SetTextColor(0.42, 0.49, 0.56, 1)
+    titleBetter:SetText("Better")
 
-    -- "SBA" text: 3-layer effect — blue glow (outer) → black edge (middle) → white fill (top)
-    -- Anchor FontString (also part of the blue glow layer)
+    -- "SBA" text: 3-layer effect — animated rainbow glow → black edge → white fill
     local titleSBAOutline = titleBar:CreateFontString(nil, "ARTWORK", nil, 1)
     titleSBAOutline:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     titleSBAOutline:SetPoint("LEFT", titleBetter, "RIGHT", 0, 0)
     titleSBAOutline:SetTextColor(0.10, 0.30, 1.00, 1)
     titleSBAOutline:SetText("SBA")
 
-    -- Layer 1 (outer): blue glow — two rings for thick visible outline
+    -- Layer 1 (outer): animated glow — stored for rainbow cycling
+    local sbaGlowFonts = {}
     for _, off in NS.ipairs({
-        -- Inner ring (~2px)
         {-2, 0}, {2, 0}, {0, -2}, {0, 2},
         {-1.4, -1.4}, {-1.4, 1.4}, {1.4, -1.4}, {1.4, 1.4},
-        -- Outer ring (~3.5px)
-        {-3.5, 0}, {3.5, 0}, {0, -3.5}, {0, 3.5},
-        {-2.5, -2.5}, {-2.5, 2.5}, {2.5, -2.5}, {2.5, 2.5},
-        {-3.5, -1.5}, {-3.5, 1.5}, {3.5, -1.5}, {3.5, 1.5},
-        {-1.5, -3.5}, {-1.5, 3.5}, {1.5, -3.5}, {1.5, 3.5},
+        {-3, 0}, {3, 0}, {0, -3}, {0, 3},
+        {-2.2, -2.2}, {-2.2, 2.2}, {2.2, -2.2}, {2.2, 2.2},
     }) do
         local o = titleBar:CreateFontString(nil, "ARTWORK", nil, 1)
         o:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
         o:SetPoint("CENTER", titleSBAOutline, "CENTER", off[1], off[2])
         o:SetTextColor(0.10, 0.30, 1.00, 1)
         o:SetText("SBA")
+        sbaGlowFonts[#sbaGlowFonts + 1] = o
     end
 
-    -- Layer 2 (middle): black edge — 8 copies at ~1px offset
+    -- Layer 2 (middle): black edge
     for _, off in NS.ipairs({
         {-1, 0}, {1, 0}, {0, -1}, {0, 1},
         {-0.7, -0.7}, {-0.7, 0.7}, {0.7, -0.7}, {0.7, 0.7},
@@ -96,12 +96,10 @@ function NS.Config:Create()
     titleSBA:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
     titleSBA:SetPoint("CENTER", titleSBAOutline, "CENTER", 0, 0)
     titleSBA:SetTextColor(1, 1, 1, 1)
-
-    titleBetter:SetText("Better")
     titleSBA:SetText("SBA")
 
     local ver = titleBar:CreateFontString(nil, "OVERLAY")
-    ver:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+    ver:SetFont(NS.GetConfigFontPath(), 9, "")
     ver:SetPoint("LEFT", titleSBAOutline, "RIGHT", 6, 0)
     ver:SetTextColor(NS.unpack(T.TEXT_MUTED))
     ver:SetText(NS.VERSION)
@@ -109,9 +107,137 @@ function NS.Config:Create()
     NS.CreateCloseButton(f)
 
     ----------------------------------------------------------------
-    -- Status bar at the bottom (keybind intercept indicator)
+    -- Title click → GitHub URL popup
     ----------------------------------------------------------------
-    local statusH = 18
+    local titleHitbox = NS.CreateFrame("Button", nil, titleBar)
+    titleHitbox:SetPoint("LEFT", titleBetter, "LEFT", -2, 0)
+    titleHitbox:SetPoint("RIGHT", ver, "RIGHT", 4, 0)
+    titleHitbox:SetHeight(titleH)
+
+    local urlPopup = nil
+    local urlAutoCloseTicker = nil
+
+    local function CloseURLPopup()
+        if urlPopup then urlPopup:Hide() end
+        if urlAutoCloseTicker then
+            urlAutoCloseTicker:Cancel()
+            urlAutoCloseTicker = nil
+        end
+    end
+
+    local function ShowURLPopup()
+        if urlPopup and urlPopup:IsShown() then
+            CloseURLPopup()
+            return
+        end
+
+        local GITHUB_URL = "https://github.com/zero-wow/BetterSBA/"
+
+        if not urlPopup then
+            local p = NS.CreateFrame("Frame", "BetterSBA_URLPopup", f, "BackdropTemplate")
+            p:SetSize(320, 90)
+            p:SetPoint("TOP", titleBar, "BOTTOM", 0, -4)
+            p:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = 1,
+            })
+            p:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.98)
+            p:SetBackdropBorderColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.6)
+            p:SetFrameStrata("DIALOG")
+            p:SetFrameLevel(f:GetFrameLevel() + 20)
+            p:EnableKeyboard(true)
+            p:SetPropagateKeyboardInput(false)
+
+            p:SetScript("OnKeyDown", function(self, key)
+                if key == "SPACE" or key == "ESCAPE" then
+                    self:SetPropagateKeyboardInput(false)
+                    CloseURLPopup()
+                else
+                    self:SetPropagateKeyboardInput(true)
+                end
+            end)
+
+            -- "URL copied" message
+            local msg = p:CreateFontString(nil, "OVERLAY")
+            msg:SetFont(NS.GetConfigFontPath(), 10, "")
+            msg:SetPoint("TOP", 0, -10)
+            msg:SetTextColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3])
+            msg:SetText("GitHub URL — press Ctrl+C to copy")
+
+            -- Selectable URL field
+            local urlBox = NS.CreateFrame("EditBox", nil, p, "BackdropTemplate")
+            urlBox:SetSize(290, 22)
+            urlBox:SetPoint("TOP", msg, "BOTTOM", 0, -8)
+            urlBox:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = 1,
+            })
+            urlBox:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 1)
+            urlBox:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.6)
+            urlBox:SetFont(NS.GetConfigFontPath(), 10, "")
+            urlBox:SetTextColor(NS.unpack(T.TEXT))
+            urlBox:SetTextInsets(6, 6, 0, 0)
+            urlBox:SetAutoFocus(false)
+            urlBox:SetMaxLetters(200)
+            urlBox:SetText(GITHUB_URL)
+            urlBox:SetCursorPosition(0)
+
+            -- When the EditBox gets focus, select all text for easy Ctrl+C
+            urlBox:SetScript("OnEditFocusGained", function(self)
+                self:HighlightText()
+            end)
+            -- Prevent editing — restore URL on any character input
+            urlBox:SetScript("OnChar", function(self)
+                self:SetText(GITHUB_URL)
+                self:HighlightText()
+            end)
+            -- Escape in the EditBox closes the popup
+            urlBox:SetScript("OnEscapePressed", function(self)
+                self:ClearFocus()
+                CloseURLPopup()
+            end)
+
+            -- "[SPACE] Close" hint
+            local hint = p:CreateFontString(nil, "OVERLAY")
+            hint:SetFont(NS.GetConfigFontPath(), 9, "")
+            hint:SetPoint("BOTTOM", 0, 8)
+            hint:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+            hint:SetText("[SPACE] or [ESC] to close")
+
+            p._urlBox = urlBox
+            urlPopup = p
+        end
+
+        -- Reset state and show
+        urlPopup._urlBox:SetText(GITHUB_URL)
+        urlPopup._urlBox:SetCursorPosition(0)
+        urlPopup:Show()
+        urlPopup._urlBox:SetFocus()
+        urlPopup._urlBox:HighlightText()
+
+        -- Auto-close after 5 seconds (NewTicker with 1 iteration = cancelable After)
+        if urlAutoCloseTicker then urlAutoCloseTicker:Cancel() end
+        urlAutoCloseTicker = NS.C_Timer_NewTicker(5, function()
+            CloseURLPopup()
+        end, 1)
+    end
+
+    titleHitbox:SetScript("OnClick", ShowURLPopup)
+    titleHitbox:SetScript("OnEnter", function()
+        titleBetter:SetTextColor(0.55, 0.65, 0.72, 1)
+    end)
+    titleHitbox:SetScript("OnLeave", function()
+        titleBetter:SetTextColor(0.42, 0.49, 0.56, 1)
+    end)
+
+    -- Close URL popup when config panel hides
+    f:HookScript("OnHide", CloseURLPopup)
+
+    ----------------------------------------------------------------
+    -- Status bar (keybind intercept indicator)
+    ----------------------------------------------------------------
     local statusBar = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
     statusBar:SetHeight(statusH)
     statusBar:SetPoint("BOTTOMLEFT", 0, 0)
@@ -123,7 +249,7 @@ function NS.Config:Create()
     })
     statusBar:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.95)
     statusBar:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.4)
-    statusBar:SetFrameLevel(f:GetFrameLevel() + 5)  -- above scroll content
+    statusBar:SetFrameLevel(f:GetFrameLevel() + 5)
 
     local statusIcon = statusBar:CreateTexture(nil, "ARTWORK")
     statusIcon:SetSize(8, 8)
@@ -131,7 +257,7 @@ function NS.Config:Create()
     statusIcon:SetTexture("Interface\\Buttons\\WHITE8X8")
 
     local statusText = statusBar:CreateFontString(nil, "OVERLAY")
-    statusText:SetFont("Fonts\\FRIZQT__.TTF", 8, "")
+    statusText:SetFont(NS.GetConfigFontPath(), 8, "")
     statusText:SetPoint("LEFT", statusIcon, "RIGHT", 5, 0)
     statusText:SetPoint("RIGHT", -6, 0)
     statusText:SetJustifyH("LEFT")
@@ -139,60 +265,103 @@ function NS.Config:Create()
     local function RefreshStatus()
         local keys = NS._overrideKeys
         local slot = NS._overrideSlot
+        local bar = slot and (NS.math_floor((slot - 1) / 12) + 1) or nil
+        local btn = slot and (((slot - 1) % 12) + 1) or nil
         if keys and #keys > 0 then
-            -- Active: show green dot + intercepted key(s)
             statusIcon:SetColorTexture(T.TOGGLE_ON[1], T.TOGGLE_ON[2], T.TOGGLE_ON[3], 1)
             local keyStr = NS.table_concat(keys, ", ")
             statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
-            statusText:SetText("Intercepting [" .. keyStr .. "] (slot " .. slot .. ")")
+            statusText:SetText("Intercepting [" .. keyStr .. "] [BAR: " .. bar .. "] [SLOT: " .. btn .. "]")
         elseif slot then
-            -- Slot found but no keybind
-            statusIcon:SetColorTexture(T.DANGER[1], T.DANGER[2], T.DANGER[3], 0.8)
-            statusText:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
-            statusText:SetText("SBA on slot " .. slot .. " — no keybind found")
+            local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+            if reason then
+                statusIcon:SetColorTexture(1.0, 0.53, 0.0, 0.9)
+                statusText:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
+                statusText:SetText("Paused \226\128\148 " .. reason .. " [BAR: " .. bar .. "] [SLOT: " .. btn .. "]")
+            else
+                statusIcon:SetColorTexture(T.DANGER[1], T.DANGER[2], T.DANGER[3], 0.8)
+                statusText:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
+                statusText:SetText("SBA on [BAR: " .. bar .. "] [SLOT: " .. btn .. "] \226\128\148 no keybind found")
+            end
         else
-            -- SBA not on action bar
-            statusIcon:SetColorTexture(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.6)
-            statusText:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
-            statusText:SetText("SBA not found on action bar")
+            local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+            if reason then
+                statusIcon:SetColorTexture(1.0, 0.53, 0.0, 0.7)
+                statusText:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+                statusText:SetText("Paused — " .. reason)
+            else
+                statusIcon:SetColorTexture(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.6)
+                statusText:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+                statusText:SetText("SBA not found on action bar")
+            end
         end
+        if NS.UpdateLDBText then NS.UpdateLDBText() end
     end
 
-    -- Wire up the live updater so OverrideSBAKeybind refreshes this
     NS.UpdateKeybindStatus = RefreshStatus
-
-    -- Refresh on show
     f:HookScript("OnShow", RefreshStatus)
 
     ----------------------------------------------------------------
-    -- Scroll frame
+    -- Left panel (navigation sidebar)
     ----------------------------------------------------------------
-    local scrollBarW = 6
+    local leftPanel = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
+    leftPanel:SetWidth(leftW)
+    leftPanel:SetPoint("TOPLEFT", 0, -titleH)
+    leftPanel:SetPoint("BOTTOMLEFT", 0, statusH)
+    leftPanel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    leftPanel:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.97)
+    leftPanel:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.3)
+
+    -- Vertical divider between panels
+    local divider = f:CreateTexture(nil, "OVERLAY")
+    divider:SetWidth(1)
+    divider:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 0, 0)
+    divider:SetPoint("BOTTOMLEFT", leftPanel, "BOTTOMRIGHT", 0, 0)
+    divider:SetColorTexture(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.4)
+
+    ----------------------------------------------------------------
+    -- Right panel: section title + underline
+    ----------------------------------------------------------------
+    local sectionTitle = f:CreateFontString(nil, "OVERLAY")
+    sectionTitle:SetFont(NS.GetConfigFontPath(), 11, "")
+    sectionTitle:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 14, -10)
+    sectionTitle:SetTextColor(NS.unpack(T.ACCENT))
+
+    local titleUnderline = f:CreateTexture(nil, "ARTWORK")
+    titleUnderline:SetHeight(2)
+    titleUnderline:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 10, -26)
+    titleUnderline:SetPoint("RIGHT", f, "RIGHT", -10, 0)
+    titleUnderline:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.6)
+
+    ----------------------------------------------------------------
+    -- Right panel: scroll frame
+    ----------------------------------------------------------------
     local scrollFrame = NS.CreateFrame("ScrollFrame", nil, f)
-    scrollFrame:SetPoint("TOPLEFT", 0, -titleH)
+    scrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 0, -34)
     scrollFrame:SetPoint("BOTTOMRIGHT", -scrollBarW - 2, statusH)
 
     local scrollChild = NS.CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(panelW - scrollBarW - 2)
+    scrollChild:SetWidth(contentW)
+    scrollChild:SetHeight(100)
     scrollFrame:SetScrollChild(scrollChild)
 
     -- Scrollbar track
     local scrollTrack = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
     scrollTrack:SetWidth(scrollBarW)
-    scrollTrack:SetPoint("TOPRIGHT", 0, -titleH)
+    scrollTrack:SetPoint("TOPRIGHT", 0, -titleH - 34)
     scrollTrack:SetPoint("BOTTOMRIGHT", 0, statusH)
-    scrollTrack:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-    })
+    scrollTrack:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     scrollTrack:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.5)
     scrollTrack:Hide()
 
     -- Scrollbar thumb
     local scrollThumb = NS.CreateFrame("Frame", nil, scrollTrack, "BackdropTemplate")
     scrollThumb:SetWidth(scrollBarW)
-    scrollThumb:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-    })
+    scrollThumb:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     scrollThumb:SetBackdropColor(T.ACCENT_DIM[1], T.ACCENT_DIM[2], T.ACCENT_DIM[3], 0.8)
     scrollThumb:SetPoint("TOP", scrollTrack, "TOP", 0, 0)
     scrollThumb:EnableMouse(true)
@@ -212,13 +381,9 @@ function NS.Config:Create()
             thumbScrollStart = scrollFrame:GetVerticalScroll()
         end
     end)
-
     scrollThumb:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" then
-            thumbDragging = false
-        end
+        if button == "LeftButton" then thumbDragging = false end
     end)
-
     scrollThumb:SetScript("OnUpdate", function(self)
         if not thumbDragging then return end
         local _, cursorY = GetCursorPosition()
@@ -235,21 +400,19 @@ function NS.Config:Create()
         scrollFrame:SetVerticalScroll(newScroll)
     end)
 
-    -- Update scrollbar position & visibility
     local function UpdateScrollbar()
-        local contentH = scrollChild:GetHeight()
+        local ch = scrollChild:GetHeight()
         local viewH = scrollFrame:GetHeight()
-        if contentH <= viewH then
+        if ch <= viewH then
             scrollTrack:Hide()
             return
         end
         scrollTrack:Show()
         local trackH = scrollTrack:GetHeight()
-        local ratio = viewH / contentH
+        local ratio = viewH / ch
         local thumbH = math.max(20, trackH * ratio)
         scrollThumb:SetHeight(thumbH)
-
-        local scrollRange = contentH - viewH
+        local scrollRange = ch - viewH
         local scroll = scrollFrame:GetVerticalScroll()
         local pct = scroll / scrollRange
         local travel = trackH - thumbH
@@ -257,16 +420,19 @@ function NS.Config:Create()
         scrollThumb:SetPoint("TOP", scrollTrack, "TOP", 0, -pct * travel)
     end
 
-    scrollFrame:SetScript("OnScrollRangeChanged", function()
-        UpdateScrollbar()
-    end)
+    scrollFrame:SetScript("OnScrollRangeChanged", UpdateScrollbar)
+    scrollFrame:SetScript("OnVerticalScroll", UpdateScrollbar)
 
-    scrollFrame:SetScript("OnVerticalScroll", function()
-        UpdateScrollbar()
-    end)
-
-    -- Mouse wheel on entire panel
     local function OnMouseWheel(_, delta)
+        if IsControlKeyDown() and NS.db.modifierScaling then
+            local scale = NS.db.configPanelScale or 1.0
+            scale = scale + delta * 0.05
+            scale = math.max(0.5, math.min(2.0, scale))
+            scale = tonumber(string.format("%.2f", scale))
+            NS.db.configPanelScale = scale
+            f:SetScale(scale)
+            return
+        end
         local scroll = scrollFrame:GetVerticalScroll()
         local step = 30
         local maxScroll = math.max(0, scrollChild:GetHeight() - scrollFrame:GetHeight())
@@ -279,10 +445,10 @@ function NS.Config:Create()
     scrollFrame:EnableMouseWheel(true)
 
     ----------------------------------------------------------------
-    -- Resize grip (bottom-right corner)
+    -- Resize grip
     ----------------------------------------------------------------
     f:SetResizable(true)
-    f:SetResizeBounds(panelW, 250, panelW, 900)
+    f:SetResizeBounds(panelW, 300, panelW, 900)
 
     local grip = NS.CreateFrame("Button", nil, f)
     grip:SetSize(16, 16)
@@ -291,9 +457,7 @@ function NS.Config:Create()
     grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
     grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
 
-    grip:SetScript("OnMouseDown", function()
-        f:StartSizing("BOTTOMRIGHT")
-    end)
+    grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
     grip:SetScript("OnMouseUp", function()
         f:StopMovingOrSizing()
         NS.db.configPanelHeight = f:GetHeight()
@@ -301,39 +465,236 @@ function NS.Config:Create()
     end)
 
     ----------------------------------------------------------------
-    -- Content (all widgets parented to scrollChild)
+    -- Section definitions (reordered with importance classification)
     ----------------------------------------------------------------
-    local c = scrollChild  -- alias for brevity
-    local y = -12
+    local db = NS.db
+    local SECTIONS = {
+        { id = "COMBAT_ASSIST",  label = "Combat Assist",  dotColor = db.sectionColorCombat,     dbKey = "sectionColorCombat" },
+        { id = "APPEARANCE",     label = "Appearance",      dotColor = db.sectionColorAppearance, dbKey = "sectionColorAppearance" },
+        { id = "ACTIVE_DISPLAY", label = "Active Display",  dotColor = db.sectionColorActive,     dbKey = "sectionColorActive" },
+        { id = "QUEUE",          label = "Queue Display",   dotColor = db.sectionColorQueue,      dbKey = "sectionColorQueue" },
+        { id = "VISIBILITY",     label = "Visibility",      dotColor = db.sectionColorVisibility, dbKey = "sectionColorVisibility" },
+        { id = "IMPORTANCE",     label = "Importance",      dotColor = db.sectionColorImportance, dbKey = "sectionColorImportance" },
+        { id = "ADVANCED",       label = "Advanced",        dotColor = db.sectionColorAdvanced,   dbKey = "sectionColorAdvanced" },
+        { id = "PROFILES",       label = "Profiles",        dotColor = db.sectionColorProfiles,   dbKey = "sectionColorProfiles" },
+    }
 
-    -- COMBAT
-    NS.CreateSectionHeader(c, "COMBAT", y)
-    y = y - 22
-    NS.CreateToggle(c, "Auto-Target Enemies", "enableTargeting", y, function() NS.RebuildMacroText() end)
-    y = y - 24
-    NS.CreateToggle(c, "Pet Attack", "enablePetAttack", y, function() NS.RebuildMacroText() end)
-    y = y - 24
-    NS.CreateToggle(c, "Channel Protection", "enableChannelProtection", y, function() NS.RebuildMacroText() end)
-    y = y - 30
+    -- Content frames (one per section, parented to scrollChild)
+    local contentFrames = {}
+    local subHeaderLines = {}
+    local activeSection = 1
 
-    -- DISPLAY
-    NS.CreateSectionHeader(c, "DISPLAY", y)
-    y = y - 22
-    NS.CreateSlider(c, "Button Size", "buttonSize", 24, 80, 1, y, function()
-        NS.ApplyButtonSettings()
-        NS.LayoutQueue()
-    end)
-    y = y - 38
-    NS.CreateToggle(c, "Show Keybind", "showKeybind", y, function() NS.UpdateNow() end)
+    for i = 1, #SECTIONS do
+        local cf = NS.CreateFrame("Frame", nil, scrollChild)
+        cf:SetWidth(contentW)
+        cf._contentWidth = contentW
+        cf:SetPoint("TOPLEFT", 0, 0)
+        cf:Hide()
+        local dc = SECTIONS[i].dotColor
+        cf._sectionColor = dc
+        cf._sectionColorBright = { math.min(1, dc[1] * 0.7 + 0.3), math.min(1, dc[2] * 0.7 + 0.3), math.min(1, dc[3] * 0.7 + 0.3), 1 }
+        cf._sectionColorDim = { dc[1], dc[2], dc[3], 0.7 }
+        contentFrames[i] = cf
+    end
+
+    ----------------------------------------------------------------
+    -- Build section content (all 39 options)
+    ----------------------------------------------------------------
+    local c, y
+
+    -- Tooltip color shortcuts
+    local K, U, V, W, N, R = NS.TC.KEY, NS.TC.UI, NS.TC.VAL, NS.TC.WARN, NS.TC.NUM, NS.TC.R
+
+    -- 1. COMBAT ASSIST (4 options)
+    c = contentFrames[1]
+    y = -12
+    do
+    local r1 = NS.CreateToggle(c, "Auto-Dismount", "enableDismount", y, function() NS.RebuildMacroText() end)
+    NS.AddTooltip(r1, "Auto-Dismount", {
+        "Adds " .. K .. "/dismount" .. R .. " to the macro before casting.",
+        " ",
+        "When " .. V .. "enabled" .. R .. ", automatically dismounts before",
+        "the " .. U .. "Single-Button Assistant" .. R .. " fires.",
+        "Only triggers if you are actually mounted.",
+    }, c)
     y = y - 24
-    NS.CreateToggle(c, "Show Cooldown", "showCooldown", y, function() NS.UpdateNow() end)
+    local r2 = NS.CreateToggle(c, "Auto-Target Enemies", "enableTargeting", y, function() NS.RebuildMacroText() end)
+    NS.AddTooltip(r2, "Auto-Target Enemies", {
+        "Adds " .. K .. "/targetenemy [noharm][dead]" .. R .. " to the macro.",
+        " ",
+        "Automatically targets the nearest enemy if your",
+        "current target is " .. W .. "dead" .. R .. ", " .. W .. "friendly" .. R .. ", or " .. W .. "missing" .. R .. ".",
+        "Fires before every " .. U .. "SBA" .. R .. " cast.",
+    }, c)
     y = y - 24
-    NS.CreateToggle(c, "Range Coloring", "rangeColoring", y, function() NS.UpdateNow() end)
+    local r3 = NS.CreateToggle(c, "Pet Attack", "enablePetAttack", y, function() NS.RebuildMacroText() end)
+    NS.AddTooltip(r3, "Pet Attack", {
+        "Adds " .. K .. "/petattack" .. R .. " to the macro.",
+        " ",
+        "Sends your pet to attack your current target",
+        "each time " .. U .. "SBA" .. R .. " casts. Only fires if",
+        "you have an " .. V .. "active pet" .. R .. ".",
+    }, c)
     y = y - 24
-    local animDropW = panelW - 28 - 80 - 6 - scrollBarW
+    local r4 = NS.CreateToggle(c, "Channel Protection", "enableChannelProtection", y, function() NS.RebuildMacroText() end)
+    NS.AddTooltip(r4, "Channel Protection", {
+        "Adds " .. K .. "/stopmacro [channeling]" .. R .. " to the macro.",
+        " ",
+        "Prevents " .. U .. "SBA" .. R .. " from interrupting channeled spells",
+        "like " .. V .. "Rapid Fire" .. R .. " or " .. V .. "Eye Beam" .. R .. ".",
+        "The macro " .. W .. "stops executing" .. R .. " if you are channeling.",
+    }, c)
+    y = y - 28
+
+    -- Sub-header: MACRO PREVIEW
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local hdr = c:CreateFontString(nil, "OVERLAY")
+        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        hdr:SetTextColor(col[1], col[2], col[3])
+        hdr:SetText("MACRO PREVIEW")
+        local line = c:CreateTexture(nil, "ARTWORK")
+        line:SetHeight(1)
+        line:SetColorTexture(col[1], col[2], col[3], 0.4)
+        line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
+        line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = line
+    end
+    y = y - 18
+
+    -- Macro preview panel (dark code-style display with syntax highlighting)
+    local previewPanel = NS.CreateFrame("Frame", nil, c, "BackdropTemplate")
+    local previewW = contentW - 28
+    previewPanel:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+    previewPanel:SetWidth(previewW)
+    previewPanel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    local sc = c._sectionColor or T.ACCENT
+    previewPanel:SetBackdropColor(0, 0, 0, 0.7)
+    previewPanel:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.35)
+
+    -- Syntax color codes
+    local CMD  = "|cFFFFD100"   -- gold — slash commands
+    local COND = "|cFF44FF44"   -- green — conditionals
+    local SPELL = "|cFF66B8D9"  -- cyan — spell names
+    local CMT  = "|cFF555555"   -- dim gray — inline comments
+    local RST  = "|r"
+
+    -- Create 5 line fontstrings (max possible macro lines)
+    local previewLines = {}
+    for i = 1, 5 do
+        local fs = previewPanel:CreateFontString(nil, "OVERLAY")
+        fs:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+        fs:SetPoint("TOPLEFT", previewPanel, "TOPLEFT", 8, -6 - (i - 1) * 15)
+        fs:SetPoint("RIGHT", previewPanel, "RIGHT", -8, 0)
+        fs:SetJustifyH("LEFT")
+        fs:SetWordWrap(false)
+        fs:Hide()
+        previewLines[i] = fs
+    end
+
+    local function RefreshMacroPreview()
+        local idx = 0
+        local adb = NS.db
+
+        if adb.enableDismount then
+            idx = idx + 1
+            previewLines[idx]:SetText(
+                CMD .. "/dismount" .. RST .. " " ..
+                COND .. "[mounted]" .. RST .. "  " ..
+                CMT .. "-- auto-dismount" .. RST)
+            previewLines[idx]:Show()
+        end
+        if adb.enableTargeting then
+            idx = idx + 1
+            previewLines[idx]:SetText(
+                CMD .. "/targetenemy" .. RST .. " " ..
+                COND .. "[noharm][dead]" .. RST .. "  " ..
+                CMT .. "-- acquire target" .. RST)
+            previewLines[idx]:Show()
+        end
+        if adb.enablePetAttack then
+            idx = idx + 1
+            previewLines[idx]:SetText(
+                CMD .. "/petattack" .. RST .. "  " ..
+                CMT .. "-- send pet" .. RST)
+            previewLines[idx]:Show()
+        end
+        if adb.enableChannelProtection then
+            idx = idx + 1
+            previewLines[idx]:SetText(
+                CMD .. "/stopmacro" .. RST .. " " ..
+                COND .. "[channeling]" .. RST .. "  " ..
+                CMT .. "-- protect channels" .. RST)
+            previewLines[idx]:Show()
+        end
+        -- /cast line is always present
+        idx = idx + 1
+        local sbaName = NS.GetSBASpellName and NS.GetSBASpellName() or "Single-Button Assistant"
+        previewLines[idx]:SetText(
+            CMD .. "/cast" .. RST .. " " ..
+            SPELL .. sbaName .. RST .. "  " ..
+            CMT .. "-- fire recommended" .. RST)
+        previewLines[idx]:Show()
+
+        -- Hide unused lines
+        for i = idx + 1, 5 do
+            previewLines[i]:Hide()
+        end
+
+        -- Resize panel to fit
+        previewPanel:SetHeight(12 + idx * 15)
+    end
+
+    -- Hook toggles to refresh preview when clicked
+    r1:HookScript("OnClick", RefreshMacroPreview)
+    r2:HookScript("OnClick", RefreshMacroPreview)
+    r3:HookScript("OnClick", RefreshMacroPreview)
+    r4:HookScript("OnClick", RefreshMacroPreview)
+
+    RefreshMacroPreview()
+    y = y - (12 + 5 * 15) - 8
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 1)
+
+    -- 2. APPEARANCE (Animation + Fonts)
+    c = contentFrames[2]
+    y = -12
+    do
+
+    -- Sub-header: ANIMATION
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local hdr = c:CreateFontString(nil, "OVERLAY")
+        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        hdr:SetTextColor(col[1], col[2], col[3])
+        hdr:SetText("ANIMATION")
+        local line = c:CreateTexture(nil, "ARTWORK")
+        line:SetHeight(1)
+        line:SetColorTexture(col[1], col[2], col[3], 0.4)
+        line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
+        line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = line
+    end
+    y = y - 18
+
+    local animDropW = contentW - 28 - 80 - 6
     local animRow = NS.CreateDropdown(c, "Cast Animation", "castAnimation", NS.CAST_ANIMATIONS, y, nil, animDropW)
+    NS.AddTooltip(animRow, "Cast Animation", {
+        "Visual effect that plays on the " .. U .. "Active Display" .. R,
+        "each time " .. U .. "SBA" .. R .. " casts an ability.",
+        " ",
+        "Choose from different animation styles or",
+        "set to " .. V .. "None" .. R .. " to disable.",
+    }, c)
 
-    -- Animation Testing button
+    -- Preview button (inline with dropdown)
     local testBtn = NS.CreateFrame("Button", nil, c, "BackdropTemplate")
     testBtn:SetSize(80, 20)
     testBtn:SetPoint("TOPLEFT", animRow, "TOPRIGHT", 6, -16)
@@ -346,30 +707,30 @@ function NS.Config:Create()
     testBtn:SetBackdropBorderColor(NS.unpack(T.BORDER))
 
     local testLbl = c:CreateFontString(nil, "OVERLAY")
-    testLbl:SetFont("Fonts\\FRIZQT__.TTF", 9, "")
+    testLbl:SetFont(NS.GetConfigFontPath(), 9, "")
     testLbl:SetPoint("BOTTOMLEFT", testBtn, "TOPLEFT", 0, 2)
     testLbl:SetTextColor(NS.unpack(T.TEXT_DIM))
     testLbl:SetText("Preview")
 
     local testBtnText = testBtn:CreateFontString(nil, "OVERLAY")
-    testBtnText:SetFont("Fonts\\FRIZQT__.TTF", 10, "")
+    testBtnText:SetFont(NS.GetConfigFontPath(), 10, "")
     testBtnText:SetPoint("CENTER")
     testBtnText:SetTextColor(NS.unpack(T.TEXT))
-    testBtnText:SetText("Start")
+    testBtnText:SetText("\226\150\182 Play")
 
     local testTicker = nil
     testBtn:SetScript("OnClick", function()
         if testTicker then
             testTicker:Cancel()
             testTicker = nil
-            testBtnText:SetText("Start")
+            testBtnText:SetText("\226\150\182 Play")
             testBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
         else
             NS.PlayCastAnimation(NS.SBA_SPELL_ID)
             testTicker = NS.C_Timer_NewTicker(1.2, function()
                 NS.PlayCastAnimation(NS.SBA_SPELL_ID)
             end)
-            testBtnText:SetText("Stop")
+            testBtnText:SetText("\226\150\160 Stop")
             testBtn:SetBackdropColor(T.TOGGLE_ON[1], T.TOGGLE_ON[2], T.TOGGLE_ON[3], 0.6)
         end
     end)
@@ -380,39 +741,543 @@ function NS.Config:Create()
         if testTicker then
             testTicker:Cancel()
             testTicker = nil
-            testBtnText:SetText("Start")
+            testBtnText:SetText("\226\150\182 Play")
             testBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
         end
     end)
     y = y - 46
 
-    NS.CreateDropdown(c, "Animation Style", "castAnimStyle", NS.CAST_ANIM_STYLES, y)
-    y = y - 38
+    local animStyleRow = NS.CreateDropdown(c, "Animation Style", "castAnimStyle", NS.CAST_ANIM_STYLES, y)
+    NS.AddTooltip(animStyleRow, "Animation Style", {
+        "Visual style variant for the " .. U .. "Cast Animation" .. R .. ".",
+        " ",
+        "Different styles change how the cast effect " .. V .. "appears" .. R .. ",",
+        "such as particle direction, color, and shape.",
+    }, c)
+    y = y - 48
 
-    -- APPEARANCE
-    NS.CreateSectionHeader(c, "APPEARANCE", y)
-    y = y - 22
-    local fontW = 160
-    local outlineW = panelW - 28 - fontW - 6 - scrollBarW
-    local fontRow = NS.CreateFontDropdown(c, "Font", "fontFace", y, ApplyFont, fontW)
-    local outlineRow = NS.CreateDropdown(c, "Outline", "fontOutline",
-        NS.FONT_OUTLINE_OPTIONS, y, ApplyFont, outlineW)
-    outlineRow:ClearAllPoints()
-    outlineRow:SetPoint("TOPLEFT", fontRow, "TOPRIGHT", 6, 0)
+    -- Config panel animation toggles
+    local animDesc = c:CreateFontString(nil, "OVERLAY")
+    animDesc:SetFont(NS.GetConfigFontPath(), 9, NS.GetConfigFontOutline())
+    animDesc:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+    animDesc:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+    animDesc:SetJustifyH("LEFT")
+    animDesc:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+    animDesc:SetText("Toggle individual config panel animations on or off.")
+    y = y - 16
+    local cosmeticNote = N .. "Purely cosmetic" .. R .. ". " .. V .. "Safe" .. R .. " to " .. W .. "disable" .. R .. " \226\128\148 just " .. U .. "visual noise" .. R .. "."
+    local aSlide = NS.CreateToggle(c, "Slide Transitions", "cfgAnimTransitions", y)
+    NS.AddTooltip(aSlide, "Slide Transitions", {
+        "Smooth " .. V .. "sliding" .. R .. " and " .. V .. "fading" .. R .. " animations when",
+        "switching between sections in the " .. U .. "Config Panel" .. R .. ".",
+        " ",
+        cosmeticNote,
+    }, c)
+    y = y - 28
+
+    -- Sub-header: FONTS
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local hdr = c:CreateFontString(nil, "OVERLAY")
+        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        hdr:SetTextColor(col[1], col[2], col[3])
+        hdr:SetText("FONTS")
+        local line = c:CreateTexture(nil, "ARTWORK")
+        line:SetHeight(1)
+        line:SetColorTexture(col[1], col[2], col[3], 0.4)
+        line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
+        line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = line
+    end
+    y = y - 18
+
+    local fontContentW = contentW - 28
+    -- 2-column layout (font + outline, no size) — with checkbox indent
+    local cbIndent = 16
+    local fontW2 = math.floor((fontContentW - cbIndent) * 0.6)
+    local outlineW2 = (fontContentW - cbIndent) - fontW2 - 6
+    -- Full-width 2-column for Global (no checkbox)
+    local fontW2g = math.floor(fontContentW * 0.6)
+    local outlineW2g = fontContentW - fontW2g - 6
+    -- 3-column layout (font + outline + size) — with checkbox indent
+    local fontW3 = math.floor((fontContentW - cbIndent) * 0.40)
+    local outlineW3 = math.floor((fontContentW - cbIndent) * 0.28)
+    local sizeW3 = (fontContentW - cbIndent) - fontW3 - outlineW3 - 12
+
+    local rebuildPanel = function()
+        NS._restoreSection = NS._activeSection or activeSection
+        NS._restoreScroll = scrollFrame:GetVerticalScroll()
+        -- Fade out → destroy → rebuild (reduces jarring flash)
+        NS.Config.frame:SetAlpha(0)
+        NS.Config.frame:Hide()
+        NS.Config.frame = nil
+        NS.C_Timer_After(0.02, function()
+            NS.Config:Toggle()
+            if NS.Config.frame then
+                NS.Config.frame:SetAlpha(1)
+            end
+        end)
+    end
+
+    -- Override checkbox: small themed toggle before the font row label
+    local OVR_BACKDROP = {
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    }
+    local function CreateOverrideCheckbox(fontRow, outlineRow, sizeRow, overrideKey, onChange)
+        local cbSize = 10
+        -- Shift font row label right
+        fontRow.lbl:ClearAllPoints()
+        fontRow.lbl:SetPoint("TOPLEFT", cbIndent, 0)
+        -- Also shift the dropdown button right
+        fontRow.btn:ClearAllPoints()
+        fontRow.btn:SetPoint("TOPLEFT", cbIndent, -16)
+        fontRow.btn:SetWidth(fontRow:GetWidth() - cbIndent)
+        -- Checkbox
+        local cb = NS.CreateFrame("Button", nil, fontRow, "BackdropTemplate")
+        cb:SetSize(cbSize, cbSize)
+        cb:SetPoint("RIGHT", fontRow.lbl, "LEFT", -4, 0)
+        cb:SetBackdrop(OVR_BACKDROP)
+        local fill = cb:CreateTexture(nil, "ARTWORK")
+        fill:SetPoint("TOPLEFT", 2, -2)
+        fill:SetPoint("BOTTOMRIGHT", -2, 2)
+        local function RefreshOverride()
+            local on = NS.db[overrideKey]
+            if on then
+                local sc = c._sectionColor or T.TOGGLE_ON
+                cb:SetBackdropColor(sc[1], sc[2], sc[3], sc[4] or 1)
+                cb:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.6)
+                fill:SetColorTexture(sc[1], sc[2], sc[3], 0.9)
+                fill:Show()
+                fontRow.btn:SetAlpha(1)
+                outlineRow:SetAlpha(1)
+            else
+                cb:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+                cb:SetBackdropBorderColor(NS.unpack(T.BORDER))
+                fill:Hide()
+                fontRow.btn:SetAlpha(0.3)
+                outlineRow:SetAlpha(0.3)
+            end
+        end
+        cb:SetScript("OnClick", function()
+            NS.db[overrideKey] = not NS.db[overrideKey]
+            RefreshOverride()
+            if onChange then onChange() end
+        end)
+        -- Tooltip
+        NS.AddTooltip(cb, "Override Global", {
+            "When " .. V .. "enabled" .. R .. ", this context uses its own",
+            "font and outline settings below.",
+            " ",
+            "When " .. W .. "disabled" .. R .. ", it inherits from the",
+            K .. "Global" .. R .. " font and outline above.",
+        }, c)
+        RefreshOverride()
+        return cb
+    end
+
+    -- Row 1: Global (Font + Outline) — master, no checkbox
+    local gFontRow = NS.CreateFontDropdown(c, "Global", "fontFace", y, ApplyFont, fontW2g)
+    NS.AddTooltip(gFontRow, "Global Font", {
+        "Master font used across all BetterSBA elements.",
+        " ",
+        "Applies everywhere unless a context below has its",
+        "override checkbox " .. V .. "enabled" .. R .. ".",
+    }, c)
+    local gOutRow = NS.CreateDropdown(c, "Outline", "fontOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, ApplyFont, outlineW2g)
+    gOutRow:ClearAllPoints()
+    gOutRow:SetPoint("TOPLEFT", gFontRow, "TOPRIGHT", 6, 0)
     y = y - 46
-    NS.CreateSlider(c, "Keybind Font Size", "keybindFontSize", 6, 24, 1, y, function()
+
+    -- Row 2: Config Panel (Font + Outline + override checkbox)
+    local cpFontRow = NS.CreateFontDropdown(c, "Config Panel", "configPanelFont", y, NS.UpdateAllConfigFonts, fontW2)
+    NS.AddTooltip(cpFontRow, "Config Panel Font", {
+        "Font used for all text in the " .. U .. "Config Panel" .. R .. " (" .. K .. "/bs" .. R .. ").",
+        " ",
+        "Updates " .. V .. "instantly" .. R .. " across all panel labels,",
+        "values, dropdowns, and headers.",
+    }, c)
+    local cpOutRow = NS.CreateDropdown(c, "Config Outline", "configPanelOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, NS.UpdateAllConfigFonts, outlineW2)
+    cpOutRow:ClearAllPoints()
+    cpOutRow:SetPoint("TOPLEFT", cpFontRow, "TOPRIGHT", 6, 0)
+    CreateOverrideCheckbox(cpFontRow, cpOutRow, nil, "configPanelFontOverride", NS.UpdateAllConfigFonts)
+    y = y - 46
+
+    -- Row 3: Keybind (Font + Outline + Size + override checkbox)
+    local kbFontRow = NS.CreateFontDropdown(c, "Keybind", "keybindFont", y, ApplyFont, fontW3)
+    NS.AddTooltip(kbFontRow, "Keybind Font", {
+        "Font for the keybind text on the " .. U .. "Active Display" .. R .. ".",
+        " ",
+        "Shown in the top-right corner of the main button.",
+        "Size: " .. N .. "6" .. R .. " to " .. N .. "24" .. R .. " px.",
+    }, c)
+    local kbOutRow = NS.CreateDropdown(c, "Outline", "keybindOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, ApplyFont, outlineW3)
+    kbOutRow:ClearAllPoints()
+    kbOutRow:SetPoint("TOPLEFT", kbFontRow, "TOPRIGHT", 6, 0)
+    local kbSizeRow = NS.CreateSlider(c, "Size", "keybindFontSize", 6, 24, 1, y, function()
+        NS.ApplyButtonSettings()
+    end)
+    kbSizeRow:SetSize(sizeW3, 32)
+    kbSizeRow:ClearAllPoints()
+    kbSizeRow:SetPoint("TOPLEFT", kbOutRow, "TOPRIGHT", 6, 0)
+    CreateOverrideCheckbox(kbFontRow, kbOutRow, nil, "keybindFontOverride", ApplyFont)
+    y = y - 46
+
+    -- Row 4: Queue Keybind (Font + Outline + Size + override checkbox)
+    local qkFontRow = NS.CreateFontDropdown(c, "Queue Keybind", "queueKeybindFont", y, function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end, fontW3)
+    NS.AddTooltip(qkFontRow, "Queue Keybind Font", {
+        "Font for keybind text on " .. U .. "Queue Display" .. R .. " spell icons.",
+        " ",
+        "Each icon in the rotation queue shows its keybind.",
+        "Size: " .. N .. "6" .. R .. " to " .. N .. "16" .. R .. " px.",
+    }, c)
+    local qkOutRow = NS.CreateDropdown(c, "Outline", "queueKeybindOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end, outlineW3)
+    qkOutRow:ClearAllPoints()
+    qkOutRow:SetPoint("TOPLEFT", qkFontRow, "TOPRIGHT", 6, 0)
+    local qkSizeRow = NS.CreateSlider(c, "Size", "queueKeybindFontSize", 6, 16, 1, y, function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end)
+    qkSizeRow:SetSize(sizeW3, 32)
+    qkSizeRow:ClearAllPoints()
+    qkSizeRow:SetPoint("TOPLEFT", qkOutRow, "TOPRIGHT", 6, 0)
+    CreateOverrideCheckbox(qkFontRow, qkOutRow, nil, "queueKeybindFontOverride", function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end)
+    y = y - 46
+
+    -- Row 5: Queue Label (Font + Outline + Size + override checkbox)
+    local qlFontRow = NS.CreateFontDropdown(c, "Queue Label", "queueLabelFont", y, function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end, fontW3)
+    NS.AddTooltip(qlFontRow, "Queue Label Font", {
+        "Font for the " .. V .. "Rotation" .. R .. " label text above",
+        "the " .. U .. "Queue Display" .. R .. ".",
+        " ",
+        "Size: " .. N .. "6" .. R .. " to " .. N .. "18" .. R .. " px.",
+    }, c)
+    local qlOutRow = NS.CreateDropdown(c, "Outline", "queueLabelOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end, outlineW3)
+    qlOutRow:ClearAllPoints()
+    qlOutRow:SetPoint("TOPLEFT", qlFontRow, "TOPRIGHT", 6, 0)
+    local qlSizeRow = NS.CreateSlider(c, "Size", "queueLabelFontSize", 6, 18, 1, y, function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end)
+    qlSizeRow:SetSize(sizeW3, 32)
+    qlSizeRow:ClearAllPoints()
+    qlSizeRow:SetPoint("TOPLEFT", qlOutRow, "TOPRIGHT", 6, 0)
+    CreateOverrideCheckbox(qlFontRow, qlOutRow, nil, "queueLabelFontOverride", function()
+        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    end)
+    y = y - 46
+
+    -- Row 6: Pause Symbol (Font + Outline + Size + override checkbox)
+    local psFontRow = NS.CreateFontDropdown(c, "Pause Symbol", "pauseSymbolFont", y, function()
+        NS.ApplyButtonSettings()
+    end, fontW3)
+    NS.AddTooltip(psFontRow, "Pause Symbol Font", {
+        "Font for the " .. V .. "II" .. R .. " pause symbol shown on",
+        "the " .. U .. "Active Display" .. R .. " when paused.",
+        " ",
+        "Size: " .. N .. "8" .. R .. " to " .. N .. "28" .. R .. " px.",
+    }, c)
+    local psOutRow = NS.CreateDropdown(c, "Outline", "pauseSymbolOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, function()
+        NS.ApplyButtonSettings()
+    end, outlineW3)
+    psOutRow:ClearAllPoints()
+    psOutRow:SetPoint("TOPLEFT", psFontRow, "TOPRIGHT", 6, 0)
+    local psSizeRow = NS.CreateSlider(c, "Size", "pauseSymbolFontSize", 8, 28, 1, y, function()
+        NS.ApplyButtonSettings()
+    end)
+    psSizeRow:SetSize(sizeW3, 32)
+    psSizeRow:ClearAllPoints()
+    psSizeRow:SetPoint("TOPLEFT", psOutRow, "TOPRIGHT", 6, 0)
+    CreateOverrideCheckbox(psFontRow, psOutRow, nil, "pauseSymbolFontOverride", function()
+        NS.ApplyButtonSettings()
+    end)
+    y = y - 46
+
+    -- Row 7: Pause Reason (Font + Outline + Size + override checkbox)
+    local prFontRow = NS.CreateFontDropdown(c, "Pause Reason", "pauseReasonFont", y, function()
+        NS.ApplyButtonSettings()
+    end, fontW3)
+    NS.AddTooltip(prFontRow, "Pause Reason Font", {
+        "Font for the pause " .. V .. "reason text" .. R .. " shown below",
+        "the button (e.g. " .. U .. "SKYRIDING" .. R .. ", " .. U .. "MOUNTED" .. R .. ").",
+        " ",
+        "Size: " .. N .. "6" .. R .. " to " .. N .. "14" .. R .. " px.",
+    }, c)
+    local prOutRow = NS.CreateDropdown(c, "Outline", "pauseReasonOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, function()
+        NS.ApplyButtonSettings()
+    end, outlineW3)
+    prOutRow:ClearAllPoints()
+    prOutRow:SetPoint("TOPLEFT", prFontRow, "TOPRIGHT", 6, 0)
+    local prSizeRow = NS.CreateSlider(c, "Size", "pauseReasonFontSize", 6, 14, 1, y, function()
+        NS.ApplyButtonSettings()
+    end)
+    prSizeRow:SetSize(sizeW3, 32)
+    prSizeRow:ClearAllPoints()
+    prSizeRow:SetPoint("TOPLEFT", prOutRow, "TOPRIGHT", 6, 0)
+    CreateOverrideCheckbox(prFontRow, prOutRow, nil, "pauseReasonFontOverride", function()
         NS.ApplyButtonSettings()
     end)
     y = y - 38
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 2)
+
+    -- 3. ACTIVE ABILITY (5 options)
+    c = contentFrames[3]
+    y = -12
+    do
+    local btnSzRow = NS.CreateSlider(c, "Button Size", "buttonSize", 24, 80, 1, y, function()
+        NS.ApplyButtonSettings()
+        NS.LayoutQueue()
+    end)
+    NS.AddTooltip(btnSzRow, "Button Size", {
+        "Pixel size of the " .. U .. "Active Display" .. R .. " button.",
+        " ",
+        "Range: " .. N .. "24" .. R .. " to " .. N .. "80" .. R .. " pixels.",
+        "The " .. U .. "Queue Display" .. R .. " repositions to match.",
+    }, c)
+    y = y - 38
+    local skRow = NS.CreateToggle(c, "Show Keybind", "showKeybind", y, function() NS.UpdateNow() end)
+    NS.AddTooltip(skRow, "Show Keybind", {
+        "Display the intercepted " .. K .. "keybind" .. R .. " text on",
+        "the " .. U .. "Active Display" .. R .. " button.",
+        " ",
+        "Shows in the " .. V .. "top-right" .. R .. " corner of the icon.",
+    }, c)
+    y = y - 24
+    local scRow = NS.CreateToggle(c, "Show Cooldown", "showCooldown", y, function() NS.UpdateNow() end)
+    NS.AddTooltip(scRow, "Show Cooldown", {
+        "Display a " .. V .. "cooldown sweep" .. R .. " animation on the",
+        U .. "Active Display" .. R .. " when the recommended spell",
+        "is on cooldown (over " .. N .. "1.5s" .. R .. " duration).",
+    }, c)
+    y = y - 24
+    local rcRow = NS.CreateToggle(c, "Range Coloring", "rangeColoring", y, function() NS.UpdateNow() end)
+    NS.AddTooltip(rcRow, "Range Coloring", {
+        "Tints the " .. U .. "Active Display" .. R .. " icon " .. W .. "red" .. R,
+        "when your target is " .. W .. "out of range" .. R .. ".",
+        " ",
+        "Also " .. V .. "desaturates" .. R .. " the icon to make it obvious.",
+    }, c)
+    y = y - 28
     NS.CreateColorSwatch(c, "Button Background", "buttonBgColor", y, function(col)
         if NS.mainButton and not NS.masque then
             NS.mainButton:SetBackdropColor(NS.unpack(col))
         end
     end)
-    y = y - 30
-    NS.CreateToggle(c, "Importance Borders", "importanceBorders", y, function() NS.UpdateNow() end)
+    y = y - 20
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 3)
+
+    -- 4. QUEUE DISPLAY (11 options)
+    c = contentFrames[4]
+    y = -12
+    do
+    local halfW = math.floor((contentW - 28 - 6) / 2)
+
+    local sqRow = NS.CreateToggle(c, "Show Ability Queue", "showQueue", y, function(on)
+        if NS.queueFrame then
+            if on then NS.queueFrame:Show() else NS.queueFrame:Hide() end
+        end
+    end)
+    NS.AddTooltip(sqRow, "Show Ability Queue", {
+        "Show or hide the " .. U .. "Queue Display" .. R .. " panel.",
+        " ",
+        "Displays the rotation " .. V .. "spell pool" .. R .. " from",
+        U .. "SBA" .. R .. " as small icons beside the main button.",
+        W .. "Note:" .. R .. " This is the rotation pool, not a priority queue.",
+    }, c)
+    y = y - 28
+    -- Side-by-side: Icon Size + Scale
+    local iconSz = NS.CreateSlider(c, "Icon Size", "queueIconSize", 16, 48, 1, y, function()
+        NS.LayoutQueue()
+        NS.UpdateQueueDisplay()
+    end)
+    iconSz:SetSize(halfW, 32)
+    NS.AddTooltip(iconSz, "Queue Icon Size", {
+        "Pixel size of each spell icon in the " .. U .. "Queue Display" .. R .. ".",
+        "Range: " .. N .. "16" .. R .. " to " .. N .. "48" .. R .. " px.",
+    }, c)
+    local qScale = NS.CreateSlider(c, "Scale", "queueScale", 0.5, 2.0, 0.05, y, function(val)
+        if NS.queueFrame then NS.queueFrame:SetScale(val) end
+    end)
+    qScale:SetSize(halfW, 32)
+    qScale:ClearAllPoints()
+    qScale:SetPoint("TOPLEFT", iconSz, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(qScale, "Queue Scale", {
+        "Overall scale of the " .. U .. "Queue Display" .. R .. " frame.",
+        "Range: " .. N .. "0.5x" .. R .. " to " .. N .. "2.0x" .. R .. ".",
+    }, c)
+    y = y - 38
+    local qPosRow = NS.CreateDropdown(c, "Position", "queuePosition", NS.QUEUE_POSITIONS, y, function()
+        NS.LayoutQueue()
+    end)
+    NS.AddTooltip(qPosRow, "Queue Position", {
+        "Where the " .. U .. "Queue Display" .. R .. " anchors relative",
+        "to the " .. U .. "Active Display" .. R .. ".",
+        " ",
+        "Options: " .. V .. "RIGHT" .. R .. ", " .. V .. "LEFT" .. R .. ", " .. V .. "TOP" .. R .. ", " .. V .. "BOTTOM" .. R .. ".",
+    }, c)
+    y = y - 46
+    local detRow = NS.CreateToggle(c, "Detach Queue", "queueDetached", y, function(on)
+        if not on then
+            NS.db.queueFreePosition = nil
+            NS.LayoutQueue()
+        end
+        if NS.UpdateDetachOverlay then NS.UpdateDetachOverlay() end
+    end)
+    NS.AddTooltip(detRow, "Detach Queue", {
+        "Allows the " .. U .. "Queue Display" .. R .. " to be freely",
+        "positioned anywhere on screen via " .. K .. "drag" .. R .. ".",
+        " ",
+        "When disabled, it snaps back to the " .. V .. "Position" .. R .. " setting.",
+    }, c)
     y = y - 28
 
+    -- Side-by-side: Queue X/Y Offset
+    local ofsX = NS.CreateSlider(c, "X Offset", "queueOffsetX", -200, 200, 1, y, function()
+        NS.LayoutQueue()
+    end)
+    ofsX:SetSize(halfW, 32)
+    NS.AddTooltip(ofsX, "Queue X Offset", {
+        "Horizontal offset of the " .. U .. "Queue Display" .. R .. ".",
+        "Range: " .. N .. "-200" .. R .. " to " .. N .. "200" .. R .. " px.",
+    }, c)
+    local ofsY = NS.CreateSlider(c, "Y Offset", "queueOffsetY", -200, 200, 1, y, function()
+        NS.LayoutQueue()
+    end)
+    ofsY:SetSize(halfW, 32)
+    ofsY:ClearAllPoints()
+    ofsY:SetPoint("TOPLEFT", ofsX, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(ofsY, "Queue Y Offset", {
+        "Vertical offset of the " .. U .. "Queue Display" .. R .. ".",
+        "Range: " .. N .. "-200" .. R .. " to " .. N .. "200" .. R .. " px.",
+    }, c)
+    y = y - 38
+
+    local sqkRow = NS.CreateToggle(c, "Show Queue Keybinds", "showQueueKeybinds", y, function()
+        NS.UpdateQueueDisplay()
+    end)
+    NS.AddTooltip(sqkRow, "Show Queue Keybinds", {
+        "Display " .. K .. "keybind" .. R .. " text on each spell icon",
+        "in the " .. U .. "Queue Display" .. R .. ".",
+        " ",
+        "Shows the action bar keybind for each rotation spell.",
+    }, c)
+    y = y - 28
+
+    -- Side-by-side: Label X/Y Offset
+    local lblX = NS.CreateSlider(c, "Label X Offset", "queueLabelOffsetX", -50, 50, 1, y, function()
+        NS.LayoutQueue()
+    end)
+    lblX:SetSize(halfW, 32)
+    NS.AddTooltip(lblX, "Label X Offset", {
+        "Horizontal offset of the " .. V .. "Rotation" .. R .. " label.",
+        "Range: " .. N .. "-50" .. R .. " to " .. N .. "50" .. R .. " px.",
+    }, c)
+    local lblY = NS.CreateSlider(c, "Label Y Offset", "queueLabelOffsetY", -50, 50, 1, y, function()
+        NS.LayoutQueue()
+    end)
+    lblY:SetSize(halfW, 32)
+    lblY:ClearAllPoints()
+    lblY:SetPoint("TOPLEFT", lblX, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(lblY, "Label Y Offset", {
+        "Vertical offset of the " .. V .. "Rotation" .. R .. " label.",
+        "Range: " .. N .. "-50" .. R .. " to " .. N .. "50" .. R .. " px.",
+    }, c)
+    y = y - 38
+
+    -- Side-by-side: Queue Background + Border colors
+    local bgSwatch = NS.CreateColorSwatch(c, "Background", "queueBgColor", y, function(col)
+        if NS.queueFrame then NS.queueFrame:SetBackdropColor(NS.unpack(col)) end
+    end)
+    bgSwatch:SetSize(halfW, 20)
+    local borderSwatch = NS.CreateColorSwatch(c, "Border", "queueBorderColor", y, function(col)
+        if NS.queueFrame then NS.queueFrame:SetBackdropBorderColor(NS.unpack(col)) end
+    end)
+    borderSwatch:SetSize(halfW, 20)
+    borderSwatch:ClearAllPoints()
+    borderSwatch:SetPoint("TOPLEFT", bgSwatch, "TOPRIGHT", 6, 0)
+    y = y - 24
+
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 4)
+
+    -- 5. VISIBILITY (4 options)
+    c = contentFrames[5]
+    y = -12
+    do
+    local coRow = NS.CreateToggle(c, "Combat Only", "onlyInCombat", y, function() NS.UpdateNow() end)
+    NS.AddTooltip(coRow, "Combat Only", {
+        "Only show the " .. U .. "Active Display" .. R .. " during " .. V .. "combat" .. R .. ".",
+        " ",
+        "When out of combat the button becomes " .. W .. "invisible" .. R .. ".",
+        "The keybind intercept still works regardless.",
+    }, c)
+    y = y - 24
+    local hivRow = NS.CreateToggle(c, "Hide In Vehicle", "hideInVehicle", y, function() NS.UpdateNow() end)
+    NS.AddTooltip(hivRow, "Hide In Vehicle", {
+        "Hide the " .. U .. "Active Display" .. R .. " when inside",
+        "a " .. V .. "vehicle" .. R .. " or using a vehicle UI.",
+    }, c)
+    y = y - 28
+    local oocRow = NS.CreateSlider(c, "Button Out-of-Combat Alpha", "alphaOOC", 0, 1, 0.1, y, function()
+        NS.UpdateNow()
+    end)
+    NS.AddTooltip(oocRow, "Button Out-of-Combat Alpha", {
+        "Opacity of the " .. U .. "Active Display" .. R .. " when",
+        W .. "out of combat" .. R .. ".",
+        " ",
+        "Range: " .. N .. "0" .. R .. " (invisible) to " .. N .. "1" .. R .. " (fully opaque).",
+        "Set to " .. N .. "0" .. R .. " to hide outside combat.",
+    }, c)
+    y = y - 38
+    local qoocRow2 = NS.CreateSlider(c, "Queue Out-of-Combat Alpha", "queueAlphaOOC", 0, 1, 0.1, y, function()
+        NS.UpdateNow()
+    end)
+    NS.AddTooltip(qoocRow2, "Queue Out-of-Combat Alpha", {
+        "Opacity of the " .. U .. "Queue Display" .. R .. " when",
+        W .. "out of combat" .. R .. ".",
+        " ",
+        "Range: " .. N .. "0" .. R .. " (invisible) to " .. N .. "1" .. R .. " (fully opaque).",
+    }, c)
+    y = y - 38
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 5)
+
+    -- 6. IMPORTANCE BORDERS (6 options)
+    c = contentFrames[6]
+    y = -12
+    do
+    local ibRow = NS.CreateToggle(c, "Importance Borders", "importanceBorders", y, function() NS.UpdateNow() end)
+    NS.AddTooltip(ibRow, "Importance Borders", {
+        "Color the " .. U .. "Active Display" .. R .. " border based on",
+        "the recommended spell's " .. V .. "cooldown tier" .. R .. ".",
+        " ",
+        "Helps prioritize abilities at a glance.",
+        "Customize colors for each tier below.",
+    }, c)
+    y = y - 28
     NS.CreateColorSwatchWithTooltip(c, "Auto Attack", "importColorAutoAttack", y, function() NS.UpdateNow() end,
         "Auto Attack (White)",
         { "Basic auto-attack and melee swing abilities.",
@@ -442,98 +1307,1562 @@ function NS.Config:Create()
         { "Major offensive or defensive cooldowns.",
           "Cooldown: over 2 minutes.",
           "Examples: Bloodlust, major defensive abilities." })
-    y = y - 28
-
-    -- QUEUE DISPLAY
-    NS.CreateSectionHeader(c, "QUEUE DISPLAY", y)
-    y = y - 22
-    NS.CreateToggle(c, "Show Ability Queue", "showQueue", y, function(on)
-        if NS.queueFrame then
-            if on then NS.queueFrame:Show() else NS.queueFrame:Hide() end
-        end
-    end)
-    y = y - 28
-    NS.CreateDropdown(c, "Position", "queuePosition",
-        NS.QUEUE_POSITIONS, y, function()
-            NS.LayoutQueue()
-        end)
-    y = y - 46
-    NS.CreateSlider(c, "Queue X Offset", "queueOffsetX", -200, 200, 1, y, function()
-        NS.LayoutQueue()
-    end)
-    y = y - 38
-    NS.CreateSlider(c, "Queue Y Offset", "queueOffsetY", -200, 200, 1, y, function()
-        NS.LayoutQueue()
-    end)
-    y = y - 38
-    NS.CreateColorSwatch(c, "Queue Background", "queueBgColor", y, function(col)
-        if NS.queueFrame then
-            NS.queueFrame:SetBackdropColor(NS.unpack(col))
-        end
-    end)
-    y = y - 28
-    NS.CreateColorSwatch(c, "Queue Border", "queueBorderColor", y, function(col)
-        if NS.queueFrame then
-            NS.queueFrame:SetBackdropBorderColor(NS.unpack(col))
-        end
-    end)
-    y = y - 28
-    NS.CreateToggle(c, "Detach Queue", "queueDetached", y, function(on)
-        if not on then
-            NS.db.queueFreePosition = nil
-            NS.LayoutQueue()
-        end
-        if NS.UpdateDetachOverlay then NS.UpdateDetachOverlay() end
-    end)
-    y = y - 28
-    NS.CreateSlider(c, "Label Font Size", "queueLabelFontSize", 6, 18, 1, y, function()
-        if NS.queueFrame and NS.queueFrame.label then
-            NS.queueFrame.label:SetFont(NS.GetFontPath(), NS.db.queueLabelFontSize, NS.GetFontOutline())
-        end
-    end)
-    y = y - 38
-    NS.CreateSlider(c, "Label X Offset", "queueLabelOffsetX", -50, 50, 1, y, function()
-        NS.LayoutQueue()
-    end)
-    y = y - 38
-    NS.CreateSlider(c, "Label Y Offset", "queueLabelOffsetY", -50, 50, 1, y, function()
-        NS.LayoutQueue()
-    end)
-    y = y - 38
-
-    -- VISIBILITY
-    NS.CreateSectionHeader(c, "VISIBILITY", y)
-    y = y - 22
-    NS.CreateToggle(c, "Combat Only", "onlyInCombat", y, function() NS.UpdateNow() end)
-    y = y - 24
-    NS.CreateSlider(c, "Button Out-of-Combat Alpha", "alphaOOC", 0, 1, 0.1, y, function()
-        NS.UpdateNow()
-    end)
-    y = y - 38
-    NS.CreateSlider(c, "Queue Out-of-Combat Alpha", "queueAlphaOOC", 0, 1, 0.1, y, function()
-        NS.UpdateNow()
-    end)
-    y = y - 38
-    NS.CreateToggle(c, "Hide In Vehicle", "hideInVehicle", y, function() NS.UpdateNow() end)
     y = y - 32
 
-    -- ADVANCED
-    local sep = c:CreateTexture(nil, "ARTWORK")
-    sep:SetHeight(1)
-    sep:SetColorTexture(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.4)
-    sep:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
-    sep:SetPoint("RIGHT", c, "RIGHT", -14, 0)
-    y = y - 10
+    -- Sub-header: Section Theme Colors
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local secHeader = c:CreateFontString(nil, "OVERLAY")
+        secHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        secHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        secHeader:SetTextColor(col[1], col[2], col[3])
+        secHeader:SetText("SECTION THEME COLORS")
+        local line = c:CreateTexture(nil, "ARTWORK")
+        line:SetHeight(1)
+        line:SetColorTexture(col[1], col[2], col[3], 0.4)
+        line:SetPoint("TOPLEFT", secHeader, "BOTTOMLEFT", 0, -3)
+        line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = line
+    end
+    y = y - 18
 
-    NS.CreateToggle(c, "Lock Position", "locked", y)
+    -- Side-by-side section color swatches (4 rows: 2+2+2+1)
+    local secHalfW = math.floor((contentW - 28 - 6) / 2)
+    local reloadNote = "Changes apply after /reload."
+
+    local s1 = NS.CreateColorSwatchWithTooltip(c, "Combat Assist", "sectionColorCombat", y, nil,
+        "Combat Assist", { reloadNote })
+    s1:SetSize(secHalfW, 20)
+    local s2 = NS.CreateColorSwatchWithTooltip(c, "Appearance", "sectionColorAppearance", y, nil,
+        "Appearance", { reloadNote })
+    s2:SetSize(secHalfW, 20)
+    s2:ClearAllPoints()
+    s2:SetPoint("TOPLEFT", s1, "TOPRIGHT", 6, 0)
     y = y - 24
-    NS.CreateToggle(c, "Debug Mode", "debug", y, function(on)
-        if on then NS.StartDebugDump() else NS.StopDebugDump() end
-    end)
+
+    local s3 = NS.CreateColorSwatchWithTooltip(c, "Active Display", "sectionColorActive", y, nil,
+        "Active Display", { reloadNote })
+    s3:SetSize(secHalfW, 20)
+    local s4 = NS.CreateColorSwatchWithTooltip(c, "Queue Display", "sectionColorQueue", y, nil,
+        "Queue Display", { reloadNote })
+    s4:SetSize(secHalfW, 20)
+    s4:ClearAllPoints()
+    s4:SetPoint("TOPLEFT", s3, "TOPRIGHT", 6, 0)
+    y = y - 24
+
+    local s5 = NS.CreateColorSwatchWithTooltip(c, "Visibility", "sectionColorVisibility", y, nil,
+        "Visibility", { reloadNote })
+    s5:SetSize(secHalfW, 20)
+    local s6 = NS.CreateColorSwatchWithTooltip(c, "Importance", "sectionColorImportance", y, nil,
+        "Importance", { reloadNote })
+    s6:SetSize(secHalfW, 20)
+    s6:ClearAllPoints()
+    s6:SetPoint("TOPLEFT", s5, "TOPRIGHT", 6, 0)
+    y = y - 24
+
+    local s7 = NS.CreateColorSwatchWithTooltip(c, "Advanced", "sectionColorAdvanced", y, nil,
+        "Advanced", { reloadNote })
+    s7:SetSize(secHalfW, 20)
+    local s8 = NS.CreateColorSwatchWithTooltip(c, "Profiles", "sectionColorProfiles", y, nil,
+        "Profiles", { reloadNote })
+    s8:SetSize(secHalfW, 20)
+    s8:ClearAllPoints()
+    s8:SetPoint("TOPLEFT", s7, "TOPRIGHT", 6, 0)
     y = y - 20
 
-    -- Set scroll child height to total content
-    scrollChild:SetHeight(math.abs(y))
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 6)
+
+    -- 7. ADVANCED
+    c = contentFrames[7]
+    y = -12
+    do
+    local modScaleRow = NS.CreateToggle(c, "Modifier Scaling", "modifierScaling", y)
+    NS.AddTooltip(modScaleRow, "Modifier Scaling", {
+        "Use " .. K .. "CTRL+MOUSEWHEEL" .. R .. " to scroll and resize",
+        "UI elements " .. V .. "independently" .. R .. ":",
+        " ",
+        U .. "Active Display" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the main ability button",
+        U .. "Queue Display" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the rotation queue panel",
+        U .. "Config Panel" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the " .. K .. "/bs" .. R .. " settings window",
+        " ",
+        "Each element scales " .. V .. "independently" .. R .. " and " .. V .. "persists" .. R,
+        "across " .. V .. "reloads" .. R .. ". Range: " .. N .. "0.5x" .. R .. " to " .. N .. "2.0x" .. R .. ".",
+    }, c)
+    y = y - 24
+    local lockRow = NS.CreateToggle(c, "Lock Position", "locked", y)
+    NS.AddTooltip(lockRow, "Lock Position", {
+        "Prevents " .. K .. "dragging" .. R .. " the " .. U .. "Active Display" .. R .. ".",
+        " ",
+        "When " .. V .. "locked" .. R .. ", the button cannot be moved.",
+        "Use " .. K .. "/bs unlock" .. R .. " to toggle from chat.",
+    }, c)
+    y = y - 24
+    local dbgRow = NS.CreateToggle(c, "Debug Mode", "debug", y, function(on)
+        if on then NS.StartDebugDump() else NS.StopDebugDump() end
+    end)
+    NS.AddTooltip(dbgRow, "Debug Mode", {
+        "Prints " .. V .. "detailed diagnostic" .. R .. " information to chat:",
+        " ",
+        "Shows macro execution, target state, keybind",
+        "interception details, and API call results.",
+        W .. "Verbose" .. R .. " \226\128\148 creates lots of chat output.",
+    }, c)
+    y = y - 32
+
+    -- Sub-header: LDB / Minimap Options
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local ldbHeader = c:CreateFontString(nil, "OVERLAY")
+        ldbHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        ldbHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        ldbHeader:SetTextColor(col[1], col[2], col[3])
+        ldbHeader:SetText("LDB / MINIMAP OPTIONS")
+        local ldbLine = c:CreateTexture(nil, "ARTWORK")
+        ldbLine:SetHeight(1)
+        ldbLine:SetColorTexture(col[1], col[2], col[3], 0.4)
+        ldbLine:SetPoint("TOPLEFT", ldbHeader, "BOTTOMLEFT", 0, -3)
+        ldbLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = ldbLine
+    end
+    y = y - 18
+
+    local mmRow = NS.CreateToggle(c, "Show Minimap Button", "showMinimapButton", y, function(on)
+        NS.SetMinimapVisible(on)
+    end)
+    NS.AddTooltip(mmRow, "Show Minimap Button", {
+        "Show or hide the BetterSBA icon on the " .. U .. "minimap" .. R .. ".",
+        " ",
+        "The minimap button provides quick access to",
+        "the " .. U .. "Config Panel" .. R .. " and intercept status.",
+    }, c)
+    y = y - 24
+
+    local ldbRow = NS.CreateToggle(c, "LDB Status Text", "ldbShowText", y, function()
+        NS.UpdateLDBText()
+    end)
+    NS.AddTooltip(ldbRow, "LDB Status Text", {
+        "Show intercept status on the " .. U .. "LDB" .. R .. " data object.",
+        " ",
+        "Displays current " .. V .. "keybind" .. R .. ", " .. V .. "slot" .. R .. ", and " .. V .. "bar" .. R .. " info",
+        "in compatible data broker displays.",
+    }, c)
+    y = y - 32
+
+    -- Sub-header: Performance Statistics
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local perfHeader = c:CreateFontString(nil, "OVERLAY")
+        perfHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        perfHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        perfHeader:SetTextColor(col[1], col[2], col[3])
+        perfHeader:SetText("PERFORMANCE")
+        local perfLine = c:CreateTexture(nil, "ARTWORK")
+        perfLine:SetHeight(1)
+        perfLine:SetColorTexture(col[1], col[2], col[3], 0.4)
+        perfLine:SetPoint("TOPLEFT", perfHeader, "BOTTOMLEFT", 0, -3)
+        perfLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = perfLine
+    end
+    y = y - 18
+
+    -- Stat rows (FontStrings updated by a ticker while visible)
+    local statFontSize = 10
+    local statOutline = NS.GetConfigFontOutline()
+    local statFont = NS.GetConfigFontPath()
+    local sc7 = c._sectionColor or T.ACCENT
+
+    local function MakeStatRow(label, yOff)
+        local row = NS.CreateFrame("Frame", nil, c)
+        row:SetPoint("TOPLEFT", c, "TOPLEFT", 10, yOff)
+        row:SetPoint("RIGHT", c, "RIGHT", -10, 0)
+        row:SetHeight(16)
+
+        local lbl = row:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(statFont, statFontSize, statOutline)
+        lbl:SetPoint("LEFT", 4, 0)
+        lbl:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
+        lbl:SetText(label)
+
+        local val = row:CreateFontString(nil, "OVERLAY")
+        val:SetFont(statFont, statFontSize, statOutline)
+        val:SetPoint("RIGHT", -4, 0)
+        val:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+        val:SetJustifyH("RIGHT")
+        val:SetText("--")
+
+        row.val = val
+        row.lbl = lbl
+        return row
+    end
+
+    local rowMem = MakeStatRow("Memory Usage", y)
+    NS.AddTooltip(rowMem, "Memory Usage", {
+        "Lua memory allocated by BetterSBA.",
+        " ",
+        V .. "< 1 MB" .. R .. "  \226\128\148  Excellent (green)",
+        N .. "1 \226\128\147 3 MB" .. R .. "  \226\128\148  Normal (yellow)",
+        W .. "3 \226\128\147 5 MB" .. R .. "  \226\128\148  Elevated (orange)",
+        W .. "> 5 MB" .. R .. "  \226\128\148  High \226\128\148 report to dev",
+        W .. "> 10 MB" .. R .. " \226\128\148  Critical \226\128\148 possible leak, report immediately",
+        " ",
+        "Memory grows slightly over time. A " .. K .. "/reload" .. R,
+        "clears it. Sustained growth may indicate a bug.",
+    }, c)
+    y = y - 16
+
+    local rowRate = MakeStatRow("Update Rate", y)
+    NS.AddTooltip(rowRate, "Update Rate", {
+        "How often BetterSBA refreshes the display.",
+        " ",
+        V .. "100 ms (10 Hz)" .. R .. "  \226\128\148  Default, minimal CPU",
+        N .. "50 ms (20 Hz)" .. R .. "   \226\128\148  Smooth, slight CPU increase",
+        W .. "< 50 ms (20+ Hz)" .. R .. " \226\128\148  Aggressive \226\128\148 unnecessary CPU usage",
+        " ",
+        "Lower values = smoother updates but more CPU.",
+        "Most users should keep the " .. V .. "default 100 ms" .. R .. ".",
+    }, c)
+    y = y - 16
+
+    local rowFrames = MakeStatRow("Managed Frames", y)
+    NS.AddTooltip(rowFrames, "Managed Frames", {
+        "Total UI frames created by BetterSBA.",
+        " ",
+        "Includes the main button, secure button,",
+        "queue icons, and config panel.",
+        " ",
+        V .. "< 20" .. R .. "  \226\128\148  Normal",
+        W .. "> 30" .. R .. "  \226\128\148  Unusual \226\128\148 report to dev if growing",
+    }, c)
+    y = y - 16
+
+    local rowOverride = MakeStatRow("Keybind Override", y)
+    NS.AddTooltip(rowOverride, "Keybind Override", {
+        "Status of the keybind interception system.",
+        " ",
+        V .. "Intercepting [key]" .. R .. "  \226\128\148  Working correctly",
+        W .. "Paused: reason" .. R .. "  \226\128\148  Temporarily blocked (mount, vehicle)",
+        W .. "Inactive" .. R .. "  \226\128\148  SBA not found on action bar",
+        " ",
+        "If " .. W .. "Inactive" .. R .. " persists, make sure the SBA spell",
+        "is on your action bar and Assisted Combat is enabled.",
+    }, c)
+    y = y - 16
+
+    local rowProfile = MakeStatRow("Active Profile", y)
+    NS.AddTooltip(rowProfile, "Active Profile", {
+        "The currently loaded settings profile.",
+        " ",
+        "Switch profiles in the " .. U .. "Profiles" .. R .. " section.",
+        "Each character can use a different profile.",
+    }, c)
+    y = y - 16
+
+    local rowUptime = MakeStatRow("Session Uptime", y)
+    NS.AddTooltip(rowUptime, "Session Uptime", {
+        "Time since the addon loaded this session.",
+        " ",
+        "Resets on " .. K .. "/reload" .. R .. " or login.",
+        "Useful for correlating memory growth over time.",
+    }, c)
+    y = y - 16
+
+    local rowHealth = MakeStatRow("Health", y)
+    NS.AddTooltip(rowHealth, "Health Assessment", {
+        "Overall addon health based on all metrics.",
+        " ",
+        V .. "Healthy" .. R .. "  \226\128\148  Everything is working normally",
+        N .. "Warning" .. R .. "  \226\128\148  Minor issue detected (yellow text)",
+        W .. "Critical" .. R .. "  \226\128\148  Serious problem (red text)",
+        " ",
+        "Possible issues flagged:",
+        "  " .. W .. "High memory" .. R .. "  \226\128\148  > 5 MB, consider " .. K .. "/reload" .. R,
+        "  " .. W .. "Memory leak" .. R .. " \226\128\148  > 10 MB, report to dev",
+        "  " .. W .. "Fast tick" .. R .. "   \226\128\148  Update rate < 50ms, wasting CPU",
+        "  " .. W .. "No keybind" .. R .. "  \226\128\148  SBA not on action bar",
+        " ",
+        "If " .. W .. "Critical" .. R .. " appears, screenshot this panel",
+        "and report to the addon developer.",
+    }, c)
+    y = y - 24
+
+    -- Hint that stats are clickable
+    local diagHint = c:CreateFontString(nil, "OVERLAY")
+    diagHint:SetFont(statFont, 8, "")
+    diagHint:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+    diagHint:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.6)
+    diagHint:SetText("Click any stat to copy diagnostic report")
+    y = y - 14
+
+    -- Diagnostic report popup (reused, created on first click)
+    local diagPopup = nil
+
+    local function BuildDiagReport()
+        UpdateAddOnMemoryUsage(ADDON_NAME)
+        local memKB = GetAddOnMemoryUsage(ADDON_NAME)
+        local memStr = memKB >= 1024
+            and string.format("%.2f MB", memKB / 1024)
+            or string.format("%.0f KB", memKB)
+
+        local rate = NS.db.updateRate or 0.1
+        local elapsed = GetTime() - (NS._loadTime or GetTime())
+        local mins = math.floor(elapsed / 60)
+        local secs = math.floor(elapsed % 60)
+        local uptimeStr = mins >= 60
+            and string.format("%dh %dm %ds", math.floor(mins / 60), mins % 60, secs)
+            or string.format("%dm %ds", mins, secs)
+
+        local frameCount = 0
+        if NS.mainButton then frameCount = frameCount + 1 end
+        if NS.secureButton then frameCount = frameCount + 1 end
+        if NS._queueIcons then frameCount = frameCount + #NS._queueIcons end
+        if NS.Config and NS.Config.frame then frameCount = frameCount + 1 end
+
+        local keys = NS._overrideKeys
+        local keybindStr = "Inactive"
+        if keys and #keys > 0 then
+            keybindStr = "Intercepting [" .. table.concat(keys, ", ") .. "]"
+            if NS._overrideSlot then
+                local bar = math.floor((NS._overrideSlot - 1) / 12) + 1
+                local btn = ((NS._overrideSlot - 1) % 12) + 1
+                keybindStr = keybindStr .. " [BAR:" .. bar .. " SLOT:" .. btn .. "]"
+            end
+        else
+            local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+            if reason then keybindStr = "Paused: " .. reason end
+        end
+
+        local profName = NS.GetActiveProfileName and NS:GetActiveProfileName() or "Default"
+
+        local name, realm = UnitFullName("player")
+        local charKey = (name or "?") .. " - " .. (realm or GetRealmName() or "?")
+        local _, class = UnitClass("player")
+        local spec = GetSpecialization and GetSpecialization() or 0
+        local specName = spec > 0 and (select(2, GetSpecializationInfo(spec)) or "?") or "?"
+        local level = UnitLevel("player") or "?"
+
+        local sbaAvail = "No"
+        if NS.C_AssistedCombat and NS.C_AssistedCombat.IsAvailable then
+            local ok, avail = pcall(NS.C_AssistedCombat.IsAvailable)
+            if ok then sbaAvail = avail and "Yes" or "No" end
+        end
+
+        local gcCount = collectgarbage("count")
+        local gcStr = string.format("%.2f MB", gcCount / 1024)
+
+        local lines = {
+            "=== BetterSBA Diagnostic Report ===",
+            "Version: " .. (NS.VERSION or "?"),
+            "Date: " .. date("%Y-%m-%d %H:%M:%S"),
+            "",
+            "--- Character ---",
+            "Character: " .. charKey,
+            "Class: " .. (class or "?") .. " (" .. specName .. ")",
+            "Level: " .. level,
+            "Profile: " .. profName,
+            "",
+            "--- Performance ---",
+            "Addon Memory: " .. memStr,
+            "Lua GC Total: " .. gcStr,
+            "Update Rate: " .. string.format("%.0f ms (%.0f Hz)", rate * 1000, 1 / rate),
+            "Managed Frames: " .. frameCount,
+            "Session Uptime: " .. uptimeStr,
+            "",
+            "--- Keybind ---",
+            "Override Status: " .. keybindStr,
+            "SBA Available: " .. sbaAvail,
+            "",
+            "--- Settings ---",
+            "Enabled: " .. tostring(NS.db.enabled),
+            "Locked: " .. tostring(NS.db.locked),
+            "Show Queue: " .. tostring(NS.db.showQueue),
+            "Button Size: " .. tostring(NS.db.buttonSize),
+            "Scale: " .. tostring(NS.db.scale),
+            "Combat Only: " .. tostring(NS.db.onlyInCombat),
+            "Targeting: " .. tostring(NS.db.enableTargeting),
+            "Pet Attack: " .. tostring(NS.db.enablePetAttack),
+            "Channel Protect: " .. tostring(NS.db.enableChannelProtection),
+            "",
+            "--- Client ---",
+            "Interface: " .. (select(4, GetBuildInfo()) or "?"),
+            "Build: " .. (select(1, GetBuildInfo()) or "?"),
+            "Locale: " .. (GetLocale() or "?"),
+            "================================",
+        }
+        return table.concat(lines, "\n")
+    end
+
+    local function ShowDiagPopup()
+        local report = BuildDiagReport()
+
+        if not diagPopup then
+            local p = NS.CreateFrame("Frame", "BetterSBA_DiagPopup", f, "BackdropTemplate")
+            p:SetSize(400, 340)
+            p:SetPoint("CENTER", f, "CENTER", 0, 0)
+            p:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = 1,
+            })
+            p:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.98)
+            p:SetBackdropBorderColor(sc7[1], sc7[2], sc7[3], 0.8)
+            p:SetFrameStrata("DIALOG")
+            p:SetFrameLevel(f:GetFrameLevel() + 30)
+            p:EnableKeyboard(true)
+            p:SetPropagateKeyboardInput(false)
+            p:SetScript("OnKeyDown", function(self, key)
+                if key == "ESCAPE" then
+                    self:SetPropagateKeyboardInput(false)
+                    self:Hide()
+                else
+                    self:SetPropagateKeyboardInput(true)
+                end
+            end)
+
+            -- Title
+            local title = p:CreateFontString(nil, "OVERLAY")
+            title:SetFont(NS.GetConfigFontPath(), 11, "OUTLINE")
+            title:SetPoint("TOP", 0, -10)
+            title:SetTextColor(sc7[1], sc7[2], sc7[3])
+            title:SetText("Diagnostic Report")
+
+            -- Subtitle
+            local sub = p:CreateFontString(nil, "OVERLAY")
+            sub:SetFont(NS.GetConfigFontPath(), 9, "")
+            sub:SetPoint("TOP", title, "BOTTOM", 0, -4)
+            sub:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+            sub:SetText("Ctrl+A to select all, then Ctrl+C to copy")
+
+            -- Scrollable EditBox
+            local scroll = NS.CreateFrame("ScrollFrame", nil, p, "UIPanelScrollFrameTemplate")
+            scroll:SetPoint("TOPLEFT", 12, -46)
+            scroll:SetPoint("BOTTOMRIGHT", -30, 36)
+
+            local editBox = NS.CreateFrame("EditBox", nil, scroll)
+            editBox:SetMultiLine(true)
+            editBox:SetAutoFocus(false)
+            editBox:SetFont(NS.GetConfigFontPath(), 10, "")
+            editBox:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+            editBox:SetWidth(scroll:GetWidth() or 340)
+            editBox:SetTextInsets(4, 4, 4, 4)
+            -- Prevent editing — restore report on any character input
+            editBox:SetScript("OnChar", function(self)
+                self:SetText(self._report or "")
+                self:HighlightText()
+            end)
+            editBox:SetScript("OnEditFocusGained", function(self)
+                self:HighlightText()
+            end)
+            editBox:SetScript("OnEscapePressed", function(self)
+                self:ClearFocus()
+                p:Hide()
+            end)
+
+            scroll:SetScrollChild(editBox)
+            p._editBox = editBox
+            p._scroll = scroll
+
+            -- Close button
+            local closeBtn = NS.CreateFrame("Button", nil, p, "BackdropTemplate")
+            closeBtn:SetSize(70, 22)
+            closeBtn:SetPoint("BOTTOM", 0, 8)
+            closeBtn:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8X8",
+                edgeFile = "Interface\\Buttons\\WHITE8X8",
+                edgeSize = 1,
+            })
+            closeBtn:SetBackdropColor(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.4)
+            closeBtn:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.6)
+            local closeLbl = closeBtn:CreateFontString(nil, "OVERLAY")
+            closeLbl:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+            closeLbl:SetPoint("CENTER", 0, 0)
+            closeLbl:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+            closeLbl:SetText("Close")
+            closeBtn:SetScript("OnClick", function() p:Hide() end)
+            closeBtn:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.7)
+                closeLbl:SetTextColor(1, 1, 1)
+            end)
+            closeBtn:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.4)
+                closeLbl:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+            end)
+
+            diagPopup = p
+        end
+
+        -- Set content and show
+        diagPopup._editBox._report = report
+        diagPopup._editBox:SetText(report)
+        diagPopup._editBox:SetCursorPosition(0)
+        diagPopup:Show()
+        diagPopup._editBox:SetFocus()
+        diagPopup._editBox:HighlightText()
+    end
+
+    -- Make all stat rows clickable to open diagnostic report
+    local statRows = { rowMem, rowRate, rowFrames, rowOverride, rowProfile, rowUptime, rowHealth }
+    for ri = 1, #statRows do
+        local row = statRows[ri]
+        row:EnableMouse(true)
+        row:SetScript("OnMouseUp", ShowDiagPopup)
+    end
+
+    -- Live update ticker (runs while section 7 content is visible)
+    local perfTicker = nil
+
+    local function UpdatePerfStats()
+        -- Memory
+        UpdateAddOnMemoryUsage(ADDON_NAME)
+        local memKB = GetAddOnMemoryUsage(ADDON_NAME)
+        local memStr
+        if memKB >= 1024 then
+            memStr = string.format("%.1f MB", memKB / 1024)
+        else
+            memStr = string.format("%.0f KB", memKB)
+        end
+        local memVal = rowMem.val
+        memVal:SetText(memStr)
+
+        if memKB < 1024 then
+            memVal:SetTextColor(0.3, 1.0, 0.4)
+        elseif memKB < 3072 then
+            memVal:SetTextColor(1.0, 0.85, 0.2)
+        elseif memKB < 5120 then
+            memVal:SetTextColor(1.0, 0.5, 0.1)
+        elseif memKB < 10240 then
+            memVal:SetText(memStr .. "  [HIGH]")
+            memVal:SetTextColor(1.0, 0.3, 0.3)
+        else
+            memVal:SetText(memStr .. "  [CRITICAL - Report to dev]")
+            memVal:SetTextColor(1.0, 0.1, 0.1)
+        end
+
+        -- Update rate
+        local rate = NS.db.updateRate or 0.1
+        local rateVal = rowRate.val
+        rateVal:SetText(string.format("%.0f ms (%.0f Hz)", rate * 1000, 1 / rate))
+        if rate >= 0.1 then
+            rateVal:SetTextColor(0.3, 1.0, 0.4)
+        elseif rate >= 0.05 then
+            rateVal:SetTextColor(1.0, 0.85, 0.2)
+        else
+            rateVal:SetText(string.format("%.0f ms (%.0f Hz)  [EXCESSIVE]", rate * 1000, 1 / rate))
+            rateVal:SetTextColor(1.0, 0.3, 0.3)
+        end
+
+        -- Managed frames count
+        local frameCount = 0
+        if NS.mainButton then frameCount = frameCount + 1 end
+        if NS.secureButton then frameCount = frameCount + 1 end
+        if NS._queueIcons then frameCount = frameCount + #NS._queueIcons end
+        if NS.Config and NS.Config.frame then frameCount = frameCount + 1 end
+        local fVal = rowFrames.val
+        fVal:SetText(tostring(frameCount))
+        if frameCount <= 20 then
+            fVal:SetTextColor(0.3, 1.0, 0.4)
+        elseif frameCount <= 30 then
+            fVal:SetTextColor(1.0, 0.85, 0.2)
+        else
+            fVal:SetText(frameCount .. "  [HIGH - Report to dev]")
+            fVal:SetTextColor(1.0, 0.3, 0.3)
+        end
+
+        -- Keybind override status
+        local oVal = rowOverride.val
+        local keys = NS._overrideKeys
+        if keys and #keys > 0 then
+            oVal:SetText(NS.table_concat(keys, ", "))
+            oVal:SetTextColor(0.3, 1.0, 0.4)
+        else
+            local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+            if reason then
+                oVal:SetText("Paused: " .. reason)
+                oVal:SetTextColor(1.0, 0.53, 0.0)
+            else
+                oVal:SetText("Inactive")
+                oVal:SetTextColor(1.0, 0.3, 0.3)
+            end
+        end
+
+        -- Active profile
+        local pVal = rowProfile.val
+        local profName = NS:GetActiveProfileName()
+        pVal:SetText(profName)
+        pVal:SetTextColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3])
+
+        -- Session uptime (from addon load, not panel open)
+        local uVal = rowUptime.val
+        local elapsed = GetTime() - (NS._loadTime or GetTime())
+        local mins = math.floor(elapsed / 60)
+        local secs = math.floor(elapsed % 60)
+        if mins >= 60 then
+            local hrs = math.floor(mins / 60)
+            mins = mins % 60
+            uVal:SetText(string.format("%dh %dm %ds", hrs, mins, secs))
+        else
+            uVal:SetText(string.format("%dm %ds", mins, secs))
+        end
+        uVal:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+
+        -- Overall health assessment
+        local hVal = rowHealth.val
+        local issues = {}
+        local severity = 0  -- 0=healthy, 1=warning, 2=critical
+
+        if memKB > 10240 then
+            issues[#issues + 1] = "Memory leak (" .. string.format("%.1f MB", memKB / 1024) .. ") - report to dev"
+            severity = 2
+        elseif memKB > 5120 then
+            issues[#issues + 1] = "High memory"
+            severity = math.max(severity, 1)
+        end
+
+        if rate < 0.05 then
+            issues[#issues + 1] = "Excessive tick rate"
+            severity = math.max(severity, 1)
+        end
+
+        if not keys or #keys == 0 then
+            local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+            if not reason then
+                issues[#issues + 1] = "No keybind active"
+                severity = math.max(severity, 1)
+            end
+        end
+
+        if frameCount > 30 then
+            issues[#issues + 1] = "Frame count high - report to dev"
+            severity = 2
+        end
+
+        if severity == 0 then
+            hVal:SetText("Healthy")
+            hVal:SetTextColor(0.3, 1.0, 0.4)
+        elseif severity == 1 then
+            hVal:SetText(table.concat(issues, " | "))
+            hVal:SetTextColor(1.0, 0.85, 0.2)
+        else
+            hVal:SetText(table.concat(issues, " | "))
+            hVal:SetTextColor(1.0, 0.1, 0.1)
+        end
+    end
+
+    -- Start/stop ticker when section content shows/hides
+    -- 5s interval — UpdateAddOnMemoryUsage() forces a full GC accounting
+    -- pass which causes visible stutters at 1s intervals
+    c:HookScript("OnShow", function()
+        UpdatePerfStats()
+        perfTicker = NS.C_Timer_NewTicker(5.0, UpdatePerfStats)
+    end)
+    c:HookScript("OnHide", function()
+        if perfTicker then perfTicker:Cancel() perfTicker = nil end
+    end)
+
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+    end -- do (Section 7)
+
+    ----------------------------------------------------------------
+    -- Section 8: Profiles (wrapped in do...end to limit locals)
+    ----------------------------------------------------------------
+    c = contentFrames[8]
+    y = -12
+    do
+
+    local PROFILE_BTN_BACKDROP = {
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    }
+
+    -- Active Profile dropdown
+    local profLbl = c:CreateFontString(nil, "OVERLAY")
+    profLbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
+    profLbl:SetPoint("TOPLEFT", 14, y)
+    profLbl:SetTextColor(NS.unpack(T.TEXT_DIM))
+    profLbl:SetText("Active Profile")
+
+    local profBtn = NS.CreateFrame("Button", nil, c, "BackdropTemplate")
+    local profBtnW = contentW - 28 - 90
+    profBtn:SetSize(profBtnW, 22)
+    profBtn:SetPoint("TOPLEFT", 14, y - 16)
+    profBtn:SetBackdrop(PROFILE_BTN_BACKDROP)
+    profBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+    profBtn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+
+    local profBtnText = profBtn:CreateFontString(nil, "OVERLAY")
+    profBtnText:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    profBtnText:SetPoint("LEFT", 8, 0)
+    profBtnText:SetPoint("RIGHT", -20, 0)
+    profBtnText:SetJustifyH("LEFT")
+    profBtnText:SetTextColor(NS.unpack(c._sectionColor or T.ACCENT))
+    profBtnText:SetText(NS:GetActiveProfileName())
+
+    local profArrow = profBtn:CreateFontString(nil, "OVERLAY")
+    profArrow:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    profArrow:SetPoint("RIGHT", -6, 0)
+    profArrow:SetTextColor(NS.unpack(T.TEXT_DIM))
+    profArrow:SetText("v")
+
+    -- Profile dropdown popup
+    local profDropdown = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
+    profDropdown:SetWidth(profBtnW)
+    profDropdown:SetBackdrop(PROFILE_BTN_BACKDROP)
+    profDropdown:SetBackdropColor(NS.unpack(T.BG_DARK))
+    profDropdown:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    profDropdown:SetFrameStrata("TOOLTIP")
+    profDropdown:SetFrameLevel(100)
+    profDropdown:SetPoint("TOPLEFT", profBtn, "BOTTOMLEFT", 0, -2)
+    profDropdown:Hide()
+    profDropdown:EnableMouse(true)
+
+    local profEntries = {}
+    local ROW_H_PROF = 20
+
+    local function RefreshProfileDropdown()
+        -- Clear old entries
+        for _, e in NS.ipairs(profEntries) do
+            e:Hide()
+            e:SetParent(nil)
+        end
+        profEntries = {}
+
+        local profiles = NS:GetProfileList()
+        profDropdown:SetHeight(#profiles * ROW_H_PROF + 4)
+
+        local maxTextW = profBtnW
+        for i, name in NS.ipairs(profiles) do
+            local entry = NS.CreateFrame("Button", nil, profDropdown)
+            entry:SetHeight(ROW_H_PROF)
+            entry:SetPoint("TOPLEFT", 2, -(i - 1) * ROW_H_PROF - 2)
+            entry:SetPoint("RIGHT", profDropdown, "RIGHT", -2, 0)
+
+            local hl = entry:CreateTexture(nil, "HIGHLIGHT")
+            hl:SetAllPoints()
+            hl:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.5)
+
+            entry.text = entry:CreateFontString(nil, "OVERLAY")
+            entry.text:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+            entry.text:SetPoint("LEFT", 8, 0)
+            entry.text:SetJustifyH("LEFT")
+
+            -- Mark active profile
+            if name == NS:GetActiveProfileName() then
+                entry.text:SetText("|cFFFFCC00\226\151\134|r " .. name)
+            else
+                entry.text:SetText("  " .. name)
+            end
+
+            local tw = entry.text:GetStringWidth()
+            if tw and tw + 24 > maxTextW then maxTextW = tw + 24 end
+
+            entry:SetScript("OnClick", function()
+                profDropdown:Hide()
+                if name == NS:GetActiveProfileName() then return end
+                local ok, err = NS:SwitchProfile(name)
+                if ok then
+                    profBtnText:SetText(name)
+                    print("|cFF66B8D9BetterSBA|r: Switched to profile |cFFFFCC00" .. name .. "|r")
+                    -- Rebuild config panel to reflect new profile settings
+                    NS._restoreSection = NS._activeSection or activeSection
+                    NS.Config.frame:SetAlpha(0)
+                    NS.Config.frame:Hide()
+                    NS.Config.frame = nil
+                    NS.C_Timer_After(0.02, function()
+                        NS.Config:Toggle()
+                        if NS.Config.frame then NS.Config.frame:SetAlpha(1) end
+                    end)
+                else
+                    print("|cFF66B8D9BetterSBA|r: |cFFFF4444" .. (err or "Error") .. "|r")
+                end
+            end)
+
+            profEntries[i] = entry
+        end
+        profDropdown:SetWidth(math.max(profBtnW, maxTextW))
+    end
+
+    profBtn:SetScript("OnClick", function()
+        if profDropdown:IsShown() then
+            profDropdown:Hide()
+        else
+            RefreshProfileDropdown()
+            profDropdown:Show()
+        end
+    end)
+    profBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(T.ACCENT_DIM)) end)
+    profBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(T.BORDER)) end)
+
+    -- Action buttons row: New / Delete
+    local function MakeProfileButton(parent, label, x, yOff, w, onClick)
+        local b = NS.CreateFrame("Button", nil, parent, "BackdropTemplate")
+        b:SetSize(w, 22)
+        b:SetPoint("TOPLEFT", x, yOff)
+        b:SetBackdrop(PROFILE_BTN_BACKDROP)
+        b:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+        b:SetBackdropBorderColor(NS.unpack(T.BORDER))
+        local bl = b:CreateFontString(nil, "OVERLAY")
+        bl:SetFont(NS.GetConfigFontPath(), 10, "")
+        bl:SetPoint("CENTER")
+        bl:SetTextColor(NS.unpack(T.TEXT))
+        bl:SetText(label)
+        b:SetScript("OnClick", onClick)
+        b:SetScript("OnEnter", function(self)
+            self:SetBackdropBorderColor(NS.unpack(T.ACCENT_DIM))
+            bl:SetTextColor(NS.unpack(c._sectionColorBright or T.ACCENT_BRIGHT))
+        end)
+        b:SetScript("OnLeave", function(self)
+            self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+            bl:SetTextColor(NS.unpack(T.TEXT))
+        end)
+        return b
+    end
+
+    -- New Profile button
+    local newProfBtn = MakeProfileButton(c, "+ New", 14 + profBtnW + 6, y - 16, 40, function()
+        -- Simple prompt: create profile named "Profile N"
+        local profiles = NS:GetProfileList()
+        local n = #profiles + 1
+        local name = "Profile " .. n
+        while NS.dbRoot.profiles[name] do
+            n = n + 1
+            name = "Profile " .. n
+        end
+        local ok, err = NS:CreateProfile(name)
+        if ok then
+            print("|cFF66B8D9BetterSBA|r: Created profile |cFFFFCC00" .. name .. "|r")
+        else
+            print("|cFF66B8D9BetterSBA|r: |cFFFF4444" .. (err or "Error") .. "|r")
+        end
+    end)
+    NS.AddTooltip(newProfBtn, "New Profile", {
+        "Creates a new profile by " .. V .. "copying" .. R .. " all current settings.",
+        " ",
+        "The new profile can be customized independently.",
+    }, c)
+
+    -- Delete Profile button
+    local delProfBtn = MakeProfileButton(c, "Delete", 14 + profBtnW + 50, y - 16, 42, function()
+        local current = NS:GetActiveProfileName()
+        local ok, err = NS:DeleteProfile(current)
+        if ok then
+            print("|cFF66B8D9BetterSBA|r: Deleted profile |cFFFFCC00" .. current .. "|r")
+            -- Switch to first available
+            local first = NS:GetProfileList()[1]
+            if first then NS:SwitchProfile(first) end
+            -- Rebuild panel
+            NS._restoreSection = 8
+            NS.Config.frame:SetAlpha(0)
+            NS.Config.frame:Hide()
+            NS.Config.frame = nil
+            NS.C_Timer_After(0.02, function()
+                NS.Config:Toggle()
+                if NS.Config.frame then NS.Config.frame:SetAlpha(1) end
+            end)
+        else
+            print("|cFF66B8D9BetterSBA|r: |cFFFF4444" .. (err or "Error") .. "|r")
+        end
+    end)
+    NS.AddTooltip(delProfBtn, "Delete Profile", {
+        W .. "Deletes" .. R .. " the currently active profile.",
+        " ",
+        "Cannot delete the " .. V .. "last remaining" .. R .. " profile.",
+        "Cannot delete the profile you are " .. V .. "using" .. R .. ".",
+    }, c)
+
+    y = y - 52
+
+    -- Character Binding section
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local charHeader = c:CreateFontString(nil, "OVERLAY")
+        charHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        charHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        charHeader:SetTextColor(col[1], col[2], col[3])
+        charHeader:SetText("CHARACTER BINDING")
+        local charLine = c:CreateTexture(nil, "ARTWORK")
+        charLine:SetHeight(1)
+        charLine:SetColorTexture(col[1], col[2], col[3], 0.4)
+        charLine:SetPoint("TOPLEFT", charHeader, "BOTTOMLEFT", 0, -3)
+        charLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+    end
+    y = y - 22
+
+    local charKey = NS.GetCharKey()
+    local charInfoLbl = c:CreateFontString(nil, "OVERLAY")
+    charInfoLbl:SetFont(NS.GetConfigFontPath(), 9, "")
+    charInfoLbl:SetPoint("TOPLEFT", 14, y)
+    charInfoLbl:SetTextColor(NS.unpack(T.TEXT_MUTED))
+    charInfoLbl:SetText("Character: |cFFCCCCCC" .. charKey .. "|r")
+    y = y - 18
+
+    -- Character binding info label
+    local hasCharProf = NS:HasCharProfile()
+    local charStatusLbl = c:CreateFontString(nil, "OVERLAY")
+    charStatusLbl:SetFont(NS.GetConfigFontPath(), 10, "")
+    charStatusLbl:SetPoint("TOPLEFT", 14, y)
+    if hasCharProf then
+        charStatusLbl:SetTextColor(0.30, 0.85, 0.45)
+        charStatusLbl:SetText("This character has a specific profile binding.")
+    else
+        charStatusLbl:SetTextColor(NS.unpack(T.TEXT_DIM))
+        charStatusLbl:SetText("Using global default profile.")
+    end
+    y = y - 20
+
+    -- Bind / Unbind character button
+    local charBindBtn = MakeProfileButton(c, hasCharProf and "Unbind Character" or "Bind to This Profile",
+        14, y, hasCharProf and 120 or 130, function()
+        if NS:HasCharProfile() then
+            NS:SetCharProfile(nil)
+            print("|cFF66B8D9BetterSBA|r: Character unbound — using global default profile")
+        else
+            NS:SetCharProfile(NS:GetActiveProfileName())
+            print("|cFF66B8D9BetterSBA|r: Character bound to |cFFFFCC00" .. NS:GetActiveProfileName() .. "|r")
+        end
+        -- Rebuild to update button text / status
+        NS._restoreSection = 8
+        NS.Config.frame:SetAlpha(0)
+        NS.Config.frame:Hide()
+        NS.Config.frame = nil
+        NS.C_Timer_After(0.02, function()
+            NS.Config:Toggle()
+            if NS.Config.frame then NS.Config.frame:SetAlpha(1) end
+        end)
+    end)
+    NS.AddTooltip(charBindBtn, hasCharProf and "Unbind Character" or "Bind Character", {
+        hasCharProf
+            and "Removes the character-specific profile binding.\nThis character will use the " .. V .. "global default" .. R .. " profile."
+            or "Assigns this character to the " .. V .. "current profile" .. R .. ".\nOther characters will continue using the global default.",
+    }, c)
+    y = y - 34
+
+    -- Management section
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local mgmtHeader = c:CreateFontString(nil, "OVERLAY")
+        mgmtHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        mgmtHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        mgmtHeader:SetTextColor(col[1], col[2], col[3])
+        mgmtHeader:SetText("MANAGEMENT")
+        local mgmtLine = c:CreateTexture(nil, "ARTWORK")
+        mgmtLine:SetHeight(1)
+        mgmtLine:SetColorTexture(col[1], col[2], col[3], 0.4)
+        mgmtLine:SetPoint("TOPLEFT", mgmtHeader, "BOTTOMLEFT", 0, -3)
+        mgmtLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+    end
+    y = y - 22
+
+    -- Copy From dropdown
+    local copyFromLbl = c:CreateFontString(nil, "OVERLAY")
+    copyFromLbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
+    copyFromLbl:SetPoint("TOPLEFT", 14, y)
+    copyFromLbl:SetTextColor(NS.unpack(T.TEXT_DIM))
+    copyFromLbl:SetText("Copy Settings From")
+    y = y - 16
+
+    local copyFromBtn = NS.CreateFrame("Button", nil, c, "BackdropTemplate")
+    local copyW = contentW - 28 - 60
+    copyFromBtn:SetSize(copyW, 22)
+    copyFromBtn:SetPoint("TOPLEFT", 14, y)
+    copyFromBtn:SetBackdrop(PROFILE_BTN_BACKDROP)
+    copyFromBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+    copyFromBtn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+
+    local copyFromText = copyFromBtn:CreateFontString(nil, "OVERLAY")
+    copyFromText:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    copyFromText:SetPoint("LEFT", 8, 0)
+    copyFromText:SetPoint("RIGHT", -20, 0)
+    copyFromText:SetJustifyH("LEFT")
+    copyFromText:SetTextColor(NS.unpack(T.TEXT_MUTED))
+    copyFromText:SetText("Select profile...")
+
+    local copyFromArrow = copyFromBtn:CreateFontString(nil, "OVERLAY")
+    copyFromArrow:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    copyFromArrow:SetPoint("RIGHT", -6, 0)
+    copyFromArrow:SetTextColor(NS.unpack(T.TEXT_DIM))
+    copyFromArrow:SetText("v")
+
+    -- Copy From dropdown popup
+    local copyDropdown = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
+    copyDropdown:SetWidth(copyW)
+    copyDropdown:SetBackdrop(PROFILE_BTN_BACKDROP)
+    copyDropdown:SetBackdropColor(NS.unpack(T.BG_DARK))
+    copyDropdown:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    copyDropdown:SetFrameStrata("TOOLTIP")
+    copyDropdown:SetFrameLevel(100)
+    copyDropdown:SetPoint("TOPLEFT", copyFromBtn, "BOTTOMLEFT", 0, -2)
+    copyDropdown:Hide()
+    copyDropdown:EnableMouse(true)
+
+    local copyEntries = {}
+    local selectedCopySource = nil
+
+    local function RefreshCopyDropdown()
+        for _, e in NS.ipairs(copyEntries) do
+            e:Hide()
+            e:SetParent(nil)
+        end
+        copyEntries = {}
+
+        local profiles = NS:GetProfileList()
+        -- Filter out current profile
+        local filtered = {}
+        for _, name in NS.ipairs(profiles) do
+            if name ~= NS:GetActiveProfileName() then
+                filtered[#filtered + 1] = name
+            end
+        end
+
+        if #filtered == 0 then
+            copyDropdown:SetHeight(ROW_H_PROF + 4)
+            local entry = NS.CreateFrame("Button", nil, copyDropdown)
+            entry:SetHeight(ROW_H_PROF)
+            entry:SetPoint("TOPLEFT", 2, -2)
+            entry:SetPoint("RIGHT", copyDropdown, "RIGHT", -2, 0)
+            entry.text = entry:CreateFontString(nil, "OVERLAY")
+            entry.text:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+            entry.text:SetPoint("LEFT", 8, 0)
+            entry.text:SetTextColor(NS.unpack(T.TEXT_MUTED))
+            entry.text:SetText("No other profiles")
+            copyEntries[1] = entry
+            return
+        end
+
+        copyDropdown:SetHeight(#filtered * ROW_H_PROF + 4)
+        for i, name in NS.ipairs(filtered) do
+            local entry = NS.CreateFrame("Button", nil, copyDropdown)
+            entry:SetHeight(ROW_H_PROF)
+            entry:SetPoint("TOPLEFT", 2, -(i - 1) * ROW_H_PROF - 2)
+            entry:SetPoint("RIGHT", copyDropdown, "RIGHT", -2, 0)
+
+            local hl = entry:CreateTexture(nil, "HIGHLIGHT")
+            hl:SetAllPoints()
+            hl:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.5)
+
+            entry.text = entry:CreateFontString(nil, "OVERLAY")
+            entry.text:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+            entry.text:SetPoint("LEFT", 8, 0)
+            entry.text:SetJustifyH("LEFT")
+            entry.text:SetText(name)
+
+            entry:SetScript("OnClick", function()
+                selectedCopySource = name
+                copyFromText:SetText(name)
+                copyFromText:SetTextColor(NS.unpack(c._sectionColor or T.ACCENT))
+                copyDropdown:Hide()
+            end)
+
+            copyEntries[i] = entry
+        end
+    end
+
+    copyFromBtn:SetScript("OnClick", function()
+        if copyDropdown:IsShown() then
+            copyDropdown:Hide()
+        else
+            RefreshCopyDropdown()
+            copyDropdown:Show()
+        end
+    end)
+    copyFromBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(T.ACCENT_DIM)) end)
+    copyFromBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(T.BORDER)) end)
+
+    -- Apply Copy button
+    local applyCopyBtn = MakeProfileButton(c, "Apply", 14 + copyW + 6, y, 50, function()
+        if not selectedCopySource then
+            print("|cFF66B8D9BetterSBA|r: Select a source profile first")
+            return
+        end
+        local ok, err = NS:CopyFromProfile(selectedCopySource)
+        if ok then
+            print("|cFF66B8D9BetterSBA|r: Copied settings from |cFFFFCC00" .. selectedCopySource .. "|r")
+            -- Rebuild panel
+            NS._restoreSection = 8
+            NS.Config.frame:SetAlpha(0)
+            NS.Config.frame:Hide()
+            NS.Config.frame = nil
+            NS.C_Timer_After(0.02, function()
+                NS.Config:Toggle()
+                if NS.Config.frame then NS.Config.frame:SetAlpha(1) end
+            end)
+        else
+            print("|cFF66B8D9BetterSBA|r: |cFFFF4444" .. (err or "Error") .. "|r")
+        end
+    end)
+    NS.AddTooltip(applyCopyBtn, "Apply Copy", {
+        "Copies all settings from the selected profile",
+        "into the " .. V .. "current" .. R .. " profile.",
+        " ",
+        W .. "Overwrites" .. R .. " current settings. Cannot undo.",
+    }, c)
+    y = y - 36
+
+    -- Reset to Defaults button
+    local resetBtn = MakeProfileButton(c, "Reset to Defaults", 14, y, 130, function()
+        local ok, err = NS:ResetProfile()
+        if ok then
+            print("|cFF66B8D9BetterSBA|r: Profile reset to defaults")
+            NS._restoreSection = 8
+            NS.Config.frame:SetAlpha(0)
+            NS.Config.frame:Hide()
+            NS.Config.frame = nil
+            NS.C_Timer_After(0.02, function()
+                NS.Config:Toggle()
+                if NS.Config.frame then NS.Config.frame:SetAlpha(1) end
+            end)
+        else
+            print("|cFF66B8D9BetterSBA|r: |cFFFF4444" .. (err or "Error") .. "|r")
+        end
+    end)
+    NS.AddTooltip(resetBtn, "Reset to Defaults", {
+        "Resets " .. W .. "all settings" .. R .. " in the current profile",
+        "back to their " .. V .. "default" .. R .. " values.",
+        " ",
+        W .. "Cannot undo" .. R .. " this action.",
+    }, c)
+    y = y - 30
+
+    c._contentH = math.abs(y)
+    c:SetHeight(c._contentH)
+
+    end -- do (Profiles section local scope)
+
+    ----------------------------------------------------------------
+    -- Search: settings index + results display
+    ----------------------------------------------------------------
+    local searchMode = false
+
+    -- Searchable index: maps display labels → section indices
+    -- Section titles are included so users can search by group name
+    local settingsIndex = {
+        { label = "Combat Assist", section = 1, isSection = true },
+        { label = "Auto-Dismount", section = 1 },
+        { label = "Auto-Target Enemies", section = 1 },
+        { label = "Pet Attack", section = 1 },
+        { label = "Channel Protection", section = 1 },
+        { label = "Macro Preview", section = 1 },
+        { label = "Appearance", section = 2, isSection = true },
+        { label = "Cast Animation", section = 2 },
+        { label = "Animation Style", section = 2 },
+        { label = "Animation Preview", section = 2 },
+        { label = "Scan Line", section = 2 },
+        { label = "Orbiting Dots", section = 2 },
+        { label = "Pulse Effects", section = 2 },
+        { label = "Slide Transitions", section = 2 },
+        { label = "Global Font", section = 2 },
+        { label = "Global Outline", section = 2 },
+        { label = "Config Panel Font", section = 2 },
+        { label = "Config Panel Outline", section = 2 },
+        { label = "Config Panel Override", section = 2 },
+        { label = "Keybind Font", section = 2 },
+        { label = "Keybind Outline", section = 2 },
+        { label = "Keybind Font Size", section = 2 },
+        { label = "Keybind Override", section = 2 },
+        { label = "Queue Keybind Font", section = 2 },
+        { label = "Queue Keybind Outline", section = 2 },
+        { label = "Queue Keybind Font Size", section = 2 },
+        { label = "Queue Keybind Override", section = 2 },
+        { label = "Queue Label Font", section = 2 },
+        { label = "Queue Label Outline", section = 2 },
+        { label = "Queue Label Font Size", section = 2 },
+        { label = "Queue Label Override", section = 2 },
+        { label = "Active Display", section = 3, isSection = true },
+        { label = "Button Size", section = 3 },
+        { label = "Show Keybind", section = 3 },
+        { label = "Show Cooldown", section = 3 },
+        { label = "Range Coloring", section = 3 },
+        { label = "Button Background", section = 3 },
+        { label = "Queue Display", section = 4, isSection = true },
+        { label = "Show Ability Queue", section = 4 },
+        { label = "Queue Icon Size", section = 4 },
+        { label = "Queue Scale", section = 4 },
+        { label = "Show Queue Keybinds", section = 4 },
+        { label = "Position", section = 4 },
+        { label = "Detach Queue", section = 4 },
+        { label = "Queue X Offset", section = 4 },
+        { label = "Queue Y Offset", section = 4 },
+        { label = "Queue Background", section = 4 },
+        { label = "Queue Border", section = 4 },
+        { label = "Label X Offset", section = 4 },
+        { label = "Label Y Offset", section = 4 },
+        { label = "Visibility", section = 5, isSection = true },
+        { label = "Combat Only", section = 5 },
+        { label = "Hide In Vehicle", section = 5 },
+        { label = "Button Out-of-Combat Alpha", section = 5 },
+        { label = "Queue Out-of-Combat Alpha", section = 5 },
+        { label = "Importance", section = 6, isSection = true },
+        { label = "Importance Borders", section = 6 },
+        { label = "Auto Attack Color", section = 6 },
+        { label = "Filler Color", section = 6 },
+        { label = "Short Cooldown Color", section = 6 },
+        { label = "Long Cooldown Color", section = 6 },
+        { label = "Major Cooldown Color", section = 6 },
+        { label = "Section Theme Colors", section = 6 },
+        { label = "Combat Assist Color", section = 6 },
+        { label = "Appearance Color", section = 6 },
+        { label = "Active Display Color", section = 6 },
+        { label = "Queue Display Color", section = 6 },
+        { label = "Visibility Color", section = 6 },
+        { label = "Importance Color", section = 6 },
+        { label = "Advanced Color", section = 6 },
+        { label = "Profiles Color", section = 6 },
+        { label = "Advanced", section = 7, isSection = true },
+        { label = "Modifier Scaling", section = 7 },
+        { label = "Lock Position", section = 7 },
+        { label = "Debug Mode", section = 7 },
+        { label = "LDB / Minimap Options", section = 7 },
+        { label = "Show Minimap Button", section = 7 },
+        { label = "LDB Status Text", section = 7 },
+        { label = "Performance", section = 7 },
+        { label = "Memory Usage", section = 7 },
+        { label = "Health", section = 7 },
+        { label = "Profiles", section = 8, isSection = true },
+        { label = "Active Profile", section = 8 },
+        { label = "New Profile", section = 8 },
+        { label = "Delete Profile", section = 8 },
+        { label = "Character Binding", section = 8 },
+        { label = "Copy Settings From", section = 8 },
+        { label = "Reset to Defaults", section = 8 },
+    }
+
+    -- Search results frame (shown in right panel during search)
+    local searchResultsFrame = NS.CreateFrame("Frame", nil, scrollChild)
+    searchResultsFrame:SetSize(contentW, 100)
+    searchResultsFrame:SetPoint("TOPLEFT", 0, 0)
+    searchResultsFrame:EnableMouse(true)
+    searchResultsFrame:Hide()
+
+    -- Result entry pool
+    local MAX_RESULTS = 20
+    local resultEntries = {}
+    for i = 1, MAX_RESULTS do
+        local entry = NS.CreateFrame("Button", nil, searchResultsFrame)
+        entry:SetSize(contentW - 28, 22)
+        entry:SetPoint("TOPLEFT", 14, -(i - 1) * 24 - 8)
+
+        local hl = entry:CreateTexture(nil, "HIGHLIGHT")
+        hl:SetAllPoints()
+        hl:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.3)
+
+        local lbl = entry:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(NS.GetConfigFontPath(), 10, "")
+        lbl:SetPoint("LEFT", 0, 0)
+        lbl:SetTextColor(NS.unpack(T.TEXT))
+
+        local secLbl = entry:CreateFontString(nil, "OVERLAY")
+        secLbl:SetFont(NS.GetConfigFontPath(), 9, "")
+        secLbl:SetPoint("RIGHT", -14, 0)
+        secLbl:SetTextColor(NS.unpack(T.TEXT_MUTED))
+
+        entry._lbl = lbl
+        entry._secLbl = secLbl
+        entry:Hide()
+        resultEntries[i] = entry
+    end
+
+    ----------------------------------------------------------------
+    -- Left panel: section buttons + indicator
+    ----------------------------------------------------------------
+    local BTN_H = 28
+    local BTN_GAP = 2
+    local BTN_TOP = 44
+    local sectionButtons = {}
+
+    -- Sliding accent indicator (2px bar on left edge, slides between sections)
+    local indicator = leftPanel:CreateTexture(nil, "OVERLAY")
+    indicator:SetWidth(2)
+    indicator:SetHeight(BTN_H)
+    indicator:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.9)
+
+    -- Fade transition state (reused across section switches)
+    local fadingContent = nil
+    local fadeStartTime = 0
+    local fadeFrame = NS.CreateFrame("Frame")
+    fadeFrame:SetScript("OnUpdate", function(self)
+        if not fadingContent then
+            self:Hide()
+            return
+        end
+        local pct = (GetTime() - fadeStartTime) / 0.15
+        if pct >= 1 then
+            fadingContent:SetAlpha(1)
+            fadingContent = nil
+            self:Hide()
+        else
+            fadingContent:SetAlpha(pct)
+        end
+    end)
+    fadeFrame:Hide()
+
+    -- Section switching
+    local indicatorTargetY = -BTN_TOP
+    local indicatorCurrentY = indicatorTargetY
+
+    local function SelectSection(idx)
+        -- Exit search mode if active
+        if searchMode then
+            searchMode = false
+            searchResultsFrame:Hide()
+        end
+
+        -- Hide old content
+        if contentFrames[activeSection] then
+            contentFrames[activeSection]:Hide()
+        end
+
+        -- Update button visuals (active label gets full section color)
+        local dc = SECTIONS[idx].dotColor
+        for i, btn in NS.ipairs(sectionButtons) do
+            if i == idx then
+                btn._lbl:SetTextColor(dc[1], dc[2], dc[3])
+                btn._bg:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.4)
+            else
+                local bc = btn._dotColor
+                btn._lbl:SetTextColor(bc[1] * 0.7, bc[2] * 0.7, bc[3] * 0.7)
+                btn._bg:SetColorTexture(0, 0, 0, 0)
+            end
+        end
+
+        activeSection = idx
+        NS._activeSection = idx
+
+        -- Show new content (with fade if transitions enabled)
+        local cf = contentFrames[idx]
+        scrollChild:SetHeight(cf._contentH or 100)
+        -- Restore scroll position if rebuilding, otherwise reset to top
+        if NS._restoreScroll then
+            scrollFrame:SetVerticalScroll(NS._restoreScroll)
+            NS._restoreScroll = nil
+        else
+            scrollFrame:SetVerticalScroll(0)
+        end
+        cf:Show()
+
+        if NS.db.cfgAnimTransitions then
+            cf:SetAlpha(0)
+            fadingContent = cf
+            fadeStartTime = GetTime()
+            fadeFrame:Show()
+        else
+            cf:SetAlpha(1)
+        end
+
+        -- Update section title (colored to match section)
+        sectionTitle:SetText(SECTIONS[idx].label:upper())
+        sectionTitle:SetTextColor(dc[1], dc[2], dc[3])
+
+        -- Set indicator slide target
+        indicatorTargetY = -(idx - 1) * (BTN_H + BTN_GAP) - BTN_TOP
+
+        -- Update underline + indicator color to match section
+        titleUnderline:SetColorTexture(dc[1], dc[2], dc[3], 0.6)
+        indicator:SetColorTexture(dc[1], dc[2], dc[3], 0.9)
+
+        UpdateScrollbar()
+    end
+
+    -- Create section buttons (with importance dot indicator)
+    for i, sec in NS.ipairs(SECTIONS) do
+        local btn = NS.CreateFrame("Button", nil, leftPanel)
+        btn:SetSize(leftW - 4, BTN_H)
+        btn:SetPoint("TOPLEFT", 2, -(i - 1) * (BTN_H + BTN_GAP) - BTN_TOP)
+
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0)
+
+        -- Importance color dot
+        local impDot = btn:CreateTexture(nil, "OVERLAY")
+        impDot:SetSize(5, 5)
+        impDot:SetPoint("LEFT", 6, 0)
+        local dc = sec.dotColor
+        impDot:SetColorTexture(dc[1], dc[2], dc[3], 0.9)
+
+        local lbl = btn:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(NS.GetConfigFontPath(), 10, "OUTLINE")
+        lbl:SetPoint("LEFT", impDot, "RIGHT", 6, 0)
+        lbl:SetTextColor(dc[1] * 0.7, dc[2] * 0.7, dc[3] * 0.7)
+        lbl:SetText(sec.label)
+
+        btn._bg = bg
+        btn._lbl = lbl
+        btn._impDot = impDot
+        btn._dotColor = dc
+
+        btn:SetScript("OnClick", function() SelectSection(i) end)
+        btn:SetScript("OnEnter", function()
+            if i ~= activeSection then
+                lbl:SetTextColor(NS.unpack(T.TEXT))
+                bg:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.25)
+            end
+        end)
+        btn:SetScript("OnLeave", function()
+            if i ~= activeSection then
+                lbl:SetTextColor(dc[1] * 0.7, dc[2] * 0.7, dc[3] * 0.7)
+                bg:SetColorTexture(0, 0, 0, 0)
+            end
+        end)
+
+        sectionButtons[i] = btn
+    end
+
+    ----------------------------------------------------------------
+    -- Search box (top of left panel)
+    ----------------------------------------------------------------
+    local searchBox = NS.CreateFrame("EditBox", nil, leftPanel, "BackdropTemplate")
+    searchBox:SetSize(leftW - 12, 22)
+    searchBox:SetPoint("TOPLEFT", 6, -8)
+    searchBox:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    searchBox:SetBackdropColor(NS.unpack(T.BG))
+    searchBox:SetBackdropBorderColor(NS.unpack(T.BORDER_ACCENT))
+    searchBox:SetFont(NS.GetConfigFontPath(), 9, "")
+    searchBox:SetTextColor(NS.unpack(T.TEXT))
+    searchBox:SetTextInsets(6, 6, 0, 0)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetMaxLetters(30)
+
+    local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
+    searchPlaceholder:SetFont(NS.GetConfigFontPath(), 9, "")
+    searchPlaceholder:SetPoint("LEFT", 6, 0)
+    searchPlaceholder:SetTextColor(NS.unpack(T.TEXT_MUTED))
+    searchPlaceholder:SetText("Search settings...")
+
+    local function DoSearch(query)
+        query = query:lower()
+        if query == "" then
+            -- Exit search mode → restore active section
+            if searchMode then
+                searchMode = false
+                searchResultsFrame:Hide()
+                contentFrames[activeSection]:Show()
+                local sec = SECTIONS[activeSection]
+                sectionTitle:SetText(sec.label:upper())
+                sectionTitle:SetTextColor(sec.dotColor[1], sec.dotColor[2], sec.dotColor[3])
+                scrollChild:SetHeight(contentFrames[activeSection]._contentH or 100)
+                scrollFrame:SetVerticalScroll(0)
+                UpdateScrollbar()
+            end
+            return
+        end
+
+        -- Enter search mode
+        if not searchMode then
+            contentFrames[activeSection]:Hide()
+            searchMode = true
+        end
+
+        sectionTitle:SetText("SEARCH")
+        sectionTitle:SetTextColor(NS.unpack(T.TEXT_DIM))
+
+        -- Hide all entries first
+        for i = 1, MAX_RESULTS do
+            resultEntries[i]:Hide()
+        end
+
+        -- Show the results container BEFORE populating entries
+        -- (WoW requires parent visible for child rendering in ScrollFrames)
+        searchResultsFrame:Show()
+
+        -- Filter and populate results
+        local count = 0
+        for _, si in NS.ipairs(settingsIndex) do
+            if si.label:lower():find(query, 1, true) then
+                count = count + 1
+                if count <= MAX_RESULTS then
+                    local re = resultEntries[count]
+                    local secDC = SECTIONS[si.section].dotColor
+                    if si.isSection then
+                        re._lbl:SetText(si.label)
+                        re._lbl:SetTextColor(secDC[1], secDC[2], secDC[3])
+                        re._secLbl:SetText("Section")
+                    else
+                        re._lbl:SetText(si.label)
+                        re._lbl:SetTextColor(NS.unpack(T.TEXT))
+                        re._secLbl:SetText(SECTIONS[si.section].label)
+                    end
+                    re:SetScript("OnClick", function()
+                        searchBox:SetText("")
+                        searchBox:ClearFocus()
+                        SelectSection(si.section)
+                    end)
+                    re:Show()
+                end
+            end
+        end
+
+        -- "No results" message
+        if count == 0 then
+            resultEntries[1]._lbl:SetText("No matching settings")
+            resultEntries[1]._lbl:SetTextColor(NS.unpack(T.TEXT_MUTED))
+            resultEntries[1]._secLbl:SetText("")
+            resultEntries[1]:SetScript("OnClick", nil)
+            resultEntries[1]:Show()
+            count = 1
+        end
+
+        local resultsH = count * 24 + 16
+        searchResultsFrame:SetHeight(resultsH)
+        scrollChild:SetHeight(math.max(50, resultsH))
+        scrollFrame:SetVerticalScroll(0)
+        UpdateScrollbar()
+    end
+
+    searchBox:SetScript("OnTextChanged", function(self)
+        searchPlaceholder:SetShown(self:GetText() == "")
+        DoSearch(self:GetText())
+    end)
+    searchBox:SetScript("OnEscapePressed", function(self)
+        self:SetText("")
+        self:ClearFocus()
+    end)
+
+    -- Clear search when panel hides
+    f:HookScript("OnHide", function()
+        searchBox:SetText("")
+        searchBox:ClearFocus()
+    end)
+
+    ----------------------------------------------------------------
+    -- Animations (indicator slide, underline pulse, logo glow)
+    ----------------------------------------------------------------
+    local animFrame = NS.CreateFrame("Frame")
+    animFrame:SetScript("OnUpdate", function(self, elapsed)
+        if not f:IsShown() then return end
+        local adb = NS.db
+
+        -- Smooth-slide the accent indicator
+        if adb.cfgAnimTransitions then
+            local diff = indicatorTargetY - indicatorCurrentY
+            if math.abs(diff) > 0.3 then
+                indicatorCurrentY = indicatorCurrentY + diff * math.min(1, elapsed * 14)
+            else
+                indicatorCurrentY = indicatorTargetY
+            end
+        else
+            indicatorCurrentY = indicatorTargetY
+        end
+        indicator:ClearAllPoints()
+        indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, indicatorCurrentY)
+
+    end)
+
+    ----------------------------------------------------------------
+    -- Initialize
+    ----------------------------------------------------------------
+    SelectSection(NS._restoreSection or 1)
+    NS._restoreSection = nil
+    f:SetScale(NS.db.configPanelScale or 1.0)
+
+    -- Expose SelectSection and scrollFrame for external use (screenshots, etc.)
+    self.SelectSection = SelectSection
+    self.scrollFrame = scrollFrame
 
     self.frame = f
     return f

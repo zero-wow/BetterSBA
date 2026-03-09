@@ -2,6 +2,8 @@ local ADDON_NAME, NS = ...
 
 local T = NS.THEME
 local ticker
+local wasOnSpecialBar = false
+local lastRescanTime = nil
 
 ----------------------------------------------------------------
 -- Create the main button (display + secure overlay)
@@ -46,11 +48,50 @@ function NS:CreateMainButton()
     btn.cooldown:SetDrawEdge(false)
     btn.cooldown:SetHideCountdownNumbers(false)
 
-    -- Keybind text
+    -- Keybind text (per-context font)
     btn.hotkey = btn:CreateFontString(nil, "OVERLAY")
-    btn.hotkey:SetFont(NS.GetFontPath(), db.keybindFontSize, NS.GetFontOutline())
+    btn.hotkey:SetFont(
+        NS.ResolveFontPath("keybindFont"),
+        db.keybindFontSize,
+        NS.ResolveFontOutline("keybindFont", "keybindOutline"))
     btn.hotkey:SetPoint("TOPRIGHT", -2, -2)
     btn.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
+
+    -- Pause overlay (text-based with outline for clarity)
+    local pauseGroup = NS.CreateFrame("Frame", nil, btn)
+    pauseGroup:SetAllPoints()
+    pauseGroup:SetFrameLevel(btn:GetFrameLevel() + 3)
+    pauseGroup:Hide()
+
+    -- Dark background behind the "II" text
+    local pauseBg = pauseGroup:CreateTexture(nil, "ARTWORK", nil, 1)
+    pauseBg:SetColorTexture(0, 0, 0, 0.7)
+    local bgSize = math.max(18, math.floor(size * 0.45))
+    pauseBg:SetSize(bgSize, bgSize)
+    pauseBg:SetPoint("CENTER")
+
+    -- "II" pause symbol text
+    local pauseText = pauseGroup:CreateFontString(nil, "OVERLAY")
+    pauseText:SetFont(
+        NS.ResolveFontPath("pauseSymbolFont"),
+        db.pauseSymbolFontSize or 14,
+        NS.ResolveFontOutline("pauseSymbolFont", "pauseSymbolOutline"))
+    pauseText:SetText("II")
+    pauseText:SetTextColor(1.0, 0.53, 0.0, 1.0)
+    pauseText:SetPoint("CENTER", 1, 0)
+
+    -- Pause reason text below the button (e.g. "SKYRIDING")
+    local pauseReason = pauseGroup:CreateFontString(nil, "OVERLAY")
+    pauseReason:SetFont(
+        NS.ResolveFontPath("pauseReasonFont"),
+        db.pauseReasonFontSize or 9,
+        NS.ResolveFontOutline("pauseReasonFont", "pauseReasonOutline"))
+    pauseReason:SetTextColor(1.0, 0.53, 0.0, 0.9)
+    pauseReason:SetPoint("TOP", btn, "BOTTOM", 0, -2)
+    pauseGroup.symbolText = pauseText
+    pauseGroup.reasonText = pauseReason
+
+    btn.pauseOverlay = pauseGroup
 
     -- Current spell ID
     btn.spellID = nil
@@ -184,6 +225,18 @@ function NS:CreateMainButton()
         NS.DebugPrintAlways("Macro done | Target:", hasTarget and "yes" or "no")
     end)
 
+    -- Modifier+scroll scaling (Ctrl+MouseWheel adjusts button scale)
+    secure:EnableMouseWheel(true)
+    secure:SetScript("OnMouseWheel", function(_, delta)
+        if not NS.db.modifierScaling or not IsControlKeyDown() then return end
+        local scale = NS.db.scale or 1.0
+        scale = scale + delta * 0.05
+        scale = math.max(0.5, math.min(2.0, scale))
+        scale = tonumber(string.format("%.2f", scale))
+        NS.db.scale = scale
+        btn:SetScale(scale)
+    end)
+
     -- Restore position
     if db.position then
         local pos = db.position
@@ -287,19 +340,18 @@ local function UpdateButton(btn, spellID)
         btn.hotkey:Hide()
     end
 
-    -- Cooldown (pcall + tonumber(tostring()) to handle taint during combat)
-    if NS.db.showCooldown and NS.C_Spell and NS.C_Spell.GetSpellCooldown then
-        local ok, cdInfo = NS.pcall(NS.C_Spell.GetSpellCooldown, spellID)
-        if ok and cdInfo then
-            local dur = cdInfo.duration and tonumber(tostring(cdInfo.duration)) or 0
-            local start = cdInfo.startTime and tonumber(tostring(cdInfo.startTime)) or 0
-            if dur > 1.5 then
-                btn.cooldown:SetCooldown(start, dur)
+    -- Cooldown (uses per-tick cache to avoid API table garbage)
+    -- pcall guards comparison — cdInfo fields may be tainted secret numbers
+    if NS.db.showCooldown then
+        local cdInfo = NS.GetCooldownCached(spellID)
+        if cdInfo then
+            local ok, isLong = pcall(NS._durGT, cdInfo, 1.5)
+            if ok and isLong then
+                btn.cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration)
             else
                 btn.cooldown:Clear()
             end
         end
-        -- If pcall failed or cdInfo nil, leave cooldown display as-is
     end
 
     -- Importance border color
@@ -401,6 +453,83 @@ function NS.UpdateNow()
     local btn = NS.mainButton
     if not btn then return end
 
+    -- Advance the per-frame cache generation so CollectNextSpell/CollectRotationSpells
+    -- return cached results within this tick but refresh on the next one
+    NS.BeginUpdate()
+
+    -- Detect special bar → normal transition and re-establish keybind override
+    local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
+        or (HasOverrideActionBar and HasOverrideActionBar())
+        or (HasVehicleActionBar and HasVehicleActionBar())
+        or (IsPossessBarVisible and IsPossessBarVisible())
+    if wasOnSpecialBar and not onSpecialBar then
+        wasOnSpecialBar = false
+        if not NS.InCombatLockdown() then
+            NS.ClearSBASlotCache()
+            NS.ScanKeybinds()
+            -- API may lag behind the event — schedule retries
+            NS.C_Timer_After(0.5, function()
+                if not NS._overrideKeys or #NS._overrideKeys == 0 then
+                    NS.ClearSBASlotCache()
+                    NS.ScanKeybinds()
+                end
+            end)
+            NS.C_Timer_After(1.5, function()
+                if not NS._overrideKeys or #NS._overrideKeys == 0 then
+                    NS.ClearSBASlotCache()
+                    NS.ScanKeybinds()
+                end
+            end)
+        else
+            NS._pendingKeybindOverride = true
+        end
+    elseif onSpecialBar then
+        wasOnSpecialBar = true
+    end
+
+    -- Self-healing: periodically verify keybind override is actually working.
+    -- Catches stale state from skyriding/mount transitions where WoW clears
+    -- our overrides but _overrideKeys still has the old keys.
+    if not onSpecialBar and not NS.InCombatLockdown() then
+        local needsRescan = false
+        if not NS._overrideKeys or #NS._overrideKeys == 0 then
+            needsRescan = true
+        elseif GetBindingAction then
+            -- Verify WoW actually still has our override registered
+            local action = GetBindingAction(NS._overrideKeys[1])
+            if not action or not action:find("BetterSBA") then
+                needsRescan = true
+            end
+        end
+        if needsRescan then
+            local now = GetTime()
+            if not lastRescanTime or (now - lastRescanTime) > 1 then
+                lastRescanTime = now
+                NS.ClearSBASlotCache()
+                NS.ScanKeybinds()
+            end
+        end
+    end
+
+    -- Pause overlay + LDB status sync (runs even when button is hidden/alpha 0
+    -- so the LDB text and pause reason stay current during skyriding, etc.)
+    if btn.pauseOverlay then
+        local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+        if reason then
+            btn.pauseOverlay:Show()
+            if btn.pauseOverlay.reasonText then
+                btn.pauseOverlay.reasonText:SetText(reason)
+            end
+        else
+            btn.pauseOverlay:Hide()
+            if btn.pauseOverlay.reasonText then
+                btn.pauseOverlay.reasonText:SetText("")
+            end
+        end
+        -- Keep LDB text in sync with pause state
+        if NS.UpdateLDBText then NS.UpdateLDBText() end
+    end
+
     UpdateVisibility()
 
     if not btn:IsVisible() or btn:GetAlpha() == 0 then return end
@@ -437,13 +566,36 @@ end
 function NS.ApplyButtonSettings()
     local btn = NS.mainButton
     if not btn then return end
-    btn:SetSize(NS.db.buttonSize, NS.db.buttonSize)
-    btn:SetScale(NS.db.scale)
+    if NS.InCombatLockdown() then
+        NS._pendingButtonSettings = true
+    else
+        btn:SetSize(NS.db.buttonSize, NS.db.buttonSize)
+        btn:SetScale(NS.db.scale)
+    end
     if btn.hotkey then
-        btn.hotkey:SetFont(NS.GetFontPath(), NS.db.keybindFontSize, NS.GetFontOutline())
+        btn.hotkey:SetFont(
+            NS.ResolveFontPath("keybindFont"),
+            NS.db.keybindFontSize,
+            NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+    end
+    if btn.pauseOverlay then
+        local po = btn.pauseOverlay
+        if po.symbolText then
+            po.symbolText:SetFont(
+                NS.ResolveFontPath("pauseSymbolFont"),
+                NS.db.pauseSymbolFontSize or 14,
+                NS.ResolveFontOutline("pauseSymbolFont", "pauseSymbolOutline"))
+        end
+        if po.reasonText then
+            po.reasonText:SetFont(
+                NS.ResolveFontPath("pauseReasonFont"),
+                NS.db.pauseReasonFontSize or 9,
+                NS.ResolveFontOutline("pauseReasonFont", "pauseReasonOutline"))
+        end
     end
     if not NS.masque then
         btn:SetBackdropColor(NS.unpack(NS.db.buttonBgColor))
     end
+    if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
     NS.MasqueReSkin()
 end

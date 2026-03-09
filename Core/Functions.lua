@@ -1,6 +1,22 @@
 local ADDON_NAME, NS = ...
 
 ----------------------------------------------------------------
+-- Taint-safe comparison helpers.  WoW's taint system makes
+-- C_Spell cooldown fields "secret numbers" that throw errors on
+-- Lua comparison operators (>, <, <=).  Wrapping in pcall lets
+-- us safely compare — if tainted, pcall returns false and we
+-- fall through to a safe default.  Pre-defined functions avoid
+-- per-call closure garbage.
+----------------------------------------------------------------
+local function _durGT(cdInfo, threshold)
+    return (cdInfo.duration or 0) > threshold
+end
+local function _durLE(cdInfo, threshold)
+    return (cdInfo.duration or 0) <= threshold
+end
+NS._durGT = _durGT
+
+----------------------------------------------------------------
 -- Debug output
 ----------------------------------------------------------------
 local DEBUG_PREFIX = "|cFF66B8D9[BetterSBA Debug]|r "
@@ -208,12 +224,119 @@ function NS.ClearSBASlotCache()
 end
 
 ----------------------------------------------------------------
+-- Caching: eliminates redundant API calls and garbage table creation.
+--
+-- CollectRotationSpells: EVENT-DRIVEN cache. The rotation pool only
+-- changes on RotationSpellsUpdated / SPELLS_CHANGED / spec change.
+-- Without this, GetRotationSpells() returns a NEW table every call
+-- → 30-50 garbage tables/sec → 20+ MB/hour of GC pressure.
+--
+-- CollectNextSpell: PER-FRAME cache. Called 2-3× within a single
+-- UpdateNow tick. Refreshes once per tick, cached within the tick.
+----------------------------------------------------------------
+local EMPTY_TABLE = {}          -- singleton empty table (never modify!)
+local CACHE_NIL = {}            -- sentinel for "we cached nil"
+local updateGeneration = 0      -- incremented once per UpdateNow call
+local cachedNextSpell = nil
+local cachedNextGen = -1
+local cachedRotation = nil
+local rotationDirty = true      -- event-driven: only refresh when dirty
+
+----------------------------------------------------------------
+-- Per-tick cooldown cache: C_Spell.GetSpellCooldown returns a
+-- NEW table on every call (~200 bytes).  With 15-20 calls per
+-- 0.1s tick that is 30-40 KB/sec of pure API garbage.  Caching
+-- within a single tick eliminates redundant API calls (same
+-- spell queried in GetDisplaySpell, UpdateButton, and
+-- UpdateQueueDisplay).  The table is wiped in BeginUpdate().
+--
+-- TAINT FIX: We capture GetSpellCooldown as a file-local at
+-- load time.  Looking it up through NS.C_Spell taints the
+-- function reference (NS becomes tainted once we touch secure
+-- frames), which taints every return value, making comparisons
+-- on duration/startTime throw "secret number" errors.  A clean
+-- local captured at file load time is never tainted.
+----------------------------------------------------------------
+local cdTickCache = {}
+
+-- Clean (untainted) references captured at file load time
+local _GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
+
+function NS.GetCooldownCached(spellID)
+    local cached = cdTickCache[spellID]
+    if cached then
+        if cached == CACHE_NIL then return nil end
+        return cached
+    end
+    if not _GetSpellCooldown then return nil end
+    -- Call through clean local — return values are untainted
+    local ok, cdInfo = pcall(_GetSpellCooldown, spellID)
+    if ok and cdInfo then
+        cdTickCache[spellID] = cdInfo
+        return cdInfo
+    end
+    cdTickCache[spellID] = CACHE_NIL
+    return nil
+end
+
+----------------------------------------------------------------
+-- GC management: WoW's default Lua GC uses pause=200 (waits
+-- until memory DOUBLES before starting a new cycle) and
+-- stepmul=200.  For an addon generating ~30-40KB/sec of
+-- unavoidable API garbage (C_Spell.GetSpellCooldown tables,
+-- etc.), this lets memory climb to 10 MB+ before a single
+-- massive collection stall.
+--
+-- Fix: tune the auto-collector to be far more aggressive so it
+-- collects continuously in tiny bites instead of one big stall.
+--   pause=110  → start a new GC cycle when memory grows just 10%
+--   stepmul=400 → each auto-step does 2× more work than default
+-- This keeps memory nearly flat with zero perceptible cost.
+----------------------------------------------------------------
+function NS.StartGCTicker()
+    -- Tune the automatic collector to be more aggressive than default.
+    collectgarbage("setpause", 110)
+    collectgarbage("setstepmul", 400)
+    -- GC work is spread across every BeginUpdate() tick (every 0.1s)
+    -- via a tiny step(50) call — see BeginUpdate() below.  This
+    -- distributes GC evenly with zero perceptible cost, unlike a
+    -- periodic large step or full collect that causes frame stutters.
+end
+
+function NS.StopGCTicker()
+    collectgarbage("setpause", 200)
+    collectgarbage("setstepmul", 200)
+end
+
+function NS.BeginUpdate()
+    updateGeneration = updateGeneration + 1
+    -- Wipe per-tick cooldown cache (reuse the same table, zero garbage)
+    wipe(cdTickCache)
+    -- GC nudge every tick (0.1s).  With all per-frame animations removed,
+    -- step(500) is safe — no visible stutter, keeps memory flat.
+    collectgarbage("step", 500)
+end
+
+-- Call this from event handlers that change the rotation pool
+function NS.InvalidateRotationCache()
+    rotationDirty = true
+end
+
+----------------------------------------------------------------
 -- Spell collection (three-tier fallback + action bar)
 ----------------------------------------------------------------
 function NS.CollectNextSpell()
+    -- Return cached result if called multiple times in the same frame
+    if cachedNextGen == updateGeneration then
+        if cachedNextSpell == CACHE_NIL then return nil end
+        return cachedNextSpell
+    end
+
     local ac = NS.C_AssistedCombat
     if not ac then
         NS.DebugPrint("|cFFFF4444C_AssistedCombat is nil|r")
+        cachedNextSpell = CACHE_NIL
+        cachedNextGen = updateGeneration
         return nil
     end
 
@@ -223,6 +346,8 @@ function NS.CollectNextSpell()
         local ok, sid = NS.pcall(ac.GetNextCastSpell, false)
         if ok and sid and sid ~= 0 then
             NS.DebugPrint("GetNextCastSpell(false) →", sid)
+            cachedNextSpell = sid
+            cachedNextGen = updateGeneration
             return sid
         end
         NS.DebugPrint("GetNextCastSpell(false):", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
@@ -235,6 +360,8 @@ function NS.CollectNextSpell()
         local ok, sid = NS.pcall(ac.GetActionSpell)
         if ok and sid and sid ~= 0 then
             NS.DebugPrint("GetActionSpell() →", sid)
+            cachedNextSpell = sid
+            cachedNextGen = updateGeneration
             return sid
         end
         NS.DebugPrint("GetActionSpell():", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
@@ -247,32 +374,45 @@ function NS.CollectNextSpell()
         local ok, sid = NS.pcall(ac.GetNextCastSpell, true)
         if ok and sid and sid ~= 0 then
             NS.DebugPrint("GetNextCastSpell(true) →", sid)
+            cachedNextSpell = sid
+            cachedNextGen = updateGeneration
             return sid
         end
         NS.DebugPrint("GetNextCastSpell(true):", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
     end
 
-    -- Last resort: first rotation spell
-    if ac.GetRotationSpells then
-        local ok, spells = NS.pcall(ac.GetRotationSpells)
-        if ok and spells and spells[1] and spells[1] ~= 0 then
-            NS.DebugPrint("Rotation spell fallback →", spells[1])
-            return spells[1]
-        end
-        NS.DebugPrint("GetRotationSpells():", ok and ("returned " .. NS.tostring(spells and #spells or "nil") .. " spells") or "ERROR")
-    else
-        NS.DebugPrint("|cFFFF4444GetRotationSpells does not exist|r")
+    -- Last resort: first rotation spell (uses cached rotation if available)
+    local spells = NS.CollectRotationSpells()
+    if spells[1] and spells[1] ~= 0 then
+        NS.DebugPrint("Rotation spell fallback →", spells[1])
+        cachedNextSpell = spells[1]
+        cachedNextGen = updateGeneration
+        return spells[1]
     end
 
+    cachedNextSpell = CACHE_NIL
+    cachedNextGen = updateGeneration
     return nil
 end
 
 function NS.CollectRotationSpells()
+    -- Event-driven cache: only call the API when rotation actually changed
+    if not rotationDirty and cachedRotation then
+        return cachedRotation
+    end
+    rotationDirty = false
     local ac = NS.C_AssistedCombat
-    if not ac or not ac.GetRotationSpells then return {} end
+    if not ac or not ac.GetRotationSpells then
+        cachedRotation = EMPTY_TABLE
+        return EMPTY_TABLE
+    end
     local ok, spells = NS.pcall(ac.GetRotationSpells)
-    if ok and spells then return spells end
-    return {}
+    if ok and spells then
+        cachedRotation = spells
+    else
+        cachedRotation = EMPTY_TABLE
+    end
+    return cachedRotation
 end
 
 ----------------------------------------------------------------
@@ -281,6 +421,10 @@ end
 function NS.BuildMacroText()
     local lines = {}
     local db = NS.db
+
+    if db.enableDismount then
+        NS.table_insert(lines, "/dismount [mounted]")
+    end
 
     if db.enableTargeting then
         NS.table_insert(lines, "/targetenemy [noharm][dead]")
@@ -430,13 +574,28 @@ function NS.OverrideSBAKeybind()
     local secure = NS.secureButton
     if not secure then return end
 
-    -- Find the SBA slot — do NOT clear overrides until we have replacements
+    -- If on a special bar (skyriding, vehicle, override, possess), always
+    -- clear our overrides so the bar's own keybinds work unimpeded.
+    -- SBA is not usable on these bars, so there's nothing to intercept.
+    -- This check MUST happen before FindSBAActionSlot, because the API
+    -- can return SBA's underlying slot even when a bonus bar is active.
+    local onSpecialBar = HasBonusActionBar and HasBonusActionBar()
+        or HasOverrideActionBar and HasOverrideActionBar()
+        or HasVehicleActionBar and HasVehicleActionBar()
+        or IsPossessBarVisible and IsPossessBarVisible()
+    if onSpecialBar then
+        if NS._overrideKeys then
+            ClearOverrideBindings(secure)
+        end
+        NS._overrideKeys = nil
+        NS._overrideSlot = nil
+        NS.UpdateKeybindStatus()
+        return
+    end
+
+    -- Find the SBA slot (only on normal action bars)
     local slot = sbaActionSlot or NS.FindSBAActionSlot()
     if not slot then
-        -- Keep existing overrides if we have them — they may still be valid
-        if NS._overrideKeys and #NS._overrideKeys > 0 then
-            return
-        end
         NS.UpdateKeybindStatus()
         return
     end
@@ -511,7 +670,10 @@ function NS.OverrideSBAKeybind()
 end
 
 -- Placeholder — Config.lua replaces this with the real updater
-function NS.UpdateKeybindStatus() end
+function NS.UpdateKeybindStatus()
+    -- LDB text always updates even before Config panel is created
+    if NS.UpdateLDBText then NS.UpdateLDBText() end
+end
 
 ----------------------------------------------------------------
 -- Font system (LibSharedMedia with fallback)
@@ -557,23 +719,98 @@ local OUTLINE_MAP = {
     ["MONO THICKOUTLINE"]  = "MONOCHROME, THICKOUTLINE",
 }
 
+function NS.GetOutlineFlags(outlineSetting)
+    outlineSetting = outlineSetting or "OUTLINE"
+    return OUTLINE_MAP[outlineSetting] or outlineSetting
+end
+
 function NS.GetFontOutline()
-    local outline = NS.db and NS.db.fontOutline or "OUTLINE"
-    return OUTLINE_MAP[outline] or outline
+    return NS.GetOutlineFlags(NS.db and NS.db.fontOutline or "OUTLINE")
+end
+
+function NS.GetConfigFontPath()
+    local db = NS.db
+    if db and db.configPanelFontOverride and db.configPanelFont then
+        return NS.GetFontPath(db.configPanelFont)
+    end
+    return NS.GetFontPath(db and db.fontFace)
+end
+
+function NS.GetConfigFontOutline()
+    local db = NS.db
+    if db and db.configPanelFontOverride then
+        return NS.GetOutlineFlags(db.configPanelOutline or "")
+    end
+    return NS.GetOutlineFlags(db and db.fontOutline or "OUTLINE")
+end
+
+-- Update all config panel fonts in-place (no rebuild needed)
+function NS.UpdateAllConfigFonts()
+    local f = NS.Config and NS.Config.frame
+    if not f then return end
+    local path = NS.GetConfigFontPath()
+    local outline = NS.GetConfigFontOutline()
+    local function WalkFrame(frame)
+        -- FontStrings are regions, not children
+        local regions = { frame:GetRegions() }
+        for _, region in NS.ipairs(regions) do
+            if region.IsObjectType and region:IsObjectType("FontString") then
+                local curPath, size = region:GetFont()
+                if size and curPath then
+                    region:SetFont(path, size, outline)
+                end
+            end
+        end
+        -- Recurse into child frames
+        local children = { frame:GetChildren() }
+        for _, child in NS.ipairs(children) do
+            WalkFrame(child)
+        end
+    end
+    WalkFrame(f)
+end
+
+-- Resolve font path: context-specific if override enabled, else global fallback
+function NS.ResolveFontPath(contextFontKey)
+    local db = NS.db
+    if not db then return NS.GetFontPath() end
+    if db[contextFontKey .. "Override"] then
+        return NS.GetFontPath(db[contextFontKey])
+    end
+    return NS.GetFontPath(db.fontFace)
+end
+
+-- Resolve font outline: context-specific if override enabled, else global fallback
+function NS.ResolveFontOutline(contextFontKey, contextOutlineKey)
+    local db = NS.db
+    if not db then return NS.GetFontOutline() end
+    if db[contextFontKey .. "Override"] then
+        return NS.GetOutlineFlags(db[contextOutlineKey])
+    end
+    return NS.GetOutlineFlags(db.fontOutline)
 end
 
 ----------------------------------------------------------------
 -- Spell importance classification (base cooldown cache)
 ----------------------------------------------------------------
 local baseCDCache = {}
+local baseCDCacheCount = 0
+local MAX_CD_CACHE = 200  -- cap to prevent unbounded growth
 
 function NS.ClearBaseCDCache()
     baseCDCache = {}
+    baseCDCacheCount = 0
 end
 
 function NS.GetSpellBaseCooldown(spellID)
     if not spellID or spellID == 0 then return 0 end
     if baseCDCache[spellID] then return baseCDCache[spellID] end
+
+    -- Evict cache if it's grown too large (shouldn't happen normally)
+    if baseCDCacheCount >= MAX_CD_CACHE then
+        baseCDCache = {}
+        baseCDCacheCount = 0
+    end
 
     -- Try C_Spell.GetSpellBaseCooldown (11.0+ namespaced API, returns ms)
     if NS.C_Spell and NS.C_Spell.GetSpellBaseCooldown then
@@ -583,6 +820,7 @@ function NS.GetSpellBaseCooldown(spellID)
             if ms > 0 then
                 local sec = ms / 1000
                 baseCDCache[spellID] = sec
+                baseCDCacheCount = baseCDCacheCount + 1
                 return sec
             end
         end
@@ -596,6 +834,7 @@ function NS.GetSpellBaseCooldown(spellID)
             if baseCDms > 0 then
                 local sec = baseCDms / 1000
                 baseCDCache[spellID] = sec
+                baseCDCacheCount = baseCDCacheCount + 1
                 return sec
             end
         end
@@ -603,11 +842,14 @@ function NS.GetSpellBaseCooldown(spellID)
 
     -- Fallback: observe current cooldown duration
     if NS.C_Spell and NS.C_Spell.GetSpellCooldown then
-        local ok, cdInfo = NS.pcall(NS.C_Spell.GetSpellCooldown, spellID)
-        if ok and cdInfo then
-            local dur = cdInfo.duration and tonumber(tostring(cdInfo.duration)) or 0
-            if dur > 1.5 then
+        local cdInfo = NS.GetCooldownCached(spellID)
+        if cdInfo then
+            -- pcall guards against tainted "secret number" comparisons
+            local ok, isLong = pcall(_durGT, cdInfo, 1.5)
+            if ok and isLong then
+                local dur = tonumber(cdInfo.duration) or 0
                 baseCDCache[spellID] = dur
+                baseCDCacheCount = baseCDCacheCount + 1
                 return dur
             end
         end
@@ -672,7 +914,8 @@ function NS.GetDisplaySpellFromActionBar()
 
     -- Match texture against rotation spells to find the spell ID
     local rotationSpells = NS.CollectRotationSpells()
-    for _, sid in NS.ipairs(rotationSpells) do
+    for idx = 1, #rotationSpells do
+        local sid = rotationSpells[idx]
         if sid and sid ~= 0 then
             local spellTex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(sid)
             if spellTex and spellTex == tex then
@@ -715,28 +958,30 @@ function NS.GetDisplaySpell()
 
     NS._fallbackTexture = nil
 
-    -- Check if recommended is on a real cooldown
-    if NS.C_Spell and NS.C_Spell.GetSpellCooldown then
-        local ok, cdInfo = NS.pcall(NS.C_Spell.GetSpellCooldown, recommended)
-        if ok and cdInfo then
-            local dur = cdInfo.duration and tonumber(tostring(cdInfo.duration)) or 0
-            if dur > 1.5 then
-                -- Recommended is on CD, look for a ready rotation spell
-                local rotationSpells = NS.CollectRotationSpells()
-                for _, sid in NS.ipairs(rotationSpells) do
-                    if sid and sid ~= 0 and sid ~= recommended then
-                        local ok2, cdInfo2 = NS.pcall(NS.C_Spell.GetSpellCooldown, sid)
-                        if ok2 and cdInfo2 then
-                            local dur2 = cdInfo2.duration and tonumber(tostring(cdInfo2.duration)) or 0
-                            if dur2 <= 1.5 then
-                                return sid
-                            end
+    -- Check if recommended is on a real cooldown (uses per-tick cache
+    -- to avoid creating a new API table on every call).
+    -- pcall guards all comparisons — cdInfo fields may be tainted
+    -- "secret numbers" in WoW's secure execution context.
+    local cdInfo = NS.GetCooldownCached(recommended)
+    if cdInfo then
+        local ok, isLongCD = pcall(_durGT, cdInfo, 1.5)
+        if ok and isLongCD then
+            -- Recommended is on CD, look for a ready rotation spell
+            local rotationSpells = NS.CollectRotationSpells()
+            for idx = 1, #rotationSpells do
+                local sid = rotationSpells[idx]
+                if sid and sid ~= 0 and sid ~= recommended then
+                    local cdInfo2 = NS.GetCooldownCached(sid)
+                    if cdInfo2 then
+                        local ok2, isReady = pcall(_durLE, cdInfo2, 1.5)
+                        if ok2 and isReady then
+                            return sid
                         end
                     end
                 end
-                -- Nothing ready → auto-attack
-                return NS.AUTO_ATTACK_SPELL_ID
             end
+            -- Nothing ready → auto-attack
+            return NS.AUTO_ATTACK_SPELL_ID
         end
     end
 
@@ -841,12 +1086,24 @@ local function EnsureAnimRefButton()
     animRefButton = ref
 end
 
+local MAX_ANIM_POOL = 10  -- cap to prevent unbounded frame creation
+
 local function AcquireAnimFrame()
     for _, f in NS.ipairs(animPool) do
         if not f._inUse then
             f._inUse = true
             return f
         end
+    end
+
+    -- Pool full — recycle the oldest frame
+    if #animPool >= MAX_ANIM_POOL then
+        local oldest = animPool[1]
+        if oldest.ag then oldest.ag:Stop() end
+        oldest:Hide()
+        oldest:ClearAllPoints()
+        oldest._inUse = true
+        return oldest
     end
 
     local f = NS.CreateFrame("Button", nil, NS.UIParent, "BackdropTemplate")
@@ -948,14 +1205,15 @@ function NS.PlayCastAnimation(spellID)
 
     local style = NS.db and NS.db.castAnimStyle or "RECREATE"
 
-    -- For RECREATE: grab the CURRENT button texture (what the user sees right now)
-    -- For KEEP: grab the cast spell's texture
+    -- Always use the CAST spell's own texture.  Earlier events
+    -- (SPELL_UPDATE_COOLDOWN, ASSISTED_COMBAT_ACTION_SPELL_CAST) fire
+    -- before UNIT_SPELLCAST_SUCCEEDED, so by the time we get here
+    -- btn.icon has already been updated to the NEXT recommendation.
+    -- Using GetSpellTexture(spellID) ensures we animate the spell
+    -- the player actually cast, not whatever the button shows now.
     local tex
-    if style == "RECREATE" and btn.icon then
-        tex = btn.icon:GetTexture()
-    end
-    if not tex then
-        tex = spellID and NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(spellID)
+    if spellID then
+        tex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(spellID)
     end
     if not tex and btn.icon then
         tex = btn.icon:GetTexture()

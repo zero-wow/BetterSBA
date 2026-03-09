@@ -15,6 +15,10 @@ local registeredEvents = {
     "SPELL_UPDATE_COOLDOWN",
     "PLAYER_ENTERING_WORLD",
     "UNIT_SPELLCAST_SUCCEEDED",
+    "UPDATE_BONUS_ACTIONBAR",
+    "UPDATE_OVERRIDE_ACTIONBAR",
+    "UPDATE_VEHICLE_ACTIONBAR",
+    "PLAYER_MOUNT_DISPLAY_CHANGED",
 }
 
 for _, event in NS.ipairs(registeredEvents) do
@@ -34,6 +38,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local loaded = ...
         if loaded ~= ADDON_NAME then return end
 
+        NS._loadTime = GetTime()
         NS:InitializeDatabase()
         NS.InitMasque()
         NS.InitLDB()
@@ -46,8 +51,12 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- Initial visibility
         NS.UpdateNow()
         NS.StartTicker()
+        NS.StartGCTicker()
 
         print("|cFF66B8D9Better|r|cFFFFFFFFSBA|r |cFF888888v" .. NS.VERSION .. "|r |cFF66B8D9loaded|r - /bs")
+        if NS.db.debug then
+            print("|cFF66B8D9BetterSBA|r: DB.locked = " .. NS.tostring(NS.db.locked))
+        end
 
     elseif event == "PLAYER_LOGIN" then
         NS.ScanKeybinds()
@@ -62,6 +71,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             NS._pendingKeybindOverride = nil
             NS.OverrideSBAKeybind()
         end
+        if NS._pendingButtonSettings then
+            NS._pendingButtonSettings = nil
+            NS.ApplyButtonSettings()
+        end
         NS.UpdateNow()
 
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -69,15 +82,52 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         NS.UpdateNow()
 
     elseif event == "SPELLS_CHANGED" or event == "ACTIONBAR_SLOT_CHANGED"
-        or event == "UPDATE_BINDINGS" or event == "PLAYER_SPECIALIZATION_CHANGED" then
+        or event == "UPDATE_BINDINGS" or event == "PLAYER_SPECIALIZATION_CHANGED"
+        or event == "UPDATE_BONUS_ACTIONBAR" or event == "UPDATE_OVERRIDE_ACTIONBAR"
+        or event == "UPDATE_VEHICLE_ACTIONBAR" then
         if event == "PLAYER_SPECIALIZATION_CHANGED" then
             NS.ClearBaseCDCache()
+            NS.InvalidateRotationCache()
         end
-        if event == "ACTIONBAR_SLOT_CHANGED" then
+        if event == "SPELLS_CHANGED" then
+            NS.InvalidateRotationCache()
+        end
+        if event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_BONUS_ACTIONBAR"
+            or event == "UPDATE_OVERRIDE_ACTIONBAR" or event == "UPDATE_VEHICLE_ACTIONBAR" then
             NS.ClearSBASlotCache()
         end
         NS.ScanKeybinds()
         NS.UpdateNow()
+        -- Delayed re-scan for bar transitions (API state may lag behind events).
+        -- Includes ACTIONBAR_SLOT_CHANGED for skyriding/mount dismount recovery.
+        -- Debounced so rapid-fire events don't spawn dozens of timers.
+        if event == "UPDATE_BONUS_ACTIONBAR" or event == "UPDATE_OVERRIDE_ACTIONBAR"
+            or event == "UPDATE_VEHICLE_ACTIONBAR" or event == "ACTIONBAR_SLOT_CHANGED" then
+            if not NS._pendingDelayedRescan then
+                NS._pendingDelayedRescan = true
+                NS.C_Timer_After(0.5, function()
+                    NS._pendingDelayedRescan = nil
+                    NS.ClearSBASlotCache()
+                    NS.ScanKeybinds()
+                    NS.UpdateNow()
+                end)
+            end
+        end
+
+    elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
+        -- Mount/dismount: action bars may shuffle. Rescan at 0.5s and 1.5s
+        -- to catch the API lag from skyriding/mount transitions.
+        NS.UpdateNow()
+        NS.C_Timer_After(0.5, function()
+            NS.ClearSBASlotCache()
+            NS.ScanKeybinds()
+            NS.UpdateNow()
+        end)
+        NS.C_Timer_After(1.5, function()
+            NS.ClearSBASlotCache()
+            NS.ScanKeybinds()
+            NS.UpdateNow()
+        end)
 
     elseif event == "PLAYER_TARGET_CHANGED" or event == "SPELL_UPDATE_COOLDOWN"
         or event == "UNIT_AURA" or event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
@@ -87,8 +137,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local unit, _, spellID = ...
         if unit == "player" and spellID then
             local rotationSpells = NS.CollectRotationSpells()
-            for _, sid in NS.ipairs(rotationSpells) do
-                if sid == spellID then
+            for idx = 1, #rotationSpells do
+                if rotationSpells[idx] == spellID then
                     NS.PlayCastAnimation(spellID)
                     break
                 end
@@ -100,6 +150,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_ENTERING_WORLD" then
         NS.C_Timer_After(0.5, function()
             NS.ScanKeybinds()
+            NS.ApplyButtonSettings()  -- reapply fonts/size after full load
+            NS.LayoutQueue()
             NS.UpdateNow()
         end)
     end
@@ -115,8 +167,13 @@ function NS:RegisterAssistedCombatCallbacks()
         NS.UpdateNow()
     end
 
+    local function OnRotationChanged()
+        NS.InvalidateRotationCache()
+        NS.UpdateNow()
+    end
+
     EventRegistry:RegisterCallback("AssistedCombatManager.OnAssistedHighlightSpellChange", OnUpdate, self)
-    EventRegistry:RegisterCallback("AssistedCombatManager.RotationSpellsUpdated", OnUpdate, self)
+    EventRegistry:RegisterCallback("AssistedCombatManager.RotationSpellsUpdated", OnRotationChanged, self)
     EventRegistry:RegisterCallback("AssistedCombatManager.OnSetActionSpell", OnUpdate, self)
 end
 
