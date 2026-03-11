@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/WoW-Midnight_12.x-blue?style=flat-square&logo=battle.net&logoColor=white" />
-  <img src="https://img.shields.io/badge/version-v0005-66B8D9?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-v0006-66B8D9?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-444?style=flat-square" />
 </p>
 
@@ -51,6 +51,20 @@ It also gives you a **rotation queue display** showing your full SBA spell pool 
 
 ---
 
+## Animations
+
+<p align="center">
+  <a href="https://github.com/zero-wow/BetterSBA/releases/download/v0006/POP!_Animation_Example.mp4">
+    <img src="https://github.com/zero-wow/BetterSBA/releases/download/v0006/POP!_Animation_Example.mp4" alt="POP! Animation Example" width="600" />
+  </a>
+  <br />
+  <em>Example of the POP! cast animation</em>
+</p>
+
+We plan on making videos of every animation structure as we fix the code for them to ensure they are working exactly as we intend. As for the POP! Animation, we are aware that the video here doesn't do it justice as we have to turn off some settings that are on by default in-game to make the video recording work right, but those options make the animation itself more overall easier to understand.
+
+---
+
 ## Features
 
 <table>
@@ -65,6 +79,9 @@ Shows your SBA rotation pool as icons beside the main button. Configurable icon 
 
 ### Cast Animations
 5 animation types: **Drift**, **Pulse**, **Spin**, **Zoom**, **Slam**. Two styles &mdash; **Keep** (button stays, clone animates away) or **Recreate** (old icon animates out, new icon fades in). Live preview button in config.
+
+### Tank Off-GCD Abilities
+Auto-detects your tank spec and appends class-specific off-GCD abilities after `/cast SBA`: Shield Block, Ignore Pain (Warrior), Ironfur (Druid), Shield of the Righteous (Paladin), Rune Tap (Death Knight), Purifying Brew (Monk). Each ability has an individual toggle in the Combat Assist section.
 
 ### Profiles
 Multiple named profiles with per-character bindings. Create, copy, rename, reset, and switch profiles. All characters share a global default unless overridden. Settings migrate automatically from older versions.
@@ -118,10 +135,10 @@ The config panel (`/bs`) is organized into 8 sections:
 
 | Section | What It Controls |
 |---------|-----------------|
-| **Combat Assist** | Auto-target enemies, pet attack, auto-dismount, channel protection, live macro preview |
+| **Combat Assist** | Auto-target enemies, pet attack, auto-dismount, channel protection, tank off-GCD abilities (per-spec), live macro preview |
 | **Appearance** | Cast animation type &amp; style, per-context font system (global, config panel, keybind, queue label, queue keybind, pause symbol, pause reason) |
-| **Active Display** | Button size, show/hide keybind text, show/hide cooldown spiral, range coloring toggle, button background color |
-| **Queue Display** | Show/hide rotation queue, icon size, scale, anchor position (8 options), detach mode, X/Y offset, keybind labels, background &amp; border colors |
+| **Active Display** | Button size, show/hide keybind text, keybind X/Y offset, show/hide cooldown spiral, range coloring toggle, button background color |
+| **Queue Display** | Show/hide rotation queue, icon size, scale, anchor position (8 options), detach &amp; drag-to-move, X/Y offset, keybind labels with X/Y offset, background &amp; border colors |
 | **Visibility** | Combat-only mode, hide in vehicle, button out-of-combat alpha, queue out-of-combat alpha |
 | **Importance** | Enable/disable importance borders, cooldown tier colors (auto-attack, filler, short, long, major), section theme colors for each config panel tab |
 | **Advanced** | Modifier scaling (Shift/Ctrl/Alt size multiplier), lock button position, debug mode, minimap button toggle, LDB status text, live performance stats (memory, update rate, managed frames, keybind status, active profile, session uptime, health) |
@@ -164,7 +181,7 @@ Also responds to `/bsba` and `/bettersba`.
 |                                           |
 |  Display Layer (non-secure):              |
 |    Icon <- C_AssistedCombat API           |
-|    Cooldown <- C_Spell.GetSpellCooldown   |
+|    Cooldown <- event-driven cache         |
 |    Border <- base CD classification       |
 |    Range <- C_Spell.IsSpellInRange        |
 +-------------------------------------------+
@@ -175,6 +192,8 @@ BetterSBA uses a **dual-frame architecture**: the secure action button handles a
 The addon intercepts your existing SBA keybind using `SetOverrideBindingClick`, so pressing your normal hotkey routes through BetterSBA's macro instead of the default action bar slot. This gives you auto-targeting, pet attack, and channel protection on every press &mdash; even when using the original keybind.
 
 Macro lines are configurable and rebuilt dynamically out of combat. Changes made during combat are queued and applied when you leave combat.
+
+**Zero-GC Architecture** &mdash; BetterSBA never calls `collectgarbage()`. All caches use reusable tables and event-driven invalidation to minimize memory churn. Lua's built-in incremental GC handles collection naturally without forced steps that cause microstutters.
 
 ---
 
