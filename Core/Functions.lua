@@ -130,13 +130,13 @@ function NS.InitMasque()
     if not MSQ then return end
     NS.masque = MSQ
     NS.masqueMainGroup = MSQ:Group("BetterSBA", "Main Button")
-    NS.masqueQueueGroup = MSQ:Group("BetterSBA", "Rotation")
+    NS.masquePriorityGroup = MSQ:Group("BetterSBA", "Rotation")
     NS.masqueAnimGroup = MSQ:Group("BetterSBA", "Animated Button")
 end
 
 function NS.MasqueReSkin()
     if NS.masqueMainGroup then NS.masqueMainGroup:ReSkin() end
-    if NS.masqueQueueGroup then NS.masqueQueueGroup:ReSkin() end
+    if NS.masquePriorityGroup then NS.masquePriorityGroup:ReSkin() end
     if NS.masqueAnimGroup then NS.masqueAnimGroup:ReSkin() end
 end
 
@@ -163,6 +163,83 @@ function NS.GetSBASpellName()
     end
     NS._sbaName = NS._sbaName or "Single-Button Assistant"
     return NS._sbaName
+end
+
+----------------------------------------------------------------
+-- Class / spec helpers
+----------------------------------------------------------------
+-- Spec lookup: maps friendly name → { classToken, specIndex }
+local SPEC_MAP = {
+    -- Demon Hunter
+    ["Havoc"]           = { "DEMONHUNTER", 1 },
+    ["Vengeance"]       = { "DEMONHUNTER", 2 },
+    -- Warrior
+    ["Arms"]            = { "WARRIOR", 1 },
+    ["Fury"]            = { "WARRIOR", 2 },
+    ["Protection:W"]    = { "WARRIOR", 3 },
+    -- Druid
+    ["Balance"]         = { "DRUID", 1 },
+    ["Feral"]           = { "DRUID", 2 },
+    ["Guardian"]        = { "DRUID", 3 },
+    ["Restoration:D"]   = { "DRUID", 4 },
+    -- Paladin
+    ["Holy:Pa"]         = { "PALADIN", 1 },
+    ["Protection:Pa"]   = { "PALADIN", 2 },
+    ["Retribution"]     = { "PALADIN", 3 },
+    -- Death Knight
+    ["Blood"]           = { "DEATHKNIGHT", 1 },
+    ["Frost:DK"]        = { "DEATHKNIGHT", 2 },
+    ["Unholy"]          = { "DEATHKNIGHT", 3 },
+    -- Monk
+    ["Brewmaster"]      = { "MONK", 1 },
+    ["Mistweaver"]      = { "MONK", 2 },
+    ["Windwalker"]      = { "MONK", 3 },
+    -- Mage
+    ["Arcane"]          = { "MAGE", 1 },
+    ["Fire"]            = { "MAGE", 2 },
+    ["Frost:M"]         = { "MAGE", 3 },
+    -- Hunter
+    ["Beast Mastery"]   = { "HUNTER", 1 },
+    ["Marksmanship"]    = { "HUNTER", 2 },
+    ["Survival"]        = { "HUNTER", 3 },
+    -- Rogue
+    ["Assassination"]   = { "ROGUE", 1 },
+    ["Outlaw"]          = { "ROGUE", 2 },
+    ["Subtlety"]        = { "ROGUE", 3 },
+    -- Priest
+    ["Discipline"]      = { "PRIEST", 1 },
+    ["Holy:Pr"]         = { "PRIEST", 2 },
+    ["Shadow"]          = { "PRIEST", 3 },
+    -- Shaman
+    ["Elemental"]       = { "SHAMAN", 1 },
+    ["Enhancement"]     = { "SHAMAN", 2 },
+    ["Restoration:S"]   = { "SHAMAN", 3 },
+    -- Warlock
+    ["Affliction"]      = { "WARLOCK", 1 },
+    ["Demonology"]      = { "WARLOCK", 2 },
+    ["Destruction"]     = { "WARLOCK", 3 },
+    -- Evoker
+    ["Devastation"]     = { "EVOKER", 1 },
+    ["Preservation"]    = { "EVOKER", 2 },
+    ["Augmentation"]    = { "EVOKER", 3 },
+}
+
+--- Check if the player is a specific spec.
+--- @param specName string  Friendly spec name (e.g. "Vengeance", "Guardian", "Brewmaster")
+--- @return boolean
+function NS.IsSpec(specName)
+    local entry = SPEC_MAP[specName]
+    if not entry then return false end
+    local _, classToken = UnitClass("player")
+    return classToken == entry[1] and GetSpecialization() == entry[2]
+end
+
+-- Classes that have permanent or frequently-summoned combat pets.
+-- /petattack is a no-op on other classes, so hide the option entirely.
+local PET_CLASSES = { HUNTER = true, WARLOCK = true, DEATHKNIGHT = true }
+function NS.IsPetClass()
+    local _, classToken = UnitClass("player")
+    return PET_CLASSES[classToken] or false
 end
 
 ----------------------------------------------------------------
@@ -241,14 +318,41 @@ local cachedNextSpell = nil
 local cachedNextGen = -1
 local cachedRotation = nil
 local rotationDirty = true      -- event-driven: only refresh when dirty
+local resolveCache = {}         -- [originalSpellID] = resolvedID or CACHE_NIL
 
 ----------------------------------------------------------------
--- Per-tick cooldown cache: C_Spell.GetSpellCooldown returns a
--- NEW table on every call (~200 bytes).  With 15-20 calls per
--- 0.1s tick that is 30-40 KB/sec of pure API garbage.  Caching
--- within a single tick eliminates redundant API calls (same
--- spell queried in GetDisplaySpell, UpdateButton, and
--- UpdateQueueDisplay).  The table is wiped in BeginUpdate().
+-- Persistent spell texture cache: GetSpellTexture returns a new
+-- string on every call (~80 bytes).  With 7 calls per tick (main
+-- + 6 priority icons), that's ~5.6 KB/sec of string garbage.
+-- Textures never change during gameplay — cache permanently and
+-- invalidate on spec/talent/spell change events.
+----------------------------------------------------------------
+local texCache = {}
+
+function NS.GetSpellTextureCached(spellID)
+    local cached = texCache[spellID]
+    if cached then
+        if cached == CACHE_NIL then return nil end
+        return cached
+    end
+    local tex = NS.C_Spell and NS.C_Spell.GetSpellTexture
+        and NS.C_Spell.GetSpellTexture(spellID)
+    texCache[spellID] = tex or CACHE_NIL
+    return tex
+end
+
+function NS.InvalidateTextureCache()
+    wipe(texCache)
+end
+
+----------------------------------------------------------------
+-- Event-driven cooldown cache: C_Spell.GetSpellCooldown returns
+-- a NEW table (~200 bytes) every call — pure garbage.  We cache
+-- results and ONLY re-query when SPELL_UPDATE_COOLDOWN fires
+-- (which marks the cache dirty).  This is safe because WoW fires
+-- that event on every GCD, cooldown start, cooldown end, charge
+-- gain, haste change, and cooldown reset proc.  Zero API calls
+-- between events = zero table garbage between events.
 --
 -- TAINT FIX: We capture GetSpellCooldown as a file-local at
 -- load time.  Looking it up through NS.C_Spell taints the
@@ -257,69 +361,207 @@ local rotationDirty = true      -- event-driven: only refresh when dirty
 -- on duration/startTime throw "secret number" errors.  A clean
 -- local captured at file load time is never tainted.
 ----------------------------------------------------------------
-local cdTickCache = {}
+local cdCache = {}
+local cdCacheDirty = true   -- start dirty so first tick queries
+local cdRefreshGen = {}     -- tracks which updateGeneration refreshed each spell
 
 -- Clean (untainted) references captured at file load time
 local _GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
+local _IsPlayerSpell = IsPlayerSpell
+
+-- Reusable table pool: instead of storing the API's new table
+-- (which becomes garbage), we copy fields into a persistent table.
+-- This means each spell has exactly ONE cached table that never
+-- gets replaced, so zero table garbage from cooldown queries.
+local function _copyCD(dst, src)
+    dst.startTime = src.startTime
+    dst.duration  = src.duration
+    dst.isEnabled = src.isEnabled
+    dst.modRate   = src.modRate
+    return dst
+end
 
 function NS.GetCooldownCached(spellID)
-    local cached = cdTickCache[spellID]
-    if cached then
+    if not _GetSpellCooldown then return nil end
+
+    local cached = cdCache[spellID]
+
+    -- Fast path: cache is clean — return whatever we have
+    if not cdCacheDirty and cached then
         if cached == CACHE_NIL then return nil end
         return cached
     end
-    if not _GetSpellCooldown then return nil end
-    -- Call through clean local — return values are untainted
+
+    -- Dirty but already refreshed this spell THIS tick — dedup
+    if cdCacheDirty and cached and cdRefreshGen[spellID] == updateGeneration then
+        if cached == CACHE_NIL then return nil end
+        return cached
+    end
+
+    -- Need fresh data: dirty or never cached
     local ok, cdInfo = pcall(_GetSpellCooldown, spellID)
     if ok and cdInfo then
-        cdTickCache[spellID] = cdInfo
-        return cdInfo
+        -- Reuse existing table if we have one, otherwise create once
+        if cached and cached ~= CACHE_NIL then
+            _copyCD(cached, cdInfo)
+        else
+            cached = _copyCD({}, cdInfo)
+            cdCache[spellID] = cached
+        end
+        cdRefreshGen[spellID] = updateGeneration
+        return cached
     end
-    cdTickCache[spellID] = CACHE_NIL
+    cdCache[spellID] = CACHE_NIL
+    cdRefreshGen[spellID] = updateGeneration
     return nil
 end
 
-----------------------------------------------------------------
--- GC management: WoW's default Lua GC uses pause=200 (waits
--- until memory DOUBLES before starting a new cycle) and
--- stepmul=200.  For an addon generating ~30-40KB/sec of
--- unavoidable API garbage (C_Spell.GetSpellCooldown tables,
--- etc.), this lets memory climb to 10 MB+ before a single
--- massive collection stall.
---
--- Fix: tune the auto-collector to be far more aggressive so it
--- collects continuously in tiny bites instead of one big stall.
---   pause=110  → start a new GC cycle when memory grows just 10%
---   stepmul=400 → each auto-step does 2× more work than default
--- This keeps memory nearly flat with zero perceptible cost.
-----------------------------------------------------------------
-function NS.StartGCTicker()
-    -- Tune the automatic collector to be more aggressive than default.
-    collectgarbage("setpause", 110)
-    collectgarbage("setstepmul", 400)
-    -- GC work is spread across every BeginUpdate() tick (every 0.1s)
-    -- via a tiny step(50) call — see BeginUpdate() below.  This
-    -- distributes GC evenly with zero perceptible cost, unlike a
-    -- periodic large step or full collect that causes frame stutters.
+-- Called by SPELL_UPDATE_COOLDOWN event handler
+function NS.InvalidateCooldownCache()
+    cdCacheDirty = true
 end
 
-function NS.StopGCTicker()
-    collectgarbage("setpause", 200)
-    collectgarbage("setstepmul", 200)
-end
+----------------------------------------------------------------
+-- GC: we do NOT call collectgarbage() at all.  Lua's built-in
+-- incremental GC handles collection automatically.  Forced GC
+-- steps/collects cause microstutters and white flashes because
+-- the entire Lua VM pauses while collection runs.  Instead we
+-- minimize garbage at the source (event-driven caches, no
+-- per-tick closures, reused tables).
+----------------------------------------------------------------
+function NS.StartGCTicker() end   -- no-op, kept for call-site compat
+function NS.StopGCTicker()  end   -- no-op
 
 function NS.BeginUpdate()
     updateGeneration = updateGeneration + 1
-    -- Wipe per-tick cooldown cache (reuse the same table, zero garbage)
-    wipe(cdTickCache)
-    -- GC nudge every tick (0.1s).  With all per-frame animations removed,
-    -- step(500) is safe — no visible stutter, keeps memory flat.
-    collectgarbage("step", 500)
+    -- Cooldown cache is event-driven — no wipe needed.
+    -- The dirty flag is cleared AFTER all queries in this tick
+    -- have had a chance to refresh, so every GetCooldownCached
+    -- call within this tick sees the dirty flag and re-queries.
+end
+
+-- Called at the END of UpdateNow, after all cooldown queries are done.
+-- Clears the dirty flag so subsequent ticks reuse cached data until
+-- the next SPELL_UPDATE_COOLDOWN event fires.
+function NS.EndUpdate()
+    cdCacheDirty = false
 end
 
 -- Call this from event handlers that change the rotation pool
 function NS.InvalidateRotationCache()
     rotationDirty = true
+end
+
+-- Call this from event handlers that change spell overrides (spec/talent/spell changes)
+function NS.InvalidateResolveCache()
+    wipe(resolveCache)
+end
+
+----------------------------------------------------------------
+-- Cache diagnostics (exposed for diagnostic report)
+----------------------------------------------------------------
+function NS.GetCacheDiagnostics()
+    local countTable = function(t)
+        local n = 0; for _ in pairs(t) do n = n + 1 end; return n
+    end
+    return {
+        cooldownEntries = countTable(cdCache),
+        cooldownDirty = cdCacheDirty,
+        textureEntries = countTable(texCache),
+        resolveEntries = countTable(resolveCache),
+        gcCountKB = collectgarbage("count"),
+    }
+end
+
+----------------------------------------------------------------
+-- Spell ID resolution: fixes bad/obsolete IDs from the SBA API.
+--
+-- Strategy (in order):
+--   1. Manual substitution table (NS.SPELL_SUBSTITUTIONS)
+--   2. If spell already has a texture, return as-is
+--   3. FindSpellOverrideByID / C_Spell.GetOverrideSpell (talent replacements)
+--   4. Return nil → caller should filter this spell out
+--
+-- Results are cached in resolveCache, invalidated on spec/spell changes.
+----------------------------------------------------------------
+local SUBS_PREFIX = "|cFF66B8D9[BetterSBA Subs]|r "
+
+local function SubsDebugPrint(...)
+    if not NS.db or not NS.db.debugSpellSubs then return end
+    local parts = {}
+    for i = 1, select("#", ...) do
+        parts[i] = NS.tostring(select(i, ...))
+    end
+    print(SUBS_PREFIX .. NS.table_concat(parts, " "))
+end
+
+function NS.ResolveSpellID(spellID)
+    if not spellID or spellID == 0 then return nil end
+
+    local cached = resolveCache[spellID]
+    if cached then
+        if cached == CACHE_NIL then return nil end
+        return cached
+    end
+
+    local C_Spell = NS.C_Spell
+
+    -- 1. Manual substitution table (always wins)
+    local sub = NS.SPELL_SUBSTITUTIONS and NS.SPELL_SUBSTITUTIONS[spellID]
+    if sub then
+        -- Verify the substitution target actually has a texture
+        local subTex = C_Spell and C_Spell.GetSpellTexture and C_Spell.GetSpellTexture(sub)
+        if subTex then
+            SubsDebugPrint(spellID, "->", sub, "(manual)")
+            resolveCache[spellID] = sub
+            return sub
+        end
+        -- Manual sub target is also bad — fall through to auto-resolution
+    end
+
+    -- 2. Already has a texture? No fix needed
+    if C_Spell and C_Spell.GetSpellTexture then
+        local tex = C_Spell.GetSpellTexture(spellID)
+        if tex then
+            resolveCache[spellID] = spellID
+            return spellID
+        end
+    end
+
+    -- 3. Try spell override APIs (talent/aura replacements)
+    local overrideID
+    if C_Spell and C_Spell.GetOverrideSpell then
+        local ok, result = NS.pcall(C_Spell.GetOverrideSpell, spellID)
+        if ok and result and result ~= spellID and result ~= 0 then
+            overrideID = result
+        end
+    end
+    if not overrideID and FindSpellOverrideByID then
+        local ok, result = NS.pcall(FindSpellOverrideByID, spellID)
+        if ok and result and result ~= spellID and result ~= 0 then
+            overrideID = result
+        end
+    end
+
+    if overrideID then
+        local overrideTex = C_Spell and C_Spell.GetSpellTexture
+            and C_Spell.GetSpellTexture(overrideID)
+        if overrideTex then
+            SubsDebugPrint(spellID, "->", overrideID, "(override)")
+            resolveCache[spellID] = overrideID
+            return overrideID
+        end
+    end
+
+    -- 4. Can't resolve — filter out
+    local name
+    if C_Spell and C_Spell.GetSpellName then
+        local ok, n = NS.pcall(C_Spell.GetSpellName, spellID)
+        if ok then name = n end
+    end
+    SubsDebugPrint("FILTERED:", spellID, name and ("(" .. name .. ")") or "", "— no texture/override")
+    resolveCache[spellID] = CACHE_NIL
+    return nil
 end
 
 ----------------------------------------------------------------
@@ -345,6 +587,7 @@ function NS.CollectNextSpell()
     if ac.GetNextCastSpell then
         local ok, sid = NS.pcall(ac.GetNextCastSpell, false)
         if ok and sid and sid ~= 0 then
+            sid = NS.ResolveSpellID(sid) or sid
             NS.DebugPrint("GetNextCastSpell(false) →", sid)
             cachedNextSpell = sid
             cachedNextGen = updateGeneration
@@ -359,6 +602,7 @@ function NS.CollectNextSpell()
     if ac.GetActionSpell then
         local ok, sid = NS.pcall(ac.GetActionSpell)
         if ok and sid and sid ~= 0 then
+            sid = NS.ResolveSpellID(sid) or sid
             NS.DebugPrint("GetActionSpell() →", sid)
             cachedNextSpell = sid
             cachedNextGen = updateGeneration
@@ -373,6 +617,7 @@ function NS.CollectNextSpell()
     if ac.GetNextCastSpell then
         local ok, sid = NS.pcall(ac.GetNextCastSpell, true)
         if ok and sid and sid ~= 0 then
+            sid = NS.ResolveSpellID(sid) or sid
             NS.DebugPrint("GetNextCastSpell(true) →", sid)
             cachedNextSpell = sid
             cachedNextGen = updateGeneration
@@ -408,7 +653,27 @@ function NS.CollectRotationSpells()
     end
     local ok, spells = NS.pcall(ac.GetRotationSpells)
     if ok and spells then
-        cachedRotation = spells
+        -- Resolve bad spell IDs, filter non-existent and unlearned spells
+        local resolved = {}
+        for i = 1, #spells do
+            local sid = spells[i]
+            if sid and sid ~= 0 then
+                local fixedID = NS.ResolveSpellID(sid)
+                if fixedID then
+                    -- Filter spells the player doesn't actually have (e.g. unlearned talents)
+                    if _IsPlayerSpell then
+                        local pok, known = NS.pcall(_IsPlayerSpell, fixedID)
+                        if pok and known == false then
+                            fixedID = nil  -- skip unlearned spell
+                        end
+                    end
+                    if fixedID then
+                        resolved[#resolved + 1] = fixedID
+                    end
+                end
+            end
+        end
+        cachedRotation = #resolved > 0 and resolved or EMPTY_TABLE
     else
         cachedRotation = EMPTY_TABLE
     end
@@ -418,9 +683,22 @@ end
 ----------------------------------------------------------------
 -- Macro text builder
 ----------------------------------------------------------------
+-- Resolve localized spell name, falling back to English hardcoded name.
+-- Pure string return — no tables, no closures, no taint-sensitive values.
+local function resolveSpellName(spellID, fallback)
+    local name = NS.C_Spell and NS.C_Spell.GetSpellName
+        and NS.C_Spell.GetSpellName(spellID) or fallback
+    return name
+end
+
 function NS.BuildMacroText()
     local lines = {}
     local db = NS.db
+
+    -- Channel protection FIRST — abort the entire macro while channeling
+    if db.enableChannelProtection then
+        NS.table_insert(lines, "/stopmacro [channeling]")
+    end
 
     if db.enableDismount then
         NS.table_insert(lines, "/dismount [mounted]")
@@ -430,15 +708,45 @@ function NS.BuildMacroText()
         NS.table_insert(lines, "/targetenemy [noharm][dead]")
     end
 
-    if db.enablePetAttack then
+    if db.enablePetAttack and NS.IsPetClass() then
         NS.table_insert(lines, "/petattack")
     end
 
-    if db.enableChannelProtection then
-        NS.table_insert(lines, "/stopmacro [channeling]")
-    end
-
     NS.table_insert(lines, "/cast " .. NS.GetSBASpellName())
+
+    -- Class-specific off-GCD abilities (appended after /cast SBA).
+    -- These all fire because they are off the GCD — SBA consuming the
+    -- GCD does not block them.  Each silently fails if on cooldown,
+    -- insufficient resource, or not learned.
+
+    -- Vengeance DH: Demon Spikes (off-GCD, charges, mitigation)
+    if db.enableDemonSpikes and NS.IsSpec("Vengeance") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.DEMON_SPIKES_SPELL_ID, "Demon Spikes"))
+    end
+    -- Protection Warrior: Shield Block (off-GCD, 2 charges, costs Rage)
+    if db.enableShieldBlock and NS.IsSpec("Protection:W") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.SHIELD_BLOCK_SPELL_ID, "Shield Block"))
+    end
+    -- Protection Warrior: Ignore Pain (off-GCD, Rage dump absorb)
+    if db.enableIgnorePain and NS.IsSpec("Protection:W") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.IGNORE_PAIN_SPELL_ID, "Ignore Pain"))
+    end
+    -- Guardian Druid: Ironfur (off-GCD, stacking armor, costs Rage)
+    if db.enableIronfur and NS.IsSpec("Guardian") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.IRONFUR_SPELL_ID, "Ironfur"))
+    end
+    -- Protection Paladin: Shield of the Righteous (off-GCD for Prot, costs 3 HP)
+    if db.enableShieldOfRighteous and NS.IsSpec("Protection:Pa") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.SHIELD_OF_RIGHTEOUS_ID, "Shield of the Righteous"))
+    end
+    -- Blood DK: Rune Tap (off-GCD, 2 charges, talent-gated)
+    if db.enableRuneTap and NS.IsSpec("Blood") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.RUNE_TAP_SPELL_ID, "Rune Tap"))
+    end
+    -- Brewmaster Monk: Purifying Brew (off-GCD, 2 charges, clears Stagger)
+    if db.enablePurifyingBrew and NS.IsSpec("Brewmaster") then
+        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.PURIFYING_BREW_SPELL_ID, "Purifying Brew"))
+    end
 
     return NS.table_concat(lines, "\n")
 end
@@ -492,17 +800,15 @@ function NS.ScanKeybinds()
                 end
             end
         end
-        return
-    end
 
     -- ElvUI
-    if _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
+    elseif _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
         for bar = 1, 15 do
             for btn = 1, 12 do
                 local elvBtn = _G["ElvUI_Bar" .. bar .. "Button" .. btn]
                 if elvBtn then
                     local slot = elvBtn._state_action
-                    if slot then
+                    if slot and type(slot) == "number" then
                         local actionType, id = NS.GetActionInfo(slot)
                         if actionType == "spell" and id then
                             local binding = elvBtn.bindstring or elvBtn.keyBoundTarget
@@ -516,11 +822,9 @@ function NS.ScanKeybinds()
                 end
             end
         end
-        return
-    end
 
     -- Dominos
-    if NS.C_AddOns.IsAddOnLoaded("Dominos") then
+    elseif NS.C_AddOns.IsAddOnLoaded("Dominos") then
         for i = 1, 180 do
             local actionType, id = NS.GetActionInfo(i)
             if actionType == "spell" and id and not keybindCache[id] then
@@ -534,25 +838,27 @@ function NS.ScanKeybinds()
                 end
             end
         end
-        return
-    end
 
     -- Default Blizzard bars
-    for i = 1, 180 do
-        local actionType, id = NS.GetActionInfo(i)
-        if actionType == "spell" and id and not keybindCache[id] then
-            local barIndex = NS.math_floor((i - 1) / 12)
-            local btnIndex = ((i - 1) % 12) + 1
-            if BINDING_BARS[barIndex + 1] then
-                local key = NS.GetBindingKey(BINDING_BARS[barIndex + 1] .. btnIndex)
-                if key then
-                    keybindCache[id] = NS.FormatKeybind(key)
+    else
+        for i = 1, 180 do
+            local actionType, id = NS.GetActionInfo(i)
+            if actionType == "spell" and id and not keybindCache[id] then
+                local barIndex = NS.math_floor((i - 1) / 12)
+                local btnIndex = ((i - 1) % 12) + 1
+                if BINDING_BARS[barIndex + 1] then
+                    local key = NS.GetBindingKey(BINDING_BARS[barIndex + 1] .. btnIndex)
+                    if key then
+                        keybindCache[id] = NS.FormatKeybind(key)
+                    end
                 end
             end
         end
     end
 
-    -- Override the SBA keybind to redirect through our button
+    -- ALWAYS update the SBA override — clear when mounted/vehicle,
+    -- re-establish when on foot.  This must run regardless of which
+    -- bar addon is active (the early-returns above were preventing it).
     NS.OverrideSBAKeybind()
 end
 
@@ -574,15 +880,18 @@ function NS.OverrideSBAKeybind()
     local secure = NS.secureButton
     if not secure then return end
 
-    -- If on a special bar (skyriding, vehicle, override, possess), always
-    -- clear our overrides so the bar's own keybinds work unimpeded.
-    -- SBA is not usable on these bars, so there's nothing to intercept.
+    -- If on a special bar, mounted, or in a vehicle, always clear our
+    -- overrides so the bar's own keybinds work unimpeded.
+    -- SBA is not usable on these bars / while mounted, so nothing to intercept.
+    -- IsMounted() catches both regular mounts and skyriding transitions
+    -- where HasBonusActionBar() may flicker.
     -- This check MUST happen before FindSBAActionSlot, because the API
     -- can return SBA's underlying slot even when a bonus bar is active.
-    local onSpecialBar = HasBonusActionBar and HasBonusActionBar()
-        or HasOverrideActionBar and HasOverrideActionBar()
-        or HasVehicleActionBar and HasVehicleActionBar()
-        or IsPossessBarVisible and IsPossessBarVisible()
+    local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
+        or (HasOverrideActionBar and HasOverrideActionBar())
+        or (HasVehicleActionBar and HasVehicleActionBar())
+        or (IsPossessBarVisible and IsPossessBarVisible())
+        or (IsMounted and IsMounted())
     if onSpecialBar then
         if NS._overrideKeys then
             ClearOverrideBindings(secure)
@@ -917,7 +1226,7 @@ function NS.GetDisplaySpellFromActionBar()
     for idx = 1, #rotationSpells do
         local sid = rotationSpells[idx]
         if sid and sid ~= 0 then
-            local spellTex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(sid)
+            local spellTex = NS.GetSpellTextureCached(sid)
             if spellTex and spellTex == tex then
                 NS.DebugPrint("ActionBar texture matched spell", sid)
                 return sid, tex
@@ -989,6 +1298,131 @@ function NS.GetDisplaySpell()
 end
 
 ----------------------------------------------------------------
+-- POP! particle burst system — colored fragments explode outward
+----------------------------------------------------------------
+local POP_PARTICLE_COUNT = 12     -- fragments per burst
+local POP_PARTICLE_POOL = {}      -- recycled frame pool
+local POP_BURST_DUR = 0.45        -- seconds for particles to fly + fade
+local POP_BURST_DIST = 60         -- max pixel distance from center
+
+-- Balloon pop colors: bright, saturated party colors
+local POP_COLORS = {
+    { 1.0, 0.25, 0.25 },   -- red
+    { 1.0, 0.55, 0.15 },   -- orange
+    { 1.0, 0.90, 0.20 },   -- yellow
+    { 0.30, 0.90, 0.30 },  -- green
+    { 0.30, 0.70, 1.0 },   -- blue
+    { 0.70, 0.40, 1.0 },   -- purple
+    { 1.0, 0.45, 0.75 },   -- pink
+    { 0.20, 0.95, 0.85 },  -- cyan
+}
+
+local function AcquirePopParticle()
+    for _, p in NS.ipairs(POP_PARTICLE_POOL) do
+        if not p._inUse then
+            p._inUse = true
+            return p
+        end
+    end
+
+    local f = NS.CreateFrame("Frame", nil, NS.UIParent)
+    f:SetFrameStrata("TOOLTIP")
+    f:SetFrameLevel(300)
+    f:Hide()
+
+    -- Dark outline layer (slightly larger, sits behind the color)
+    f.outline = f:CreateTexture(nil, "ARTWORK")
+    f.outline:SetPoint("TOPLEFT", -1, 1)
+    f.outline:SetPoint("BOTTOMRIGHT", 1, -1)
+    f.outline:SetColorTexture(0, 0, 0, 0.9)
+
+    -- Colored confetti layer on top
+    f.tex = f:CreateTexture(nil, "OVERLAY")
+    f.tex:SetAllPoints()
+    f.tex:SetColorTexture(1, 1, 1, 1)
+
+    f._inUse = true
+    POP_PARTICLE_POOL[#POP_PARTICLE_POOL + 1] = f
+    return f
+end
+
+-- Fire a burst of colored particles from the center of `btn`
+local function FirePopBurst(btn)
+    if not btn then return end
+
+    for i = 1, POP_PARTICLE_COUNT do
+        local p = AcquirePopParticle()
+
+        -- Random angle + distance + size
+        local angle = math.random() * 2 * math.pi
+        local dist = POP_BURST_DIST * (0.5 + 0.5 * math.random())
+        local sz = math.random(4, 8)
+
+        -- Random color
+        local clr = POP_COLORS[math.random(#POP_COLORS)]
+        local shade = 0.8 + 0.4 * math.random()
+        p.tex:SetColorTexture(
+            math.min(1, clr[1] * shade),
+            math.min(1, clr[2] * shade),
+            math.min(1, clr[3] * shade),
+            1
+        )
+
+        p:SetSize(sz, sz * (0.4 + 0.6 * math.random()))  -- rectangular shards
+        p:ClearAllPoints()
+        p:SetPoint("CENTER", btn, "CENTER")  -- anchor directly to button center
+        p:SetAlpha(1)
+        p:Show()
+
+        -- Animate: translate outward + fade + shrink
+        local ag = p._ag
+        if not ag then
+            ag = p:CreateAnimationGroup()
+            ag._trans = ag:CreateAnimation("Translation")
+            ag._alpha = ag:CreateAnimation("Alpha")
+            ag._scale = ag:CreateAnimation("Scale")
+            ag._rot = ag:CreateAnimation("Rotation")
+            ag._rot:SetOrigin("CENTER", 0, 0)
+            ag:SetScript("OnFinished", function()
+                p:Hide()
+                p:ClearAllPoints()
+                p:SetScale(1)
+                p._inUse = false
+            end)
+            p._ag = ag
+        end
+
+        local stagger = math.random() * 0.04
+        local tx = math.cos(angle) * dist
+        local ty = math.sin(angle) * dist
+
+        ag._trans:SetOffset(tx, ty)
+        ag._trans:SetDuration(POP_BURST_DUR)
+        ag._trans:SetSmoothing("OUT")
+        ag._trans:SetStartDelay(stagger)
+
+        ag._alpha:SetFromAlpha(1)
+        ag._alpha:SetToAlpha(0)
+        ag._alpha:SetDuration(POP_BURST_DUR * 0.6)
+        ag._alpha:SetSmoothing("IN")
+        ag._alpha:SetStartDelay(stagger + POP_BURST_DUR * 0.3)
+
+        ag._scale:SetScale(0.3, 0.3)
+        ag._scale:SetDuration(POP_BURST_DUR)
+        ag._scale:SetSmoothing("IN")
+        ag._scale:SetStartDelay(stagger)
+
+        ag._rot:SetDegrees(math.random(0, 360))
+        ag._rot:SetDuration(0.001)
+        ag._rot:SetSmoothing("NONE")
+        ag._rot:SetStartDelay(0)
+
+        ag:Stop()
+        ag:Play()
+    end
+end
+
+----------------------------------------------------------------
 -- Cast animation system (multiple animation types)
 ----------------------------------------------------------------
 local animPool = {}
@@ -1024,12 +1458,180 @@ local ANIM_CONFIGS = {
     end,
     SLAM = function(ag)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        s:SetScale(1.6, 1.6); s:SetDuration(0.12); s:SetSmoothing("IN_OUT"); s:SetStartDelay(0)
-        t:SetOffset(0, -40); t:SetDuration(0.5); t:SetSmoothing("IN"); t:SetStartDelay(0.12)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.5); a:SetSmoothing("IN"); a:SetStartDelay(0.12)
+        -- 0.15s pulse (dislodge) → 0.70s gravity drop (IN = accelerates) = 0.85s
+        s:SetScale(1.15, 1.15); s:SetDuration(0.15); s:SetSmoothing("IN_OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, -55); t:SetDuration(0.70); t:SetSmoothing("IN"); t:SetStartDelay(0.15)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.65); a:SetSmoothing("IN"); a:SetStartDelay(0.15)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    -- POP!: icon shrinks away while fading as confetti bursts out
+    -- 0.00–0.15s   alpha fades 1→0 (icon dissolves)
+    -- 0.08s        confetti fires
+    -- 0.00–0.20s   scale shrinks to 0.3x (icon collapses away)
+    -- 0.20s        OnFinished
+    ["POP!"] = function(ag)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(0.3, 0.3); s:SetDuration(0.20); s:SetSmoothing("IN"); s:SetStartDelay(0)
+        t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.15); a:SetSmoothing("IN"); a:SetStartDelay(0)
         r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
     end,
 }
+
+-- Reverse (incoming) animation configs — overlapping with outgoing.
+--
+-- Both outgoing and incoming clones are launched simultaneously.
+-- The incoming clone uses SetStartDelay on each sub-animation so it
+-- begins partway through the outgoing, creating a seamless cross-fade
+-- where the old icon leaves and the new icon arrives as one motion.
+--
+--   offset    – where the clone starts (opposite side from forward's travel)
+--   preScale  – frame's actual scale before animation (matches forward's
+--               end scale).  Scale animation compensates to arrive at 1.0.
+--   delay     – seconds to wait before the incoming animations begin
+--               (overlap point into the outgoing animation)
+--   setup(ag, d) – configures the AnimationGroup with start delay d
+local REVERSE_ANIM_CONFIGS = {
+    -- DRIFT forward: drifts left (-80,-15), shrinks to 0.3, fades out (0.8s)
+    -- Incoming: arrives from right, starts small, grows — overlaps at 0.30s
+    DRIFT = {
+        offset = { 80, 15 },
+        preScale = 0.3,
+        delay = 0.30,
+        setup = function(ag, d)
+            d = d or 0
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1/0.3, 1/0.3); s:SetDuration(0.55); s:SetSmoothing("IN"); s:SetStartDelay(d)
+            t:SetOffset(-80, -15); t:SetDuration(0.55); t:SetSmoothing("IN"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.55); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    -- PULSE forward: grows to 2.0, fades out in place (0.45s)
+    -- Incoming: starts large, shrinks in — cross-dissolve at 0.12s
+    PULSE = {
+        offset = { 0, 0 },
+        preScale = 2.0,
+        delay = 0.12,
+        setup = function(ag, d)
+            d = d or 0
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1/2.0, 1/2.0); s:SetDuration(0.35); s:SetSmoothing("IN"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.35); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    -- SPIN forward: shrinks to 0.15, spins 360°, fades out (0.7s)
+    -- Incoming: starts tiny, reverse-spins in — overlaps at 0.25s
+    SPIN = {
+        offset = { 0, 0 },
+        preScale = 0.15,
+        delay = 0.25,
+        setup = function(ag, d)
+            d = d or 0
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1/0.15, 1/0.15); s:SetDuration(0.50); s:SetSmoothing("IN"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.50); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(-360); r:SetDuration(0.50); r:SetSmoothing("IN"); r:SetStartDelay(d)
+        end,
+    },
+    -- ZOOM forward: zooms up (0,25), grows to 3.5, fades out (0.55s)
+    -- Incoming: starts large below, rises while shrinking — overlaps at 0.18s
+    ZOOM = {
+        offset = { 0, -25 },
+        preScale = 3.5,
+        delay = 0.18,
+        setup = function(ag, d)
+            d = d or 0
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1/3.5, 1/3.5); s:SetDuration(0.40); s:SetSmoothing("IN"); s:SetStartDelay(d)
+            t:SetOffset(0, 25); t:SetDuration(0.40); t:SetSmoothing("IN"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    -- POP! forward: instant burst (0.20s total)
+    -- Incoming: simple fade-in at normal scale after the pop — delay 0.10s
+    ["POP!"] = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 0.10,
+        setup = function(ag, d)
+            d = d or 0
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.20); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    -- SLAM forward: pulse (0.15s) + gravity drop (0.70s) = 0.85s
+    -- Incoming: falls from 45px above — delay 0.40s so old icon clearly
+    -- drops away first, then new icon drops in with deceleration (landing)
+    -- Total: 0.40 + 0.50 = 0.90s, then 0.30s bounce = 1.20s grand total
+    SLAM = {
+        offset = { 0, 45 },
+        preScale = 0.85,   -- starts slightly small, grows into full size
+        delay = 0.40,
+        setup = function(ag, d)
+            d = d or 0
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            -- Scale UP from 0.85 to 1.0 as it lands (grows into place)
+            s:SetScale(1/0.85, 1/0.85); s:SetDuration(0.50); s:SetSmoothing("OUT"); s:SetStartDelay(d)
+            t:SetOffset(0, -45); t:SetDuration(0.50); t:SetSmoothing("OUT"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.45); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+}
+
+----------------------------------------------------------------
+-- SLAM landing bounce — damped cosine wobble ("superhero landing")
+-- Must be declared before AcquireAnimFrame so the OnFinished
+-- closure can capture these upvalues.
+----------------------------------------------------------------
+local slamBounceTarget = nil
+local slamBounceElapsed = 0
+local SLAM_BOUNCE_DUR = 0.30
+local SLAM_BOUNCE_AMP = 0.10   -- 10% scale oscillation
+local SLAM_BOUNCE_FREQ = 2.5   -- ~2.5 wobble cycles
+
+local slamBounceDriver = NS.CreateFrame("Frame")
+slamBounceDriver:Hide()
+slamBounceDriver:SetScript("OnUpdate", function(self, elapsed)
+    if not slamBounceTarget then self:Hide() return end
+    slamBounceElapsed = slamBounceElapsed + elapsed
+    if slamBounceElapsed >= SLAM_BOUNCE_DUR then
+        -- Bounce done — reveal real button and clean up
+        local srcBtn = slamBounceTarget._sourceBtn
+        if srcBtn then
+            local targetAlpha = InCombatLockdown()
+                and (NS.db.alphaCombat or 1)
+                or  (NS.db.alphaOOC or 1)
+            srcBtn:SetAlpha(targetAlpha)
+            NS._recreateFading = false
+        end
+        slamBounceTarget:SetScale(1)
+        slamBounceTarget:Hide()
+        slamBounceTarget:ClearAllPoints()
+        slamBounceTarget._sourceBtn = nil
+        slamBounceTarget._animType = nil
+        slamBounceTarget._isIncoming = nil
+        slamBounceTarget._hasIncomingPeer = nil
+        slamBounceTarget._inUse = false
+        slamBounceTarget = nil
+        self:Hide()
+        return
+    end
+    -- Damped cosine: wobbles ±AMP, decaying to zero over BOUNCE_DUR
+    local decay = 1 - (slamBounceElapsed / SLAM_BOUNCE_DUR)
+    local wobble = 1 + SLAM_BOUNCE_AMP * decay * math.cos(
+        SLAM_BOUNCE_FREQ * 2 * math.pi * slamBounceElapsed / SLAM_BOUNCE_DUR)
+    local baseScale = slamBounceTarget._btnScale or NS.db.scale or 1
+    slamBounceTarget:SetScale(wobble * baseScale)
+end)
 
 ----------------------------------------------------------------
 -- Hidden reference button for Masque "Animated Button" group
@@ -1106,21 +1708,19 @@ local function AcquireAnimFrame()
         return oldest
     end
 
-    local f = NS.CreateFrame("Button", nil, NS.UIParent, "BackdropTemplate")
+    -- NO BackdropTemplate — WHITE8X8 can flash white during WoW rendering
+    -- hiccups.  Use SetColorTexture instead (creates color in GPU memory
+    -- with no white base texture that can leak through).
+    local f = NS.CreateFrame("Button", nil, NS.UIParent)
     f:SetFrameStrata("HIGH")
     f:Hide()
     f:EnableMouse(false)  -- don't intercept clicks during animation
 
-    f.icon = f:CreateTexture(nil, "ARTWORK")
-    if NS.masque then
-        f.icon:SetAllPoints()
-    else
-        f.icon:SetAllPoints()
-        f.icon:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
-    end
-
     -- Register with Masque animated button group
     if NS.masqueAnimGroup then
+        f.icon = f:CreateTexture(nil, "ARTWORK")
+        f.icon:SetAllPoints()
+
         local size = NS.db.buttonSize or 48
 
         local normalTex = f:CreateTexture()
@@ -1158,17 +1758,29 @@ local function AcquireAnimFrame()
             Flash = flashTex,
             Border = borderTex,
         })
-
-        f:SetBackdrop(nil)
     else
-        f:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        f:SetBackdropColor(0, 0, 0, 0.6)
-        f:SetBackdropBorderColor(NS.unpack(NS.THEME.BORDER))
+        -- Border layer (fills entire frame, shows as 1px edge around the icon)
+        f.borderTex = f:CreateTexture(nil, "BACKGROUND")
+        f.borderTex:SetAllPoints()
+        f.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
+
+        -- Background layer (1px inset, sits on top of border)
+        f.bg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+        f.bg:SetPoint("TOPLEFT", 1, -1)
+        f.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+        f.bg:SetColorTexture(0, 0, 0, 0.6)
+
+        -- Icon (1px inset, matches main button's border gap)
+        f.icon = f:CreateTexture(nil, "ARTWORK")
+        f.icon:SetPoint("TOPLEFT", 1, -1)
+        f.icon:SetPoint("BOTTOMRIGHT", -1, 1)
+        f.icon:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
     end
+
+    -- Keybind text (cloned from main button each animation)
+    f.hotkey = f:CreateFontString(nil, "OVERLAY")
+    f.hotkey:SetPoint("TOPRIGHT", NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+    f.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
     local ag = f:CreateAnimationGroup()
     ag._scale = ag:CreateAnimation("Scale")
@@ -1178,9 +1790,48 @@ local function AcquireAnimFrame()
     ag._rot:SetOrigin("CENTER", 0, 0)
 
     ag:SetScript("OnFinished", function()
+        -- SLAM incoming: chain into landing bounce instead of cleanup
+        if f._isIncoming and f._animType == "SLAM" and f._sourceBtn then
+            f:SetScale(f._btnScale or NS.db.scale or 1)  -- match button scale
+            f:ClearAllPoints()
+            f:SetPoint("CENTER", f._sourceBtn, "CENTER")  -- snap to button
+            slamBounceTarget = f
+            slamBounceElapsed = 0
+            slamBounceDriver:Show()
+            return  -- bounce driver handles cleanup + reveal
+        end
+
         f:Hide()
         f:ClearAllPoints()
+        f:SetScale(1)  -- reset preScale from reverse animations
+
+        local srcBtn = f._sourceBtn
+        local isIncoming = f._isIncoming
+        local hasPeer = f._hasIncomingPeer
+        f._sourceBtn = nil
+        f._animType = nil
+        f._isIncoming = nil
+        f._hasIncomingPeer = nil
         f._inUse = false
+
+        if srcBtn then
+            if isIncoming then
+                -- Incoming animation done — reveal the real button
+                local targetAlpha = InCombatLockdown()
+                    and (NS.db.alphaCombat or 1)
+                    or  (NS.db.alphaOOC or 1)
+                srcBtn:SetAlpha(targetAlpha)
+                NS._recreateFading = false
+            elseif not hasPeer then
+                -- Outgoing done with no incoming peer — reveal button
+                local targetAlpha = InCombatLockdown()
+                    and (NS.db.alphaCombat or 1)
+                    or  (NS.db.alphaOOC or 1)
+                srcBtn:SetAlpha(targetAlpha)
+                NS._recreateFading = false
+            end
+            -- If hasPeer, the incoming clone handles the reveal
+        end
     end)
 
     f.ag = ag
@@ -1189,10 +1840,22 @@ local function AcquireAnimFrame()
     return f
 end
 
--- Tracks active RECREATE fade-in (prevents ticker from overriding alpha)
+-- Tracks active animation cycle (prevents ticker from overriding alpha)
 NS._recreateFading = false
-NS._recreateFadeStart = 0
 
+----------------------------------------------------------------
+-- Play a cast animation — simultaneous outgoing + incoming clones
+--
+-- 1. Clone the button (icon, border, keybind text, size)
+-- 2. Place the outgoing clone on top of the real button
+-- 3. If incoming enabled, place incoming clone at offset position
+-- 4. Hide the real button instantly (alpha 0)
+-- 5. Start both animations simultaneously — incoming uses start
+--    delays so it begins partway through the outgoing, creating
+--    a seamless cross-fade where old and new spells overlap
+-- 6. Outgoing OnFinished just cleans up (incoming handles reveal)
+-- 7. Incoming OnFinished reveals the real button
+----------------------------------------------------------------
 function NS.PlayCastAnimation(spellID)
     local btn = NS.mainButton
     if not btn or not btn:IsShown() then return end
@@ -1203,17 +1866,38 @@ function NS.PlayCastAnimation(spellID)
     local config = ANIM_CONFIGS[animType]
     if not config then return end
 
-    local style = NS.db and NS.db.castAnimStyle or "RECREATE"
+    -- Cancel any in-progress landing bounce
+    if slamBounceTarget then
+        slamBounceTarget:SetScale(1)
+        slamBounceTarget:Hide()
+        slamBounceTarget:ClearAllPoints()
+        slamBounceTarget._sourceBtn = nil
+        slamBounceTarget._animType = nil
+        slamBounceTarget._isIncoming = nil
+        slamBounceTarget._inUse = false
+        slamBounceTarget = nil
+        slamBounceDriver:Hide()
+    end
+
+    -- If a previous animation is still running, revoke its source reference
+    -- so only the newest clone triggers the incoming animation
+    if NS._recreateFading and NS.db.animHideButton ~= false then
+        btn:SetAlpha(0)
+    end
+    -- Clear source reference on any in-flight animation frames
+    for _, af in NS.ipairs(animPool) do
+        if af._inUse and af._sourceBtn then
+            af._sourceBtn = nil
+        end
+    end
 
     -- Always use the CAST spell's own texture.  Earlier events
     -- (SPELL_UPDATE_COOLDOWN, ASSISTED_COMBAT_ACTION_SPELL_CAST) fire
     -- before UNIT_SPELLCAST_SUCCEEDED, so by the time we get here
     -- btn.icon has already been updated to the NEXT recommendation.
-    -- Using GetSpellTexture(spellID) ensures we animate the spell
-    -- the player actually cast, not whatever the button shows now.
     local tex
     if spellID then
-        tex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(spellID)
+        tex = NS.GetSpellTextureCached(spellID)
     end
     if not tex and btn.icon then
         tex = btn.icon:GetTexture()
@@ -1221,93 +1905,196 @@ function NS.PlayCastAnimation(spellID)
     if not tex then return end
 
     local anim = AcquireAnimFrame()
+    -- Read actual button dimensions (not DB) so clone matches exactly,
+    -- even if ApplyButtonSettings hasn't run yet or was deferred by combat.
+    local size = btn:GetWidth()
+    local btnScale = btn:GetScale()
 
-    -- 1. Size and position
-    if style == "RECREATE" then
-        local size = NS.db.buttonSize or 48
-        anim:SetSize(size, size)
-    else
-        local size = (NS.db.buttonSize or 48) * 0.7
-        anim:SetSize(size, size)
-    end
+    -- 1. Size — exact match to the real button (including user scale)
+    anim:SetSize(size, size)
+    anim:SetScale(btnScale)
     anim:ClearAllPoints()
     anim:SetPoint("CENTER", btn, "CENTER")
 
-    -- 2. Set the icon texture
+    -- 2. Icon texture
     anim.icon:SetTexture(tex)
 
-    -- 3. Set importance border color on animated frame
+    -- 3. Keybind text — clone font, position + text from the real button
+    if anim.hotkey then
+        if btn.hotkey and NS.db.showKeybind then
+            local font, fontSize, flags = btn.hotkey:GetFont()
+            if font then
+                anim.hotkey:SetFont(font, fontSize, flags)
+            end
+            anim.hotkey:ClearAllPoints()
+            anim.hotkey:SetPoint("TOPRIGHT",
+                NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+            anim.hotkey:SetText(btn.hotkey:GetText() or "")
+            anim.hotkey:Show()
+        else
+            anim.hotkey:SetText("")
+            anim.hotkey:Hide()
+        end
+    end
+
+    -- 4. Importance border color + backdrop (ColorTexture API — no BackdropTemplate)
+    if not NS.masque and anim.bg then
+        local bgColor = NS.db.buttonBgColor
+        anim.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
+    end
     if NS.db.importanceBorders and spellID then
         local borderColor = NS.GetSpellBorderColor(spellID)
         if borderColor then
             if anim.Border then
                 anim.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
                 anim.Border:Show()
-            elseif anim.SetBackdropBorderColor then
-                anim:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+            elseif anim.borderTex then
+                anim.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
             end
+        else
+            if not NS.masque and anim.borderTex then
+                anim.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
+            end
+        end
+    else
+        if not NS.masque and anim.borderTex then
+            anim.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
         end
     end
 
-    -- 4. ReSkin Masque at current size
+    -- 5. ReSkin Masque at current size
     if NS.masqueAnimGroup then
         NS.masqueAnimGroup:ReSkin()
     end
 
-    -- 5. RECREATE: hide ALL button visuals — animation frame IS the button now
-    if style == "RECREATE" then
-        btn.icon:SetAlpha(0)
-        btn.cooldown:SetAlpha(0)
-        if btn.hotkey then btn.hotkey:SetAlpha(0) end
-        if not NS.masque then
-            btn:SetBackdropColor(0, 0, 0, 0)
-            btn:SetBackdropBorderColor(0, 0, 0, 0)
-        end
-        NS._recreateFading = true
-        NS._recreateFadeStart = GetTime() + 0.25
-    end
+    -- 6. Store references for OnFinished
+    anim._sourceBtn = btn
+    anim._animType = animType
+    anim._isIncoming = false
 
-    -- 6. Show and play
+    -- 7. Hide the real button instantly (unless user disabled hiding)
+    if NS.db.animHideButton ~= false then
+        btn:SetAlpha(0)
+    end
+    NS._recreateFading = true
+
+    -- 8. Start outgoing animation immediately
     anim:Show()
     anim:SetAlpha(1)
     anim.ag:Stop()
     config(anim.ag)
     anim.ag:Play()
 
-    -- 7. RECREATE: fade the new button in via OnUpdate (avoids animation alpha flicker)
-    if style == "RECREATE" then
-        local fadeDuration = 0.35
-        local fadeFrame = NS._fadeFrame
-        if not fadeFrame then
-            fadeFrame = NS.CreateFrame("Frame")
-            NS._fadeFrame = fadeFrame
-        end
-        fadeFrame:SetScript("OnUpdate", function(self, elapsed)
-            local now = GetTime()
-            if now < NS._recreateFadeStart then return end  -- still in delay
-            local t = now - NS._recreateFadeStart
-            local pct = t / fadeDuration
-            if pct >= 1 then
-                -- Fully restore all button visuals
-                btn.icon:SetAlpha(1)
-                btn.cooldown:SetAlpha(1)
-                if btn.hotkey then btn.hotkey:SetAlpha(1) end
-                if not NS.masque then
-                    btn:SetBackdropColor(NS.unpack(NS.db.buttonBgColor))
-                    -- Border color restored by next UpdateButton tick
-                    btn:SetBackdropBorderColor(NS.unpack(NS.THEME.BORDER))
-                end
+    -- 8b. POP! particle burst — fire shortly after the fade starts
+    if animType == "POP!" then
+        NS.C_Timer_After(0.08, function()
+            if anim._sourceBtn then
+                FirePopBurst(btn)
+            end
+        end)
+    end
+
+    -- 9. Defer incoming clone creation — the SBA API needs a frame to
+    --    update its recommendation after UNIT_SPELLCAST_SUCCEEDED.
+    --    The incoming animation has built-in start delays (0.30–0.40s)
+    --    anyway, so a 0.05s API delay is invisible.
+    local reverseConfig = REVERSE_ANIM_CONFIGS[animType]
+    if NS.db.animateIncoming and reverseConfig then
+        -- Mark that we expect an incoming peer (prevents outgoing's
+        -- OnFinished from revealing the button if it finishes first)
+        anim._hasIncomingPeer = true
+
+        NS.C_Timer_After(0.05, function()
+            -- Bail if the outgoing was cancelled (new animation started)
+            if not anim._sourceBtn then
+                -- Outgoing was orphaned — no peer expected anymore
+                return
+            end
+
+            -- Re-query: btn.spellID should now reflect the NEXT recommendation
+            NS.UpdateNow()
+            local nextSpellID = btn.spellID
+            local nextTex
+            if nextSpellID then nextTex = NS.GetSpellTextureCached(nextSpellID) end
+            if not nextTex and btn.icon then nextTex = btn.icon:GetTexture() end
+
+            if not nextTex then
+                -- Can't get next spell — reveal button now
+                anim._hasIncomingPeer = false
+                local targetAlpha = InCombatLockdown()
+                    and (NS.db.alphaCombat or 1)
+                    or  (NS.db.alphaOOC or 1)
+                btn:SetAlpha(targetAlpha)
                 NS._recreateFading = false
-                self:SetScript("OnUpdate", nil)
-            else
-                btn.icon:SetAlpha(pct)
-                btn.cooldown:SetAlpha(pct)
-                if btn.hotkey then btn.hotkey:SetAlpha(pct) end
-                if not NS.masque then
-                    local r, g, b, a = NS.unpack(NS.db.buttonBgColor)
-                    btn:SetBackdropColor(r, g, b, a * pct)
+                return
+            end
+
+            local incoming = AcquireAnimFrame()
+            local ox, oy = reverseConfig.offset[1], reverseConfig.offset[2]
+
+            incoming:SetSize(size, size)
+            incoming:SetScale((reverseConfig.preScale or 1) * btnScale)
+            incoming._btnScale = btnScale
+            incoming:ClearAllPoints()
+            incoming:SetPoint("CENTER", btn, "CENTER", ox, oy)
+            incoming.icon:SetTexture(nextTex)
+
+            -- Keybind text
+            if incoming.hotkey then
+                if btn.hotkey and NS.db.showKeybind then
+                    local font, fontSize, flags = btn.hotkey:GetFont()
+                    if font then incoming.hotkey:SetFont(font, fontSize, flags) end
+                    incoming.hotkey:ClearAllPoints()
+                    incoming.hotkey:SetPoint("TOPRIGHT",
+                        NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+                    incoming.hotkey:SetText(btn.hotkey:GetText() or "")
+                    incoming.hotkey:Show()
+                else
+                    incoming.hotkey:SetText("")
+                    incoming.hotkey:Hide()
                 end
             end
+
+            -- Background + importance border
+            if not NS.masque and incoming.bg then
+                local bgColor = NS.db.buttonBgColor
+                incoming.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
+            end
+            if NS.db.importanceBorders and nextSpellID then
+                local borderColor = NS.GetSpellBorderColor(nextSpellID)
+                if borderColor then
+                    if incoming.Border then
+                        incoming.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+                        incoming.Border:Show()
+                    elseif incoming.borderTex then
+                        incoming.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
+                    end
+                else
+                    if not NS.masque and incoming.borderTex then
+                        incoming.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
+                    end
+                end
+            else
+                if not NS.masque and incoming.borderTex then
+                    incoming.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
+                end
+            end
+
+            if NS.masqueAnimGroup then NS.masqueAnimGroup:ReSkin() end
+
+            incoming._sourceBtn = btn
+            incoming._animType = animType
+            incoming._isIncoming = true
+
+            -- Ensure incoming renders ON TOP of outgoing during overlap
+            incoming:SetFrameLevel(anim:GetFrameLevel() + 5)
+            incoming:Show()
+            incoming:SetAlpha(0)  -- invisible during start delay period
+            incoming.ag:Stop()
+            -- Subtract the 0.05s we already waited from the delay
+            local adjustedDelay = math.max(0, reverseConfig.delay - 0.05)
+            reverseConfig.setup(incoming.ag, adjustedDelay)
+            incoming.ag:Play()
         end)
     end
 end

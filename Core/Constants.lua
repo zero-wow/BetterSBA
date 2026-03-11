@@ -8,13 +8,21 @@ _G.BetterSBA = NS
 --   version = feature/milestone version (manual, bump via .scripts/version.sh bump)
 --   build   = total commit count (auto)
 NS.VERSION_RELEASE = 1
-NS.VERSION_PATCH   = 5       -- bump this for feature milestones
-NS.VERSION = "R1.7504.04d087b.0005.8"
+NS.VERSION_PATCH   = 6       -- bump this for feature milestones
+NS.VERSION = "R1.8835.3f961cf.0006.9"
 NS.ADDON_NAME = ADDON_NAME
 
 -- SBA Spell
 NS.SBA_SPELL_ID = 1229376
 NS.AUTO_ATTACK_SPELL_ID = 6603
+-- Class-specific off-GCD ability spell IDs
+NS.DEMON_SPIKES_SPELL_ID    = 203720   -- Vengeance DH
+NS.SHIELD_BLOCK_SPELL_ID    = 2565     -- Protection Warrior
+NS.IGNORE_PAIN_SPELL_ID     = 190456   -- Protection Warrior
+NS.IRONFUR_SPELL_ID         = 192081   -- Guardian Druid
+NS.SHIELD_OF_RIGHTEOUS_ID   = 53600    -- Protection Paladin
+NS.RUNE_TAP_SPELL_ID        = 194679   -- Blood DK (talent)
+NS.PURIFYING_BREW_SPELL_ID  = 119582   -- Brewmaster Monk
 
 -- Icon TexCoord (crops baked-in Blizzard borders)
 NS.ICON_TEXCOORD = { 0.08, 0.92, 0.08, 0.92 }
@@ -84,23 +92,37 @@ NS.defaults = {
     enablePetAttack = true,
     enableChannelProtection = true,
 
+    -- Class-specific combat options (off-GCD abilities appended after /cast SBA)
+    enableDemonSpikes = true,       -- Vengeance DH: /cast Demon Spikes
+    enableShieldBlock = true,       -- Prot Warrior: /cast Shield Block
+    enableIgnorePain = false,       -- Prot Warrior: /cast Ignore Pain (off by default — drains Rage)
+    enableIronfur = true,           -- Guardian Druid: /cast Ironfur
+    enableShieldOfRighteous = true, -- Prot Paladin: /cast Shield of the Righteous
+    enableRuneTap = false,          -- Blood DK: /cast Rune Tap (off by default — talent, short duration)
+    enablePurifyingBrew = false,    -- Brewmaster: /cast Purifying Brew (off by default — situational)
+
     -- Display
     showKeybind = true,
     showCooldown = true,
     rangeColoring = true,
     keybindFontSize = 12,
+    keybindOffsetX = -2,
+    keybindOffsetY = -2,
 
-    -- Queue
-    showQueue = true,
-    queueIconSize = 28,
-    queueSpacing = 3,
-    queuePosition = "RIGHT",
-    showQueueKeybinds = false,
-    queueKeybindFontSize = 8,
-    queueDetached = false,
-    queueFreePosition = nil,
-    queueOffsetX = 0,
-    queueOffsetY = 0,
+    -- Priority Display
+    showPriority = true,
+    priorityIconSize = 28,
+    prioritySpacing = 3,
+    priorityPosition = "RIGHT",
+    showPriorityKeybinds = false,
+    priorityKeybindFontSize = 8,
+    priorityKeybindOffsetX = -1,
+    priorityKeybindOffsetY = -1,
+    priorityDetached = false,
+    priorityFreePosition = nil,
+    priorityOffsetX = 0,
+    priorityOffsetY = 0,
+    showActiveGlow = true,
     configPanelHeight = 600,
 
     -- Visibility
@@ -108,7 +130,7 @@ NS.defaults = {
     alphaCombat = 1.0,
     alphaOOC = 0.6,
     hideInVehicle = true,
-    queueAlphaOOC = 0.6,
+    priorityAlphaOOC = 0.6,
 
     -- Font (per-context, with override toggles)
     fontFace = "Friz Quadrata TT",
@@ -116,13 +138,13 @@ NS.defaults = {
     keybindFont = "Friz Quadrata TT",
     keybindOutline = "OUTLINE",
     keybindFontOverride = false,
-    queueKeybindFont = "Friz Quadrata TT",
-    queueKeybindOutline = "OUTLINE",
-    queueKeybindFontOverride = false,
-    queueLabelFont = "Friz Quadrata TT",
-    queueLabelOutline = "OUTLINE",
-    queueLabelFontOverride = false,
-    queueLabelFontSize = 8,
+    priorityKeybindFont = "Friz Quadrata TT",
+    priorityKeybindOutline = "OUTLINE",
+    priorityKeybindFontOverride = false,
+    priorityLabelFont = "Friz Quadrata TT",
+    priorityLabelOutline = "OUTLINE",
+    priorityLabelFontOverride = false,
+    priorityLabelFontSize = 8,
     pauseSymbolFont = "Friz Quadrata TT",
     pauseSymbolOutline = "OUTLINE",
     pauseSymbolFontOverride = false,
@@ -132,14 +154,14 @@ NS.defaults = {
     pauseReasonFontOverride = false,
     pauseReasonFontSize = 9,
 
-    -- Queue label offset
-    queueLabelOffsetX = 0,
-    queueLabelOffsetY = 0,
+    -- Priority label offset
+    priorityLabelOffsetX = 0,
+    priorityLabelOffsetY = 0,
 
     -- Background / border color
     buttonBgColor = { 0, 0, 0, 0.85 },
-    queueBgColor = { 0, 0, 0, 0.7 },
-    queueBorderColor = { 0.20, 0.22, 0.26, 0.6 },
+    priorityBgColor = { 0, 0, 0, 0.7 },
+    priorityBorderColor = { 0.20, 0.22, 0.26, 0.6 },
     importanceBorders = true,
 
     -- Importance border colors (user-configurable)
@@ -153,7 +175,7 @@ NS.defaults = {
     sectionColorCombat     = { 1.00, 0.45, 0.15, 1.0 },
     sectionColorAppearance = { 0.72, 0.52, 0.95, 1.0 },
     sectionColorActive     = { 0.30, 0.78, 1.00, 1.0 },
-    sectionColorQueue      = { 0.20, 0.90, 0.45, 1.0 },
+    sectionColorPriority   = { 0.20, 0.90, 0.45, 1.0 },
     sectionColorVisibility = { 0.30, 0.95, 0.80, 1.0 },
     sectionColorImportance = { 1.00, 0.82, 0.20, 1.0 },
     sectionColorAdvanced   = { 1.00, 0.30, 0.30, 1.0 },
@@ -167,7 +189,8 @@ NS.defaults = {
 
     -- Animation
     castAnimation = "DRIFT",
-    castAnimStyle = "RECREATE",
+    animateIncoming = false,
+    animHideButton = true,
 
     -- Config panel animation toggles
     cfgAnimTransitions = true,
@@ -186,11 +209,12 @@ NS.defaults = {
 
     -- Debug
     debug = false,
+    debugSpellSubs = false,
 
     -- Modifier scaling
     modifierScaling = true,
     configPanelScale = 1.0,
-    queueScale = 1.0,
+    priorityScale = 1.0,
 }
 
 -- Theme
@@ -221,14 +245,25 @@ NS.THEME = {
     NEON_NEXT     = { 0.00, 1.00, 0.85, 1.0 },  -- Neon cyan for next-cast highlight
 }
 
+----------------------------------------------------------------
+-- Spell substitution table: maps bad/obsolete spell IDs from the
+-- SBA API to the correct spell IDs.  Checked BEFORE auto-resolution
+-- (FindSpellOverrideByID), so manual entries always win.
+--
+-- Usage:  [badSpellID] = correctSpellID
+-- Example: [203782] = 263642   -- Shear → Fracture (VDH)
+----------------------------------------------------------------
+NS.SPELL_SUBSTITUTIONS = {
+    -- Add manual overrides here when auto-resolution can't fix them.
+    -- The auto-resolver handles most talent-replaced spells automatically
+    -- via FindSpellOverrideByID / C_Spell.GetOverrideSpell.
+}
+
 -- Cast animation types
-NS.CAST_ANIMATIONS = { "NONE", "DRIFT", "PULSE", "SPIN", "ZOOM", "SLAM" }
+NS.CAST_ANIMATIONS = { "NONE", "DRIFT", "PULSE", "SPIN", "ZOOM", "SLAM", "POP!" }
 
--- Cast animation style (what happens to the main button)
-NS.CAST_ANIM_STYLES = { "KEEP", "RECREATE" }
-
--- Queue position options
-NS.QUEUE_POSITIONS = { "RIGHT", "LEFT", "TOP", "BOTTOM", "TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT" }
+-- Priority display position options
+NS.PRIORITY_POSITIONS = { "RIGHT", "LEFT", "TOP", "BOTTOM", "TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT" }
 
 -- Keybind abbreviations
 NS.KEYBIND_SUBS = {

@@ -1,7 +1,7 @@
 ## Interface: 110207, 120001
 ## Title: |cFF66B8D9Better|r|cFFFFFFFFSBA|r
-## Version: R1.7504.04d087b.0005.8
-## Notes: Enhanced Single-Button Assistant with auto-targeting, pet attack, and ability queue display.
+## Version: R1.8835.3f961cf.0006.9
+## Notes: Enhanced Single-Button Assistant with auto-targeting, pet attack, and priority display.
 ## Author: |cFF9B59B6fostot|r
 ## SavedVariables: BetterSBA_DB
 ## IconTexture: Interface\AddOns\BetterSBA\IMG\BetterSBA
@@ -16,7 +16,7 @@ Core\LDB.lua
 # GUI
 GUI\Framework.lua
 GUI\MainButton.lua
-GUI\QueueDisplay.lua
+GUI\PriorityDisplay.lua
 GUI\Config.lua
 
 # Main

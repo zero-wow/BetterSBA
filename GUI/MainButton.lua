@@ -13,7 +13,7 @@ function NS:CreateMainButton()
     local size = db.buttonSize
 
     -- Display button (regular Button — clean for Masque skinning)
-    local btn = NS.CreateFrame("Button", "BetterSBA_Display", NS.UIParent, "BackdropTemplate")
+    local btn = NS.CreateFrame("Button", "BetterSBA_Display", NS.UIParent)
     btn:SetSize(size, size)
     btn:SetScale(db.scale)
     btn:SetFrameStrata("MEDIUM")
@@ -21,14 +21,16 @@ function NS:CreateMainButton()
     btn:SetClampedToScreen(true)
     btn:SetMovable(true)
 
-    -- Background
-    btn:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    btn:SetBackdropColor(NS.unpack(db.buttonBgColor))
-    btn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    -- Border + background: SetColorTexture (GPU-native color) instead of
+    -- BackdropTemplate + WHITE8X8, which can flash white during rendering hiccups.
+    btn.borderTex = btn:CreateTexture(nil, "BACKGROUND")
+    btn.borderTex:SetAllPoints()
+    btn.borderTex:SetColorTexture(T.BORDER[1], T.BORDER[2], T.BORDER[3], 1)
+
+    btn.bg = btn:CreateTexture(nil, "BACKGROUND", nil, 1)
+    btn.bg:SetPoint("TOPLEFT", 1, -1)
+    btn.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+    btn.bg:SetColorTexture(db.buttonBgColor[1], db.buttonBgColor[2], db.buttonBgColor[3], db.buttonBgColor[4] or 0.6)
 
     -- Icon
     btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -54,7 +56,7 @@ function NS:CreateMainButton()
         NS.ResolveFontPath("keybindFont"),
         db.keybindFontSize,
         NS.ResolveFontOutline("keybindFont", "keybindOutline"))
-    btn.hotkey:SetPoint("TOPRIGHT", -2, -2)
+    btn.hotkey:SetPoint("TOPRIGHT", db.keybindOffsetX or -2, db.keybindOffsetY or -2)
     btn.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
     -- Pause overlay (text-based with outline for clarity)
@@ -294,8 +296,9 @@ function NS:CreateMainButton()
             HotKey = btn.hotkey,
         })
 
-        -- Masque handles appearance — hide our backdrop so it doesn't darken
-        btn:SetBackdrop(nil)
+        -- Masque handles appearance — hide our textures so they don't darken
+        if btn.borderTex then btn.borderTex:Hide() end
+        if btn.bg then btn.bg:Hide() end
     end
 
     return btn
@@ -325,8 +328,8 @@ local function UpdateButton(btn, spellID)
 
     btn.spellID = spellID
 
-    -- Icon
-    local tex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(spellID)
+    -- Icon (cached — textures never change during gameplay)
+    local tex = NS.GetSpellTextureCached(spellID)
     if tex then
         btn.icon:SetTexture(tex)
     end
@@ -362,22 +365,21 @@ local function UpdateButton(btn, spellID)
                 -- Masque: show and color the registered Border texture
                 btn.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
                 btn.Border:Show()
-            else
-                -- No Masque: color the backdrop border
-                btn:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+            elseif btn.borderTex then
+                btn.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
             end
         else
             if btn.Border then
                 btn.Border:Hide()
-            else
-                btn:SetBackdropBorderColor(NS.unpack(NS.THEME.BORDER))
+            elseif btn.borderTex then
+                btn.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
             end
         end
     else
         if btn.Border then
             btn.Border:Hide()
-        else
-            btn:SetBackdropBorderColor(NS.unpack(NS.THEME.BORDER))
+        elseif btn.borderTex then
+            btn.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
         end
     end
 
@@ -443,7 +445,10 @@ local function UpdateVisibility()
     if not inCombat then
         btn:Show()
     end
-    btn:SetAlpha(inCombat and db.alphaCombat or db.alphaOOC)
+    -- Don't override alpha while a cast animation is hiding/fading the button
+    if not NS._recreateFading then
+        btn:SetAlpha(inCombat and db.alphaCombat or db.alphaOOC)
+    end
 end
 
 ----------------------------------------------------------------
@@ -457,11 +462,12 @@ function NS.UpdateNow()
     -- return cached results within this tick but refresh on the next one
     NS.BeginUpdate()
 
-    -- Detect special bar → normal transition and re-establish keybind override
+    -- Detect special bar / mounted → normal transition and re-establish keybind override
     local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
         or (HasOverrideActionBar and HasOverrideActionBar())
         or (HasVehicleActionBar and HasVehicleActionBar())
         or (IsPossessBarVisible and IsPossessBarVisible())
+        or (IsMounted and IsMounted())
     if wasOnSpecialBar and not onSpecialBar then
         wasOnSpecialBar = false
         if not NS.InCombatLockdown() then
@@ -484,6 +490,13 @@ function NS.UpdateNow()
             NS._pendingKeybindOverride = true
         end
     elseif onSpecialBar then
+        if not wasOnSpecialBar then
+            -- Just entered special bar / mounted state — clear overrides NOW
+            -- so the intercept is removed the same tick (no 0.5s delay).
+            if not NS.InCombatLockdown() then
+                NS.ScanKeybinds()
+            end
+        end
         wasOnSpecialBar = true
     end
 
@@ -537,10 +550,16 @@ function NS.UpdateNow()
     local spellID = NS.GetDisplaySpell()
     UpdateButton(btn, spellID)
 
-    -- Update queue display
-    if NS.UpdateQueueDisplay then
-        NS.UpdateQueueDisplay()
+    -- Live-update LDB tooltip "Next Up" line (only if tooltip is open + spell changed)
+    if NS._ldbTooltip then NS.RefreshLDBTooltipNextSpell() end
+
+    -- Update priority display
+    if NS.UpdatePriorityDisplay then
+        NS.UpdatePriorityDisplay()
     end
+
+    -- Clear cooldown dirty flag — all queries this tick have refreshed
+    NS.EndUpdate()
 end
 
 ----------------------------------------------------------------
@@ -577,6 +596,8 @@ function NS.ApplyButtonSettings()
             NS.ResolveFontPath("keybindFont"),
             NS.db.keybindFontSize,
             NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+        btn.hotkey:ClearAllPoints()
+        btn.hotkey:SetPoint("TOPRIGHT", NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
     end
     if btn.pauseOverlay then
         local po = btn.pauseOverlay
@@ -593,9 +614,10 @@ function NS.ApplyButtonSettings()
                 NS.ResolveFontOutline("pauseReasonFont", "pauseReasonOutline"))
         end
     end
-    if not NS.masque then
-        btn:SetBackdropColor(NS.unpack(NS.db.buttonBgColor))
+    if not NS.masque and btn.bg then
+        local bgColor = NS.db.buttonBgColor
+        btn.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
     end
-    if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     NS.MasqueReSkin()
 end

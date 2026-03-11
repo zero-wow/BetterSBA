@@ -54,7 +54,44 @@ local function MigrateProfileSettings(profile)
 
     -- Clean up session-only state
     profile._queueLocked = nil
-    profile.queueDetached = false  -- drag mode is session-only
+    profile.queueDetached = false     -- legacy key cleanup
+    profile.priorityDetached = false  -- drag mode is session-only
+
+    -- Migrate queue* → priority* DB keys (v0006 rename)
+    local QUEUE_TO_PRIORITY = {
+        showQueue              = "showPriority",
+        queueIconSize          = "priorityIconSize",
+        queueSpacing           = "prioritySpacing",
+        queuePosition          = "priorityPosition",
+        showQueueKeybinds      = "showPriorityKeybinds",
+        queueKeybindFontSize   = "priorityKeybindFontSize",
+        queueDetached          = "priorityDetached",
+        queueFreePosition      = "priorityFreePosition",
+        queueOffsetX           = "priorityOffsetX",
+        queueOffsetY           = "priorityOffsetY",
+        queueAlphaOOC          = "priorityAlphaOOC",
+        queueKeybindFont       = "priorityKeybindFont",
+        queueKeybindOutline    = "priorityKeybindOutline",
+        queueKeybindFontOverride = "priorityKeybindFontOverride",
+        queueLabelFont         = "priorityLabelFont",
+        queueLabelOutline      = "priorityLabelOutline",
+        queueLabelFontOverride = "priorityLabelFontOverride",
+        queueLabelFontSize     = "priorityLabelFontSize",
+        queueLabelOffsetX      = "priorityLabelOffsetX",
+        queueLabelOffsetY      = "priorityLabelOffsetY",
+        queueBgColor           = "priorityBgColor",
+        queueBorderColor       = "priorityBorderColor",
+        queueScale             = "priorityScale",
+        sectionColorQueue      = "sectionColorPriority",
+    }
+    for old, new in pairs(QUEUE_TO_PRIORITY) do
+        if profile[old] ~= nil and profile[new] == nil then
+            profile[new] = profile[old]
+            profile[old] = nil
+        elseif profile[old] ~= nil then
+            profile[old] = nil  -- new key already set, just clean up old
+        end
+    end
 end
 
 ----------------------------------------------------------------
@@ -361,9 +398,9 @@ function NS:ApplyProfileVisuals()
     end
     -- Update main button size, fonts, position
     if NS.ApplyButtonSettings then NS.ApplyButtonSettings() end
-    -- Update queue display
-    if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
-    if NS.LayoutQueue then NS.LayoutQueue() end
+    -- Update priority display
+    if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
+    if NS.LayoutPriority then NS.LayoutPriority() end
     -- Refresh all display state
     if NS.UpdateNow then NS.UpdateNow() end
     -- Update LDB text

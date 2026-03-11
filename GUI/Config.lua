@@ -271,17 +271,17 @@ function NS.Config:Create()
             statusIcon:SetColorTexture(T.TOGGLE_ON[1], T.TOGGLE_ON[2], T.TOGGLE_ON[3], 1)
             local keyStr = NS.table_concat(keys, ", ")
             statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
-            statusText:SetText("Intercepting [" .. keyStr .. "] [BAR: " .. bar .. "] [SLOT: " .. btn .. "]")
+            statusText:SetText("Intercepting [KEYBIND: " .. keyStr .. "] [ACTION BAR: " .. bar .. "] [ACTION BAR SLOT: " .. btn .. "]")
         elseif slot then
             local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
             if reason then
                 statusIcon:SetColorTexture(1.0, 0.53, 0.0, 0.9)
                 statusText:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
-                statusText:SetText("Paused \226\128\148 " .. reason .. " [BAR: " .. bar .. "] [SLOT: " .. btn .. "]")
+                statusText:SetText("Paused \226\128\148 " .. reason .. " [ACTION BAR: " .. bar .. "] [ACTION BAR SLOT: " .. btn .. "]")
             else
                 statusIcon:SetColorTexture(T.DANGER[1], T.DANGER[2], T.DANGER[3], 0.8)
                 statusText:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
-                statusText:SetText("SBA on [BAR: " .. bar .. "] [SLOT: " .. btn .. "] \226\128\148 no keybind found")
+                statusText:SetText("SBA on [ACTION BAR: " .. bar .. "] [ACTION BAR SLOT: " .. btn .. "] \226\128\148 no keybind found")
             end
         else
             local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
@@ -472,7 +472,7 @@ function NS.Config:Create()
         { id = "COMBAT_ASSIST",  label = "Combat Assist",  dotColor = db.sectionColorCombat,     dbKey = "sectionColorCombat" },
         { id = "APPEARANCE",     label = "Appearance",      dotColor = db.sectionColorAppearance, dbKey = "sectionColorAppearance" },
         { id = "ACTIVE_DISPLAY", label = "Active Display",  dotColor = db.sectionColorActive,     dbKey = "sectionColorActive" },
-        { id = "QUEUE",          label = "Queue Display",   dotColor = db.sectionColorQueue,      dbKey = "sectionColorQueue" },
+        { id = "PRIORITY",       label = "Priority Display", dotColor = db.sectionColorPriority,   dbKey = "sectionColorPriority" },
         { id = "VISIBILITY",     label = "Visibility",      dotColor = db.sectionColorVisibility, dbKey = "sectionColorVisibility" },
         { id = "IMPORTANCE",     label = "Importance",      dotColor = db.sectionColorImportance, dbKey = "sectionColorImportance" },
         { id = "ADVANCED",       label = "Advanced",        dotColor = db.sectionColorAdvanced,   dbKey = "sectionColorAdvanced" },
@@ -527,15 +527,18 @@ function NS.Config:Create()
         "Fires before every " .. U .. "SBA" .. R .. " cast.",
     }, c)
     y = y - 24
-    local r3 = NS.CreateToggle(c, "Pet Attack", "enablePetAttack", y, function() NS.RebuildMacroText() end)
-    NS.AddTooltip(r3, "Pet Attack", {
-        "Adds " .. K .. "/petattack" .. R .. " to the macro.",
-        " ",
-        "Sends your pet to attack your current target",
-        "each time " .. U .. "SBA" .. R .. " casts. Only fires if",
-        "you have an " .. V .. "active pet" .. R .. ".",
-    }, c)
-    y = y - 24
+    local r3  -- Pet Attack toggle (nil for non-pet classes)
+    if NS.IsPetClass and NS.IsPetClass() then
+        r3 = NS.CreateToggle(c, "Pet Attack", "enablePetAttack", y, function() NS.RebuildMacroText() end)
+        NS.AddTooltip(r3, "Pet Attack", {
+            "Adds " .. K .. "/petattack" .. R .. " to the macro.",
+            " ",
+            "Sends your pet to attack your current target",
+            "each time " .. U .. "SBA" .. R .. " casts. Only fires if",
+            "you have an " .. V .. "active pet" .. R .. ".",
+        }, c)
+        y = y - 24
+    end
     local r4 = NS.CreateToggle(c, "Channel Protection", "enableChannelProtection", y, function() NS.RebuildMacroText() end)
     NS.AddTooltip(r4, "Channel Protection", {
         "Adds " .. K .. "/stopmacro [channeling]" .. R .. " to the macro.",
@@ -545,6 +548,84 @@ function NS.Config:Create()
         "The macro " .. W .. "stops executing" .. R .. " if you are channeling.",
     }, c)
     y = y - 28
+
+    -- Class-specific off-GCD abilities (only shown for the relevant tank spec)
+    -- Each entry: { dbKey, label, spellID, specCheck, tooltip, comment }
+    local CLASS_ABILITIES = {
+        { "enableDemonSpikes",      "Demon Spikes",           NS.DEMON_SPIKES_SPELL_ID,   "Vengeance",
+            "Vengeance Demon Hunter only.",
+            "Off-GCD mitigation with charges. Maintains",
+            "armor + parry uptime passively." },
+        { "enableShieldBlock",      "Shield Block",           NS.SHIELD_BLOCK_SPELL_ID,   "Protection:W",
+            "Protection Warrior only.",
+            "Off-GCD, 2 charges. Blocks melee attacks.",
+            "Costs " .. N .. "30" .. R .. " Rage per cast." },
+        { "enableIgnorePain",       "Ignore Pain",            NS.IGNORE_PAIN_SPELL_ID,    "Protection:W",
+            "Protection Warrior only.",
+            "Off-GCD Rage dump that applies an absorb shield.",
+            W .. "Off by default" .. R .. " \226\128\148 drains Rage quickly." },
+        { "enableIronfur",          "Ironfur",                NS.IRONFUR_SPELL_ID,        "Guardian",
+            "Guardian Druid only.",
+            "Off-GCD stacking armor buff (7 sec). Costs",
+            N .. "40" .. R .. " Rage. Stacks up to 3 times." },
+        { "enableShieldOfRighteous","Shield of the Righteous",NS.SHIELD_OF_RIGHTEOUS_ID,  "Protection:Pa",
+            "Protection Paladin only.",
+            "Off-GCD active mitigation. Costs " .. N .. "3" .. R .. " Holy Power.",
+            W .. "Competes with Word of Glory for HP." .. R },
+        { "enableRuneTap",          "Rune Tap",               NS.RUNE_TAP_SPELL_ID,       "Blood",
+            "Blood Death Knight only.",
+            "Off-GCD, 2 charges, 20% damage reduction (4 sec).",
+            W .. "Off by default" .. R .. " \226\128\148 talent-gated, short duration." },
+        { "enablePurifyingBrew",    "Purifying Brew",         NS.PURIFYING_BREW_SPELL_ID, "Brewmaster",
+            "Brewmaster Monk only.",
+            "Off-GCD, 2 charges. Clears 50% of current Stagger.",
+            W .. "Off by default" .. R .. " \226\128\148 best used reactively on high Stagger." },
+    }
+
+    -- Collect which abilities apply to this character's current spec
+    local activeAbilities = {}
+    for _, info in NS.ipairs(CLASS_ABILITIES) do
+        if NS.IsSpec(info[4]) then
+            activeAbilities[#activeAbilities + 1] = info
+        end
+    end
+
+    local classToggles = {}
+    if #activeAbilities > 0 then
+        -- Sub-header: CLASS OPTIONS
+        do
+            local col = c._sectionColor or T.TEXT_DIM
+            local hdr = c:CreateFontString(nil, "OVERLAY")
+            hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+            hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+            hdr:SetTextColor(col[1], col[2], col[3])
+            hdr:SetText("CLASS OPTIONS")
+            local line = c:CreateTexture(nil, "ARTWORK")
+            line:SetHeight(1)
+            line:SetColorTexture(col[1], col[2], col[3], 0.4)
+            line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
+            line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+            subHeaderLines[#subHeaderLines + 1] = line
+        end
+        y = y - 18
+
+        for _, info in NS.ipairs(activeAbilities) do
+            local dbKey, label, _, _, specNote, desc1, desc2 = NS.unpack(info)
+            local toggle = NS.CreateToggle(c, label, dbKey, y, function() NS.RebuildMacroText() end)
+            NS.AddTooltip(toggle, label, {
+                "Adds " .. K .. "/cast " .. label .. R .. " after the",
+                U .. "Single-Button Assistant" .. R .. " cast.",
+                " ",
+                desc1,
+                desc2,
+                " ",
+                W .. specNote .. R,
+            }, c)
+            classToggles[#classToggles + 1] = toggle
+            y = y - 24
+        end
+        y = y - 4  -- extra spacing before macro preview
+    end
 
     -- Sub-header: MACRO PREVIEW
     do
@@ -584,9 +665,10 @@ function NS.Config:Create()
     local CMT  = "|cFF555555"   -- dim gray — inline comments
     local RST  = "|r"
 
-    -- Create 5 line fontstrings (max possible macro lines)
+    -- Max macro lines: 5 base + up to 2 class abilities (e.g. Prot Warrior has 2)
+    local MAX_PREVIEW = 5 + math.max(#activeAbilities, 1)
     local previewLines = {}
-    for i = 1, 5 do
+    for i = 1, MAX_PREVIEW do
         local fs = previewPanel:CreateFontString(nil, "OVERLAY")
         fs:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
         fs:SetPoint("TOPLEFT", previewPanel, "TOPLEFT", 8, -6 - (i - 1) * 15)
@@ -597,10 +679,24 @@ function NS.Config:Create()
         previewLines[i] = fs
     end
 
+    -- Helper: resolve localized spell name with fallback
+    local function spellName(spellID, fallback)
+        return NS.C_Spell and NS.C_Spell.GetSpellName
+            and NS.C_Spell.GetSpellName(spellID) or fallback
+    end
+
     local function RefreshMacroPreview()
         local idx = 0
         local adb = NS.db
 
+        if adb.enableChannelProtection then
+            idx = idx + 1
+            previewLines[idx]:SetText(
+                CMD .. "/stopmacro" .. RST .. " " ..
+                COND .. "[channeling]" .. RST .. "  " ..
+                CMT .. "-- protect channels" .. RST)
+            previewLines[idx]:Show()
+        end
         if adb.enableDismount then
             idx = idx + 1
             previewLines[idx]:SetText(
@@ -617,22 +713,14 @@ function NS.Config:Create()
                 CMT .. "-- acquire target" .. RST)
             previewLines[idx]:Show()
         end
-        if adb.enablePetAttack then
+        if adb.enablePetAttack and NS.IsPetClass and NS.IsPetClass() then
             idx = idx + 1
             previewLines[idx]:SetText(
                 CMD .. "/petattack" .. RST .. "  " ..
                 CMT .. "-- send pet" .. RST)
             previewLines[idx]:Show()
         end
-        if adb.enableChannelProtection then
-            idx = idx + 1
-            previewLines[idx]:SetText(
-                CMD .. "/stopmacro" .. RST .. " " ..
-                COND .. "[channeling]" .. RST .. "  " ..
-                CMT .. "-- protect channels" .. RST)
-            previewLines[idx]:Show()
-        end
-        -- /cast line is always present
+        -- /cast SBA is always present
         idx = idx + 1
         local sbaName = NS.GetSBASpellName and NS.GetSBASpellName() or "Single-Button Assistant"
         previewLines[idx]:SetText(
@@ -641,8 +729,21 @@ function NS.Config:Create()
             CMT .. "-- fire recommended" .. RST)
         previewLines[idx]:Show()
 
+        -- Class-specific off-GCD abilities (mirrors BuildMacroText order)
+        for _, info in NS.ipairs(activeAbilities) do
+            local dbKey, label, sid = info[1], info[2], info[3]
+            if adb[dbKey] then
+                idx = idx + 1
+                previewLines[idx]:SetText(
+                    CMD .. "/cast" .. RST .. " " ..
+                    SPELL .. spellName(sid, label) .. RST .. "  " ..
+                    CMT .. "-- off-GCD" .. RST)
+                previewLines[idx]:Show()
+            end
+        end
+
         -- Hide unused lines
-        for i = idx + 1, 5 do
+        for i = idx + 1, MAX_PREVIEW do
             previewLines[i]:Hide()
         end
 
@@ -653,11 +754,14 @@ function NS.Config:Create()
     -- Hook toggles to refresh preview when clicked
     r1:HookScript("OnClick", RefreshMacroPreview)
     r2:HookScript("OnClick", RefreshMacroPreview)
-    r3:HookScript("OnClick", RefreshMacroPreview)
+    if r3 then r3:HookScript("OnClick", RefreshMacroPreview) end
     r4:HookScript("OnClick", RefreshMacroPreview)
+    for _, toggle in NS.ipairs(classToggles) do
+        toggle:HookScript("OnClick", RefreshMacroPreview)
+    end
 
     RefreshMacroPreview()
-    y = y - (12 + 5 * 15) - 8
+    y = y - (12 + MAX_PREVIEW * 15) - 8
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
     end -- do (Section 1)
@@ -747,14 +851,26 @@ function NS.Config:Create()
     end)
     y = y - 46
 
-    local animStyleRow = NS.CreateDropdown(c, "Animation Style", "castAnimStyle", NS.CAST_ANIM_STYLES, y)
-    NS.AddTooltip(animStyleRow, "Animation Style", {
-        "Visual style variant for the " .. U .. "Cast Animation" .. R .. ".",
+    local animIncoming = NS.CreateToggle(c, "Incoming Animation", "animateIncoming", y)
+    NS.AddTooltip(animIncoming, "Incoming Animation", {
+        "When " .. V .. "enabled" .. R .. ", the " .. U .. "new spell" .. R .. " animates",
+        "into position from the " .. V .. "opposite direction" .. R .. " of",
+        "the outgoing cast animation.",
         " ",
-        "Different styles change how the cast effect " .. V .. "appears" .. R .. ",",
-        "such as particle direction, color, and shape.",
+        "When " .. W .. "disabled" .. R .. ", the new spell simply",
+        "fades back in after the outgoing animation.",
     }, c)
-    y = y - 48
+    y = y - 28
+
+    local animHide = NS.CreateToggle(c, "Hide Button During Animation", "animHideButton", y)
+    NS.AddTooltip(animHide, "Hide Button During Animation", {
+        "When " .. V .. "enabled" .. R .. ", the real button is " .. W .. "hidden" .. R,
+        "while the animation clone plays.",
+        " ",
+        "When " .. W .. "disabled" .. R .. ", the button stays " .. V .. "visible" .. R,
+        "underneath the animation.",
+    }, c)
+    y = y - 28
 
     -- Config panel animation toggles
     local animDesc = c:CreateFontString(nil, "OVERLAY")
@@ -928,57 +1044,57 @@ function NS.Config:Create()
     CreateOverrideCheckbox(kbFontRow, kbOutRow, nil, "keybindFontOverride", ApplyFont)
     y = y - 46
 
-    -- Row 4: Queue Keybind (Font + Outline + Size + override checkbox)
-    local qkFontRow = NS.CreateFontDropdown(c, "Queue Keybind", "queueKeybindFont", y, function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    -- Row 4: Priority Keybind (Font + Outline + Size + override checkbox)
+    local qkFontRow = NS.CreateFontDropdown(c, "Priority Keybind", "priorityKeybindFont", y, function()
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end, fontW3)
-    NS.AddTooltip(qkFontRow, "Queue Keybind Font", {
-        "Font for keybind text on " .. U .. "Queue Display" .. R .. " spell icons.",
+    NS.AddTooltip(qkFontRow, "Priority Keybind Font", {
+        "Font for keybind text on " .. U .. "Priority Display" .. R .. " spell icons.",
         " ",
-        "Each icon in the rotation queue shows its keybind.",
+        "Each icon in the priority display shows its keybind.",
         "Size: " .. N .. "6" .. R .. " to " .. N .. "16" .. R .. " px.",
     }, c)
-    local qkOutRow = NS.CreateDropdown(c, "Outline", "queueKeybindOutline",
+    local qkOutRow = NS.CreateDropdown(c, "Outline", "priorityKeybindOutline",
         NS.FONT_OUTLINE_OPTIONS, y, function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end, outlineW3)
     qkOutRow:ClearAllPoints()
     qkOutRow:SetPoint("TOPLEFT", qkFontRow, "TOPRIGHT", 6, 0)
-    local qkSizeRow = NS.CreateSlider(c, "Size", "queueKeybindFontSize", 6, 16, 1, y, function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    local qkSizeRow = NS.CreateSlider(c, "Size", "priorityKeybindFontSize", 6, 16, 1, y, function()
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end)
     qkSizeRow:SetSize(sizeW3, 32)
     qkSizeRow:ClearAllPoints()
     qkSizeRow:SetPoint("TOPLEFT", qkOutRow, "TOPRIGHT", 6, 0)
-    CreateOverrideCheckbox(qkFontRow, qkOutRow, nil, "queueKeybindFontOverride", function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    CreateOverrideCheckbox(qkFontRow, qkOutRow, nil, "priorityKeybindFontOverride", function()
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end)
     y = y - 46
 
-    -- Row 5: Queue Label (Font + Outline + Size + override checkbox)
-    local qlFontRow = NS.CreateFontDropdown(c, "Queue Label", "queueLabelFont", y, function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    -- Row 5: Priority Label (Font + Outline + Size + override checkbox)
+    local qlFontRow = NS.CreateFontDropdown(c, "Priority Label", "priorityLabelFont", y, function()
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end, fontW3)
-    NS.AddTooltip(qlFontRow, "Queue Label Font", {
-        "Font for the " .. V .. "Rotation" .. R .. " label text above",
-        "the " .. U .. "Queue Display" .. R .. ".",
+    NS.AddTooltip(qlFontRow, "Priority Label Font", {
+        "Font for the " .. V .. "Priority" .. R .. " label text above",
+        "the " .. U .. "Priority Display" .. R .. ".",
         " ",
         "Size: " .. N .. "6" .. R .. " to " .. N .. "18" .. R .. " px.",
     }, c)
-    local qlOutRow = NS.CreateDropdown(c, "Outline", "queueLabelOutline",
+    local qlOutRow = NS.CreateDropdown(c, "Outline", "priorityLabelOutline",
         NS.FONT_OUTLINE_OPTIONS, y, function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end, outlineW3)
     qlOutRow:ClearAllPoints()
     qlOutRow:SetPoint("TOPLEFT", qlFontRow, "TOPRIGHT", 6, 0)
-    local qlSizeRow = NS.CreateSlider(c, "Size", "queueLabelFontSize", 6, 18, 1, y, function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    local qlSizeRow = NS.CreateSlider(c, "Size", "priorityLabelFontSize", 6, 18, 1, y, function()
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end)
     qlSizeRow:SetSize(sizeW3, 32)
     qlSizeRow:ClearAllPoints()
     qlSizeRow:SetPoint("TOPLEFT", qlOutRow, "TOPRIGHT", 6, 0)
-    CreateOverrideCheckbox(qlFontRow, qlOutRow, nil, "queueLabelFontOverride", function()
-        if NS.ApplyQueueFonts then NS.ApplyQueueFonts() end
+    CreateOverrideCheckbox(qlFontRow, qlOutRow, nil, "priorityLabelFontOverride", function()
+        if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     end)
     y = y - 46
 
@@ -1045,13 +1161,13 @@ function NS.Config:Create()
     do
     local btnSzRow = NS.CreateSlider(c, "Button Size", "buttonSize", 24, 80, 1, y, function()
         NS.ApplyButtonSettings()
-        NS.LayoutQueue()
+        NS.LayoutPriority()
     end)
     NS.AddTooltip(btnSzRow, "Button Size", {
         "Pixel size of the " .. U .. "Active Display" .. R .. " button.",
         " ",
         "Range: " .. N .. "24" .. R .. " to " .. N .. "80" .. R .. " pixels.",
-        "The " .. U .. "Queue Display" .. R .. " repositions to match.",
+        "The " .. U .. "Priority Display" .. R .. " repositions to match.",
     }, c)
     y = y - 38
     local skRow = NS.CreateToggle(c, "Show Keybind", "showKeybind", y, function() NS.UpdateNow() end)
@@ -1062,6 +1178,33 @@ function NS.Config:Create()
         "Shows in the " .. V .. "top-right" .. R .. " corner of the icon.",
     }, c)
     y = y - 24
+    -- Side-by-side: Keybind X/Y Offset
+    do
+    local halfW = math.floor((contentW - 28 - 6) / 2)
+    local function ApplyKeybindOffset()
+        local btn = NS.mainButton
+        if btn and btn.hotkey then
+            btn.hotkey:ClearAllPoints()
+            btn.hotkey:SetPoint("TOPRIGHT",
+                NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+        end
+    end
+    local kbOfsX = NS.CreateSlider(c, "Keybind X", "keybindOffsetX", -20, 20, 1, y, ApplyKeybindOffset)
+    kbOfsX:SetSize(halfW, 32)
+    NS.AddTooltip(kbOfsX, "Keybind X Offset", {
+        "Horizontal offset of the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "Active Display" .. R .. " button.",
+    }, c)
+    local kbOfsY = NS.CreateSlider(c, "Keybind Y", "keybindOffsetY", -20, 20, 1, y, ApplyKeybindOffset)
+    kbOfsY:SetSize(halfW, 32)
+    kbOfsY:ClearAllPoints()
+    kbOfsY:SetPoint("TOPLEFT", kbOfsX, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(kbOfsY, "Keybind Y Offset", {
+        "Vertical offset of the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "Active Display" .. R .. " button.",
+    }, c)
+    y = y - 38
+    end
     local scRow = NS.CreateToggle(c, "Show Cooldown", "showCooldown", y, function() NS.UpdateNow() end)
     NS.AddTooltip(scRow, "Show Cooldown", {
         "Display a " .. V .. "cooldown sweep" .. R .. " animation on the",
@@ -1078,8 +1221,8 @@ function NS.Config:Create()
     }, c)
     y = y - 28
     NS.CreateColorSwatch(c, "Button Background", "buttonBgColor", y, function(col)
-        if NS.mainButton and not NS.masque then
-            NS.mainButton:SetBackdropColor(NS.unpack(col))
+        if NS.mainButton and not NS.masque and NS.mainButton.bg then
+            NS.mainButton.bg:SetColorTexture(col[1], col[2], col[3], col[4] or 0.6)
         end
     end)
     y = y - 20
@@ -1087,131 +1230,175 @@ function NS.Config:Create()
     c:SetHeight(c._contentH)
     end -- do (Section 3)
 
-    -- 4. QUEUE DISPLAY (11 options)
+    -- 4. PRIORITY DISPLAY (12 options)
     c = contentFrames[4]
     y = -12
     do
     local halfW = math.floor((contentW - 28 - 6) / 2)
 
-    local sqRow = NS.CreateToggle(c, "Show Ability Queue", "showQueue", y, function(on)
-        if NS.queueFrame then
-            if on then NS.queueFrame:Show() else NS.queueFrame:Hide() end
+    local sqRow = NS.CreateToggle(c, "Show Priority Display", "showPriority", y, function(on)
+        if NS.priorityFrame then
+            if on then NS.priorityFrame:Show() else NS.priorityFrame:Hide() end
         end
     end)
-    NS.AddTooltip(sqRow, "Show Ability Queue", {
-        "Show or hide the " .. U .. "Queue Display" .. R .. " panel.",
+    NS.AddTooltip(sqRow, "Show Priority Display", {
+        "Show or hide the " .. U .. "Priority Display" .. R .. " panel.",
         " ",
         "Displays the rotation " .. V .. "spell pool" .. R .. " from",
-        U .. "SBA" .. R .. " as small icons beside the main button.",
-        W .. "Note:" .. R .. " This is the rotation pool, not a priority queue.",
+        U .. "SBA" .. R .. " as small icons beside the main button,",
+        "sorted by " .. V .. "priority" .. R .. " (next-cast first).",
+    }, c)
+    y = y - 28
+
+    local glowRow = NS.CreateToggle(c, "Active Spell Glow", "showActiveGlow", y, function()
+        NS.UpdatePriorityDisplay()
+    end)
+    NS.AddTooltip(glowRow, "Active Spell Glow", {
+        "Show Blizzard's " .. V .. "overlay glow" .. R .. " effect on",
+        "the " .. U .. "next-cast" .. R .. " spell icon in the",
+        U .. "Priority Display" .. R .. ".",
+        " ",
+        "Uses the standard proc highlight (dashed golden border).",
     }, c)
     y = y - 28
     -- Side-by-side: Icon Size + Scale
-    local iconSz = NS.CreateSlider(c, "Icon Size", "queueIconSize", 16, 48, 1, y, function()
-        NS.LayoutQueue()
-        NS.UpdateQueueDisplay()
+    local iconSz = NS.CreateSlider(c, "Icon Size", "priorityIconSize", 16, 48, 1, y, function()
+        NS.LayoutPriority()
+        NS.UpdatePriorityDisplay()
     end)
     iconSz:SetSize(halfW, 32)
-    NS.AddTooltip(iconSz, "Queue Icon Size", {
-        "Pixel size of each spell icon in the " .. U .. "Queue Display" .. R .. ".",
+    NS.AddTooltip(iconSz, "Priority Icon Size", {
+        "Pixel size of each spell icon in the " .. U .. "Priority Display" .. R .. ".",
         "Range: " .. N .. "16" .. R .. " to " .. N .. "48" .. R .. " px.",
     }, c)
-    local qScale = NS.CreateSlider(c, "Scale", "queueScale", 0.5, 2.0, 0.05, y, function(val)
-        if NS.queueFrame then NS.queueFrame:SetScale(val) end
+    local pScale = NS.CreateSlider(c, "Scale", "priorityScale", 0.5, 2.0, 0.05, y, function(val)
+        if NS.priorityFrame then NS.priorityFrame:SetScale(val) end
     end)
-    qScale:SetSize(halfW, 32)
-    qScale:ClearAllPoints()
-    qScale:SetPoint("TOPLEFT", iconSz, "TOPRIGHT", 6, 0)
-    NS.AddTooltip(qScale, "Queue Scale", {
-        "Overall scale of the " .. U .. "Queue Display" .. R .. " frame.",
+    pScale:SetSize(halfW, 32)
+    pScale:ClearAllPoints()
+    pScale:SetPoint("TOPLEFT", iconSz, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(pScale, "Priority Scale", {
+        "Overall scale of the " .. U .. "Priority Display" .. R .. " frame.",
         "Range: " .. N .. "0.5x" .. R .. " to " .. N .. "2.0x" .. R .. ".",
     }, c)
     y = y - 38
-    local qPosRow = NS.CreateDropdown(c, "Position", "queuePosition", NS.QUEUE_POSITIONS, y, function()
-        NS.LayoutQueue()
+    local pPosRow = NS.CreateDropdown(c, "Position", "priorityPosition", NS.PRIORITY_POSITIONS, y, function()
+        NS.LayoutPriority()
     end)
-    NS.AddTooltip(qPosRow, "Queue Position", {
-        "Where the " .. U .. "Queue Display" .. R .. " anchors relative",
+    NS.AddTooltip(pPosRow, "Priority Position", {
+        "Where the " .. U .. "Priority Display" .. R .. " anchors relative",
         "to the " .. U .. "Active Display" .. R .. ".",
         " ",
         "Options: " .. V .. "RIGHT" .. R .. ", " .. V .. "LEFT" .. R .. ", " .. V .. "TOP" .. R .. ", " .. V .. "BOTTOM" .. R .. ".",
     }, c)
     y = y - 46
-    local detRow = NS.CreateToggle(c, "Detach Queue", "queueDetached", y, function(on)
-        if not on then
-            NS.db.queueFreePosition = nil
-            NS.LayoutQueue()
+    local detRow = NS.CreateToggle(c, "Detach Priority", "priorityDetached", y, function(on)
+        if on then
+            -- Convert to absolute positioning so the frame is immediately draggable
+            local f = NS.priorityFrame
+            if f then
+                local cx, cy = f:GetCenter()
+                if cx and cy then
+                    f:ClearAllPoints()
+                    f:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", cx, cy)
+                    NS.db.priorityFreePosition = { point = "CENTER", relPoint = "BOTTOMLEFT", x = cx, y = cy }
+                end
+            end
+        else
+            NS.db.priorityFreePosition = nil
+            NS.LayoutPriority()
         end
         if NS.UpdateDetachOverlay then NS.UpdateDetachOverlay() end
     end)
-    NS.AddTooltip(detRow, "Detach Queue", {
-        "Allows the " .. U .. "Queue Display" .. R .. " to be freely",
+    NS.AddTooltip(detRow, "Detach Priority", {
+        "Allows the " .. U .. "Priority Display" .. R .. " to be freely",
         "positioned anywhere on screen via " .. K .. "drag" .. R .. ".",
         " ",
         "When disabled, it snaps back to the " .. V .. "Position" .. R .. " setting.",
     }, c)
     y = y - 28
 
-    -- Side-by-side: Queue X/Y Offset
-    local ofsX = NS.CreateSlider(c, "X Offset", "queueOffsetX", -200, 200, 1, y, function()
-        NS.LayoutQueue()
+    -- Side-by-side: Priority X/Y Offset
+    local ofsX = NS.CreateSlider(c, "X Offset", "priorityOffsetX", -200, 200, 1, y, function()
+        NS.LayoutPriority()
     end)
     ofsX:SetSize(halfW, 32)
-    NS.AddTooltip(ofsX, "Queue X Offset", {
-        "Horizontal offset of the " .. U .. "Queue Display" .. R .. ".",
+    NS.AddTooltip(ofsX, "Priority X Offset", {
+        "Horizontal offset of the " .. U .. "Priority Display" .. R .. ".",
         "Range: " .. N .. "-200" .. R .. " to " .. N .. "200" .. R .. " px.",
     }, c)
-    local ofsY = NS.CreateSlider(c, "Y Offset", "queueOffsetY", -200, 200, 1, y, function()
-        NS.LayoutQueue()
+    local ofsY = NS.CreateSlider(c, "Y Offset", "priorityOffsetY", -200, 200, 1, y, function()
+        NS.LayoutPriority()
     end)
     ofsY:SetSize(halfW, 32)
     ofsY:ClearAllPoints()
     ofsY:SetPoint("TOPLEFT", ofsX, "TOPRIGHT", 6, 0)
-    NS.AddTooltip(ofsY, "Queue Y Offset", {
-        "Vertical offset of the " .. U .. "Queue Display" .. R .. ".",
+    NS.AddTooltip(ofsY, "Priority Y Offset", {
+        "Vertical offset of the " .. U .. "Priority Display" .. R .. ".",
         "Range: " .. N .. "-200" .. R .. " to " .. N .. "200" .. R .. " px.",
     }, c)
     y = y - 38
 
-    local sqkRow = NS.CreateToggle(c, "Show Queue Keybinds", "showQueueKeybinds", y, function()
-        NS.UpdateQueueDisplay()
+    local sqkRow = NS.CreateToggle(c, "Show Priority Keybinds", "showPriorityKeybinds", y, function()
+        NS.UpdatePriorityDisplay()
     end)
-    NS.AddTooltip(sqkRow, "Show Queue Keybinds", {
+    NS.AddTooltip(sqkRow, "Show Priority Keybinds", {
         "Display " .. K .. "keybind" .. R .. " text on each spell icon",
-        "in the " .. U .. "Queue Display" .. R .. ".",
+        "in the " .. U .. "Priority Display" .. R .. ".",
         " ",
         "Shows the action bar keybind for each rotation spell.",
     }, c)
-    y = y - 28
+    y = y - 24
+
+    -- Side-by-side: Priority Keybind X/Y Offset
+    local pkbX = NS.CreateSlider(c, "Keybind X", "priorityKeybindOffsetX", -20, 20, 1, y, function()
+        NS.ApplyPriorityFonts()
+    end)
+    pkbX:SetSize(halfW, 32)
+    NS.AddTooltip(pkbX, "Priority Keybind X Offset", {
+        "Horizontal offset of " .. K .. "keybind" .. R .. " text on",
+        U .. "Priority Display" .. R .. " icons.",
+    }, c)
+    local pkbY = NS.CreateSlider(c, "Keybind Y", "priorityKeybindOffsetY", -20, 20, 1, y, function()
+        NS.ApplyPriorityFonts()
+    end)
+    pkbY:SetSize(halfW, 32)
+    pkbY:ClearAllPoints()
+    pkbY:SetPoint("TOPLEFT", pkbX, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(pkbY, "Priority Keybind Y Offset", {
+        "Vertical offset of " .. K .. "keybind" .. R .. " text on",
+        U .. "Priority Display" .. R .. " icons.",
+    }, c)
+    y = y - 38
 
     -- Side-by-side: Label X/Y Offset
-    local lblX = NS.CreateSlider(c, "Label X Offset", "queueLabelOffsetX", -50, 50, 1, y, function()
-        NS.LayoutQueue()
+    local lblX = NS.CreateSlider(c, "Label X Offset", "priorityLabelOffsetX", -50, 50, 1, y, function()
+        NS.LayoutPriority()
     end)
     lblX:SetSize(halfW, 32)
     NS.AddTooltip(lblX, "Label X Offset", {
-        "Horizontal offset of the " .. V .. "Rotation" .. R .. " label.",
+        "Horizontal offset of the " .. V .. "Priority" .. R .. " label.",
         "Range: " .. N .. "-50" .. R .. " to " .. N .. "50" .. R .. " px.",
     }, c)
-    local lblY = NS.CreateSlider(c, "Label Y Offset", "queueLabelOffsetY", -50, 50, 1, y, function()
-        NS.LayoutQueue()
+    local lblY = NS.CreateSlider(c, "Label Y Offset", "priorityLabelOffsetY", -50, 50, 1, y, function()
+        NS.LayoutPriority()
     end)
     lblY:SetSize(halfW, 32)
     lblY:ClearAllPoints()
     lblY:SetPoint("TOPLEFT", lblX, "TOPRIGHT", 6, 0)
     NS.AddTooltip(lblY, "Label Y Offset", {
-        "Vertical offset of the " .. V .. "Rotation" .. R .. " label.",
+        "Vertical offset of the " .. V .. "Priority" .. R .. " label.",
         "Range: " .. N .. "-50" .. R .. " to " .. N .. "50" .. R .. " px.",
     }, c)
     y = y - 38
 
-    -- Side-by-side: Queue Background + Border colors
-    local bgSwatch = NS.CreateColorSwatch(c, "Background", "queueBgColor", y, function(col)
-        if NS.queueFrame then NS.queueFrame:SetBackdropColor(NS.unpack(col)) end
+    -- Side-by-side: Priority Background + Border colors
+    local bgSwatch = NS.CreateColorSwatch(c, "Background", "priorityBgColor", y, function(col)
+        if NS.priorityFrame and NS.priorityFrame.bg then NS.priorityFrame.bg:SetColorTexture(col[1], col[2], col[3], col[4] or 0.6) end
     end)
     bgSwatch:SetSize(halfW, 20)
-    local borderSwatch = NS.CreateColorSwatch(c, "Border", "queueBorderColor", y, function(col)
-        if NS.queueFrame then NS.queueFrame:SetBackdropBorderColor(NS.unpack(col)) end
+    local borderSwatch = NS.CreateColorSwatch(c, "Border", "priorityBorderColor", y, function(col)
+        if NS.priorityFrame and NS.priorityFrame.borderTex then NS.priorityFrame.borderTex:SetColorTexture(col[1], col[2], col[3], col[4] or 1) end
     end)
     borderSwatch:SetSize(halfW, 20)
     borderSwatch:ClearAllPoints()
@@ -1251,11 +1438,11 @@ function NS.Config:Create()
         "Set to " .. N .. "0" .. R .. " to hide outside combat.",
     }, c)
     y = y - 38
-    local qoocRow2 = NS.CreateSlider(c, "Queue Out-of-Combat Alpha", "queueAlphaOOC", 0, 1, 0.1, y, function()
+    local qoocRow2 = NS.CreateSlider(c, "Priority Out-of-Combat Alpha", "priorityAlphaOOC", 0, 1, 0.1, y, function()
         NS.UpdateNow()
     end)
-    NS.AddTooltip(qoocRow2, "Queue Out-of-Combat Alpha", {
-        "Opacity of the " .. U .. "Queue Display" .. R .. " when",
+    NS.AddTooltip(qoocRow2, "Priority Out-of-Combat Alpha", {
+        "Opacity of the " .. U .. "Priority Display" .. R .. " when",
         W .. "out of combat" .. R .. ".",
         " ",
         "Range: " .. N .. "0" .. R .. " (invisible) to " .. N .. "1" .. R .. " (fully opaque).",
@@ -1343,8 +1530,8 @@ function NS.Config:Create()
     local s3 = NS.CreateColorSwatchWithTooltip(c, "Active Display", "sectionColorActive", y, nil,
         "Active Display", { reloadNote })
     s3:SetSize(secHalfW, 20)
-    local s4 = NS.CreateColorSwatchWithTooltip(c, "Queue Display", "sectionColorQueue", y, nil,
-        "Queue Display", { reloadNote })
+    local s4 = NS.CreateColorSwatchWithTooltip(c, "Priority Display", "sectionColorPriority", y, nil,
+        "Priority Display", { reloadNote })
     s4:SetSize(secHalfW, 20)
     s4:ClearAllPoints()
     s4:SetPoint("TOPLEFT", s3, "TOPRIGHT", 6, 0)
@@ -1384,7 +1571,7 @@ function NS.Config:Create()
         "UI elements " .. V .. "independently" .. R .. ":",
         " ",
         U .. "Active Display" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the main ability button",
-        U .. "Queue Display" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the rotation queue panel",
+        U .. "Priority Display" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the priority display panel",
         U .. "Config Panel" .. R .. " \226\128\148 " .. V .. "scales" .. R .. " the " .. K .. "/bs" .. R .. " settings window",
         " ",
         "Each element scales " .. V .. "independently" .. R .. " and " .. V .. "persists" .. R,
@@ -1408,6 +1595,18 @@ function NS.Config:Create()
         "Shows macro execution, target state, keybind",
         "interception details, and API call results.",
         W .. "Verbose" .. R .. " \226\128\148 creates lots of chat output.",
+    }, c)
+    y = y - 24
+    local subsDbgRow = NS.CreateToggle(c, "Log Spell Substitutions", "debugSpellSubs", y)
+    NS.AddTooltip(subsDbgRow, "Log Spell Substitutions", {
+        "Prints spell ID " .. V .. "resolution" .. R .. " to chat:",
+        " ",
+        "Shows when SBA spell IDs are " .. V .. "auto-resolved" .. R,
+        "via override APIs, " .. V .. "manually mapped" .. R .. ",",
+        "or " .. W .. "filtered out" .. R .. " (no texture found).",
+        " ",
+        "Useful for discovering bad IDs to add to",
+        "the " .. K .. "SPELL_SUBSTITUTIONS" .. R .. " table.",
     }, c)
     y = y - 32
 
@@ -1530,7 +1729,7 @@ function NS.Config:Create()
         "Total UI frames created by BetterSBA.",
         " ",
         "Includes the main button, secure button,",
-        "queue icons, and config panel.",
+        "priority icons, and config panel.",
         " ",
         V .. "< 20" .. R .. "  \226\128\148  Normal",
         W .. "> 30" .. R .. "  \226\128\148  Unusual \226\128\148 report to dev if growing",
@@ -1541,7 +1740,7 @@ function NS.Config:Create()
     NS.AddTooltip(rowOverride, "Keybind Override", {
         "Status of the keybind interception system.",
         " ",
-        V .. "Intercepting [key]" .. R .. "  \226\128\148  Working correctly",
+        V .. "Intercepting [KEYBIND: key]" .. R .. "  \226\128\148  Working correctly",
         W .. "Paused: reason" .. R .. "  \226\128\148  Temporarily blocked (mount, vehicle)",
         W .. "Inactive" .. R .. "  \226\128\148  SBA not found on action bar",
         " ",
@@ -1616,17 +1815,17 @@ function NS.Config:Create()
         local frameCount = 0
         if NS.mainButton then frameCount = frameCount + 1 end
         if NS.secureButton then frameCount = frameCount + 1 end
-        if NS._queueIcons then frameCount = frameCount + #NS._queueIcons end
+        if NS._priorityIcons then frameCount = frameCount + #NS._priorityIcons end
         if NS.Config and NS.Config.frame then frameCount = frameCount + 1 end
 
         local keys = NS._overrideKeys
         local keybindStr = "Inactive"
         if keys and #keys > 0 then
-            keybindStr = "Intercepting [" .. table.concat(keys, ", ") .. "]"
+            keybindStr = "Intercepting [KEYBIND: " .. table.concat(keys, ", ") .. "]"
             if NS._overrideSlot then
                 local bar = math.floor((NS._overrideSlot - 1) / 12) + 1
                 local btn = ((NS._overrideSlot - 1) % 12) + 1
-                keybindStr = keybindStr .. " [BAR:" .. bar .. " SLOT:" .. btn .. "]"
+                keybindStr = keybindStr .. " [ACTION BAR: " .. bar .. "] [ACTION BAR SLOT: " .. btn .. "]"
             end
         else
             local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
@@ -1651,6 +1850,13 @@ function NS.Config:Create()
         local gcCount = collectgarbage("count")
         local gcStr = string.format("%.2f MB", gcCount / 1024)
 
+        -- Cache diagnostics
+        local cacheDiag = NS.GetCacheDiagnostics and NS.GetCacheDiagnostics() or {}
+        local cdEntries = cacheDiag.cooldownEntries or 0
+        local texEntries = cacheDiag.textureEntries or 0
+        local resEntries = cacheDiag.resolveEntries or 0
+        local cdDirty = cacheDiag.cooldownDirty and "Yes" or "No"
+
         local lines = {
             "=== BetterSBA Diagnostic Report ===",
             "Version: " .. (NS.VERSION or "?"),
@@ -1669,6 +1875,12 @@ function NS.Config:Create()
             "Managed Frames: " .. frameCount,
             "Session Uptime: " .. uptimeStr,
             "",
+            "--- Cache ---",
+            "GC Policy: Native (no forced collection)",
+            "Cooldown Cache: " .. cdEntries .. " entries (dirty: " .. cdDirty .. ")",
+            "Texture Cache: " .. texEntries .. " entries",
+            "Resolve Cache: " .. resEntries .. " entries",
+            "",
             "--- Keybind ---",
             "Override Status: " .. keybindStr,
             "SBA Available: " .. sbaAvail,
@@ -1676,7 +1888,7 @@ function NS.Config:Create()
             "--- Settings ---",
             "Enabled: " .. tostring(NS.db.enabled),
             "Locked: " .. tostring(NS.db.locked),
-            "Show Queue: " .. tostring(NS.db.showQueue),
+            "Show Priority: " .. tostring(NS.db.showPriority),
             "Button Size: " .. tostring(NS.db.buttonSize),
             "Scale: " .. tostring(NS.db.scale),
             "Combat Only: " .. tostring(NS.db.onlyInCombat),
@@ -1856,7 +2068,7 @@ function NS.Config:Create()
         local frameCount = 0
         if NS.mainButton then frameCount = frameCount + 1 end
         if NS.secureButton then frameCount = frameCount + 1 end
-        if NS._queueIcons then frameCount = frameCount + #NS._queueIcons end
+        if NS._priorityIcons then frameCount = frameCount + #NS._priorityIcons end
         if NS.Config and NS.Config.frame then frameCount = frameCount + 1 end
         local fVal = rowFrames.val
         fVal:SetText(tostring(frameCount))
@@ -2447,7 +2659,9 @@ function NS.Config:Create()
         { label = "Appearance", section = 2, isSection = true },
         { label = "Cast Animation", section = 2 },
         { label = "Animation Style", section = 2 },
+        { label = "Pop Animation", section = 2 },
         { label = "Animation Preview", section = 2 },
+        { label = "Hide Button During Animation", section = 2 },
         { label = "Scan Line", section = 2 },
         { label = "Orbiting Dots", section = 2 },
         { label = "Pulse Effects", section = 2 },
@@ -2461,38 +2675,43 @@ function NS.Config:Create()
         { label = "Keybind Outline", section = 2 },
         { label = "Keybind Font Size", section = 2 },
         { label = "Keybind Override", section = 2 },
-        { label = "Queue Keybind Font", section = 2 },
-        { label = "Queue Keybind Outline", section = 2 },
-        { label = "Queue Keybind Font Size", section = 2 },
-        { label = "Queue Keybind Override", section = 2 },
-        { label = "Queue Label Font", section = 2 },
-        { label = "Queue Label Outline", section = 2 },
-        { label = "Queue Label Font Size", section = 2 },
-        { label = "Queue Label Override", section = 2 },
+        { label = "Priority Keybind Font", section = 2 },
+        { label = "Priority Keybind Outline", section = 2 },
+        { label = "Priority Keybind Font Size", section = 2 },
+        { label = "Priority Keybind Override", section = 2 },
+        { label = "Priority Label Font", section = 2 },
+        { label = "Priority Label Outline", section = 2 },
+        { label = "Priority Label Font Size", section = 2 },
+        { label = "Priority Label Override", section = 2 },
         { label = "Active Display", section = 3, isSection = true },
         { label = "Button Size", section = 3 },
         { label = "Show Keybind", section = 3 },
+        { label = "Keybind X Offset", section = 3 },
+        { label = "Keybind Y Offset", section = 3 },
         { label = "Show Cooldown", section = 3 },
         { label = "Range Coloring", section = 3 },
         { label = "Button Background", section = 3 },
-        { label = "Queue Display", section = 4, isSection = true },
-        { label = "Show Ability Queue", section = 4 },
-        { label = "Queue Icon Size", section = 4 },
-        { label = "Queue Scale", section = 4 },
-        { label = "Show Queue Keybinds", section = 4 },
+        { label = "Priority Display", section = 4, isSection = true },
+        { label = "Show Priority Display", section = 4 },
+        { label = "Active Spell Glow", section = 4 },
+        { label = "Priority Icon Size", section = 4 },
+        { label = "Priority Scale", section = 4 },
+        { label = "Show Priority Keybinds", section = 4 },
+        { label = "Priority Keybind X Offset", section = 4 },
+        { label = "Priority Keybind Y Offset", section = 4 },
         { label = "Position", section = 4 },
-        { label = "Detach Queue", section = 4 },
-        { label = "Queue X Offset", section = 4 },
-        { label = "Queue Y Offset", section = 4 },
-        { label = "Queue Background", section = 4 },
-        { label = "Queue Border", section = 4 },
+        { label = "Detach Priority", section = 4 },
+        { label = "Priority X Offset", section = 4 },
+        { label = "Priority Y Offset", section = 4 },
+        { label = "Priority Background", section = 4 },
+        { label = "Priority Border", section = 4 },
         { label = "Label X Offset", section = 4 },
         { label = "Label Y Offset", section = 4 },
         { label = "Visibility", section = 5, isSection = true },
         { label = "Combat Only", section = 5 },
         { label = "Hide In Vehicle", section = 5 },
         { label = "Button Out-of-Combat Alpha", section = 5 },
-        { label = "Queue Out-of-Combat Alpha", section = 5 },
+        { label = "Priority Out-of-Combat Alpha", section = 5 },
         { label = "Importance", section = 6, isSection = true },
         { label = "Importance Borders", section = 6 },
         { label = "Auto Attack Color", section = 6 },
@@ -2504,7 +2723,7 @@ function NS.Config:Create()
         { label = "Combat Assist Color", section = 6 },
         { label = "Appearance Color", section = 6 },
         { label = "Active Display Color", section = 6 },
-        { label = "Queue Display Color", section = 6 },
+        { label = "Priority Display Color", section = 6 },
         { label = "Visibility Color", section = 6 },
         { label = "Importance Color", section = 6 },
         { label = "Advanced Color", section = 6 },
@@ -2601,6 +2820,7 @@ function NS.Config:Create()
     local indicatorTargetY = -BTN_TOP
     local indicatorCurrentY = indicatorTargetY
 
+    local animFrame  -- forward-declared; created after section buttons
     local function SelectSection(idx)
         -- Exit search mode if active
         if searchMode then
@@ -2656,6 +2876,14 @@ function NS.Config:Create()
 
         -- Set indicator slide target
         indicatorTargetY = -(idx - 1) * (BTN_H + BTN_GAP) - BTN_TOP
+        if NS.db.cfgAnimTransitions and indicatorCurrentY ~= indicatorTargetY then
+            animFrame:Show()  -- kick the slide animation
+        else
+            -- No animation: snap immediately
+            indicatorCurrentY = indicatorTargetY
+            indicator:ClearAllPoints()
+            indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, indicatorCurrentY)
+        end
 
         -- Update underline + indicator color to match section
         titleUnderline:SetColorTexture(dc[1], dc[2], dc[3], 0.6)
@@ -2830,28 +3058,22 @@ function NS.Config:Create()
     end)
 
     ----------------------------------------------------------------
-    -- Animations (indicator slide, underline pulse, logo glow)
+    -- Animations (indicator slide)
+    -- Only runs while the indicator is actively sliding, then stops.
     ----------------------------------------------------------------
-    local animFrame = NS.CreateFrame("Frame")
+    animFrame = NS.CreateFrame("Frame")
     animFrame:SetScript("OnUpdate", function(self, elapsed)
-        if not f:IsShown() then return end
-        local adb = NS.db
-
-        -- Smooth-slide the accent indicator
-        if adb.cfgAnimTransitions then
-            local diff = indicatorTargetY - indicatorCurrentY
-            if math.abs(diff) > 0.3 then
-                indicatorCurrentY = indicatorCurrentY + diff * math.min(1, elapsed * 14)
-            else
-                indicatorCurrentY = indicatorTargetY
-            end
+        local diff = indicatorTargetY - indicatorCurrentY
+        if math.abs(diff) > 0.3 then
+            indicatorCurrentY = indicatorCurrentY + diff * math.min(1, elapsed * 14)
         else
             indicatorCurrentY = indicatorTargetY
+            self:Hide()  -- done sliding, stop running
         end
         indicator:ClearAllPoints()
         indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, indicatorCurrentY)
-
     end)
+    animFrame:Hide()  -- start hidden, only shown when indicator needs to move
 
     ----------------------------------------------------------------
     -- Initialize

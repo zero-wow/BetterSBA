@@ -1,8 +1,8 @@
 local ADDON_NAME, NS = ...
 
 local T = NS.THEME
-local MAX_QUEUE_ICONS = 6
-local queueIcons = {}
+local MAX_PRIORITY_ICONS = 6
+local priorityIcons = {}
 
 ----------------------------------------------------------------
 -- Snap-back constants
@@ -12,17 +12,125 @@ local GLOW_DISTANCE = 200
 local NUM_BUBBLES = 6
 
 ----------------------------------------------------------------
--- Create the queue display frame
+-- Priority sorting helpers
 ----------------------------------------------------------------
-function NS:CreateQueueDisplay()
-    local f = NS.CreateFrame("Frame", "BetterSBA_QueueFrame", NS.UIParent, "BackdropTemplate")
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    f:SetBackdropColor(NS.unpack(NS.db.queueBgColor))
-    f:SetBackdropBorderColor(NS.unpack(NS.db.queueBorderColor))
+local sortBuffer = {}  -- reusable table (no GC pressure)
+
+-- Sanitize potentially tainted (secret) numbers into clean Lua numbers.
+-- WoW's C_Spell cooldown API returns "secret number" values in combat
+-- that cannot be compared with Lua operators.  Converting through
+-- tostring -> tonumber produces a clean, non-tainted copy.
+local function CleanNumber(val)
+    if val == nil then return 0 end
+    local ok, s = pcall(tostring, val)
+    if not ok then return 0 end
+    return tonumber(s) or 0
+end
+
+-- Get cooldown remaining (seconds). Returns 0 if ready or on error.
+local function GetCDRemaining(spellID)
+    local cdInfo = NS.GetCooldownCached(spellID)
+    if not cdInfo then return 0 end
+    local st = CleanNumber(cdInfo.startTime)
+    local dur = CleanNumber(cdInfo.duration)
+    if dur <= 1.5 then return 0 end  -- GCD or no CD
+    local now = GetTime()
+    local rem = (st + dur) - now
+    return rem > 0 and rem or 0
+end
+
+-- Get base cooldown duration for importance sorting
+local function GetBaseCooldown(spellID)
+    local baseCD = NS.GetBaseCooldownCached and NS.GetBaseCooldownCached(spellID)
+    if baseCD then return CleanNumber(baseCD) end
+    local cdInfo = NS.GetCooldownCached(spellID)
+    if not cdInfo then return 0 end
+    return CleanNumber(cdInfo.duration)
+end
+
+-- Sort rotation spells by priority.
+-- Pre-computes all sort keys in one O(N) pass so the comparator
+-- does zero API calls, zero CleanNumber/tostring, zero closures.
+local sortKeys = {}  -- reusable: sortKeys[spellID] = { rem, ready, base, isNext }
+
+local function SortByPriority(spells, nextSpellID)
+    -- Fill sort buffer (reuse table to avoid GC)
+    for i = 1, #sortBuffer do sortBuffer[i] = nil end
+    for i = 1, #spells do
+        sortBuffer[i] = spells[i]
+    end
+
+    -- Pre-compute clean sort keys (one pass — all string garbage here, not in comparator)
+    for i = 1, #sortBuffer do
+        local sid = sortBuffer[i]
+        local k = sortKeys[sid]
+        if not k then k = {}; sortKeys[sid] = k end
+        k.rem = GetCDRemaining(sid)
+        k.ready = (k.rem == 0)
+        k.base = k.ready and GetBaseCooldown(sid) or 0
+        k.isNext = (sid == nextSpellID)
+    end
+
+    table.sort(sortBuffer, function(a, b)
+        local ka, kb = sortKeys[a], sortKeys[b]
+        -- Next-cast spell always first
+        if ka.isNext ~= kb.isNext then return ka.isNext end
+        -- Ready spells before on-CD spells
+        if ka.ready ~= kb.ready then return ka.ready end
+        if ka.ready and kb.ready then
+            -- Both ready: higher base CD = more important = first
+            if ka.base ~= kb.base then return ka.base > kb.base end
+        else
+            -- Both on CD: soonest available first
+            if ka.rem ~= kb.rem then return ka.rem < kb.rem end
+        end
+        -- Tiebreaker: spell ID (prevents flickering from unstable sort)
+        return a < b
+    end)
+
+    return sortBuffer
+end
+
+----------------------------------------------------------------
+-- Active spell glow tracking
+----------------------------------------------------------------
+local currentGlowIcon = nil
+
+local function ShowActiveGlow(icon)
+    if currentGlowIcon == icon then return end
+    if currentGlowIcon and ActionButton_HideOverlayGlow then
+        ActionButton_HideOverlayGlow(currentGlowIcon)
+    end
+    currentGlowIcon = icon
+    if icon and ActionButton_ShowOverlayGlow then
+        ActionButton_ShowOverlayGlow(icon)
+    end
+end
+
+local function HideActiveGlow()
+    if currentGlowIcon and ActionButton_HideOverlayGlow then
+        ActionButton_HideOverlayGlow(currentGlowIcon)
+    end
+    currentGlowIcon = nil
+end
+
+----------------------------------------------------------------
+-- Create the priority display frame
+----------------------------------------------------------------
+function NS:CreatePriorityDisplay()
+    local f = NS.CreateFrame("Frame", "BetterSBA_PriorityFrame", NS.UIParent)
+    -- Border + background: SetColorTexture (GPU-native color) instead of
+    -- BackdropTemplate + WHITE8X8, which can flash white during rendering hiccups.
+    f.borderTex = f:CreateTexture(nil, "BACKGROUND")
+    f.borderTex:SetAllPoints()
+    local pbc = NS.db.priorityBorderColor
+    f.borderTex:SetColorTexture(pbc[1], pbc[2], pbc[3], pbc[4] or 1)
+
+    f.bg = f:CreateTexture(nil, "BACKGROUND", nil, 1)
+    f.bg:SetPoint("TOPLEFT", 1, -1)
+    f.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+    local pbg = NS.db.priorityBgColor
+    f.bg:SetColorTexture(pbg[1], pbg[2], pbg[3], pbg[4] or 0.6)
     f:SetFrameStrata("MEDIUM")
     f:SetFrameLevel(4)
     f:SetMovable(true)
@@ -32,76 +140,96 @@ function NS:CreateQueueDisplay()
 
     -- Label
     f.label = f:CreateFontString(nil, "OVERLAY")
-    f.label:SetFont(NS.ResolveFontPath("queueLabelFont"), NS.db.queueLabelFontSize, NS.ResolveFontOutline("queueLabelFont", "queueLabelOutline"))
+    f.label:SetFont(NS.ResolveFontPath("priorityLabelFont"), NS.db.priorityLabelFontSize, NS.ResolveFontOutline("priorityLabelFont", "priorityLabelOutline"))
     f.label:SetTextColor(NS.unpack(T.TEXT_DIM))
-    f.label:SetText("ROTATION")
+    f.label:SetText("PRIORITY")
 
-    -- Shared drag handlers (called by both queue frame and overlay)
-    local function QueueDragStart()
-        if NS.db.locked or not NS.db.queueDetached or NS.InCombatLockdown() then return end
+    -- Shared drag handlers (called by both priority frame and overlay)
+    -- Uses manual cursor tracking instead of StartMoving() because
+    -- StartMoving() silently fails when called from a child frame's
+    -- drag handler (WoW requires mouse focus on the frame being moved).
+    local function PriorityDragStart()
+        if NS.db.locked or not NS.db.priorityDetached or NS.InCombatLockdown() then return end
         -- Convert anchored position to absolute on first drag
-        if not NS.db.queueFreePosition then
+        if not NS.db.priorityFreePosition then
             f._firstDrag = true  -- skip snap on initial placement
             local cx, cy = f:GetCenter()
             f:ClearAllPoints()
             f:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", cx, cy)
         end
-        f:StartMoving()
         f._dragging = true
-        -- Hide overlay text while dragging
-        if f._overlay then f._overlay:Hide() end
+        -- Record cursor-to-frame offset for manual movement
+        local scale = f:GetEffectiveScale()
+        local mx, my = GetCursorPosition()
+        local cx, cy = f:GetCenter()
+        f._dragOffX = cx - mx / scale
+        f._dragOffY = cy - my / scale
+        -- Move frame via OnUpdate (bypasses StartMoving)
+        f:SetScript("OnUpdate", function(self)
+            local curX, curY = GetCursorPosition()
+            local s = self:GetEffectiveScale()
+            self:ClearAllPoints()
+            self:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT",
+                curX / s + f._dragOffX, curY / s + f._dragOffY)
+        end)
+        -- Make overlay invisible while dragging (keep frame active for drag events)
+        if f._overlay then f._overlay:SetAlpha(0) end
         NS.StartSnapDetection()
     end
 
-    local function QueueDragStop()
-        f:StopMovingOrSizing()
+    local function PriorityDragStop()
+        f:SetScript("OnUpdate", nil)  -- stop cursor tracking
         f._dragging = false
 
-        -- Skip snap check on the very first drag (queue starts on top of button)
+        -- Skip snap check on the very first drag (priority starts on top of button)
         local skipSnap = f._firstDrag
         f._firstDrag = nil
 
         if not skipSnap and NS.ShouldSnap() then
             -- Snap back to main button
-            NS.db.queueDetached = false
-            NS.db.queueFreePosition = nil
-            NS.LayoutQueue()
+            NS.db.priorityDetached = false
+            NS.db.priorityFreePosition = nil
+            NS.LayoutPriority()
             NS.PlaySnapEffect()
             NS.HideMainButtonOverlay()
         else
             -- Save free position
             local p, _, rp, x, y = f:GetPoint()
-            NS.db.queueFreePosition = { point = p, relPoint = rp, x = x, y = y }
+            NS.db.priorityFreePosition = { point = p, relPoint = rp, x = x, y = y }
         end
         NS.StopSnapDetection()
         NS.UpdateDetachOverlay()
     end
 
-    f:SetScript("OnDragStart", function() QueueDragStart() end)
-    f:SetScript("OnDragStop", function() QueueDragStop() end)
+    f:SetScript("OnDragStart", function() PriorityDragStart() end)
+    f:SetScript("OnDragStop", function() PriorityDragStop() end)
 
-    -- Modifier+scroll scaling (Ctrl+MouseWheel adjusts queue scale)
+    -- Modifier+scroll scaling (Ctrl+MouseWheel adjusts priority scale)
     f:EnableMouseWheel(true)
     f:SetScript("OnMouseWheel", function(_, delta)
         if not NS.db.modifierScaling or not IsControlKeyDown() then return end
-        local scale = NS.db.queueScale or 1.0
+        local scale = NS.db.priorityScale or 1.0
         scale = scale + delta * 0.05
         scale = math.max(0.5, math.min(2.0, scale))
         scale = tonumber(string.format("%.2f", scale))
-        NS.db.queueScale = scale
+        NS.db.priorityScale = scale
         f:SetScale(scale)
     end)
 
     -- Create icon slots (Button type for Masque compatibility)
-    for i = 1, MAX_QUEUE_ICONS do
-        local icon = NS.CreateFrame("Button", nil, f, "BackdropTemplate")
-        icon:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        icon:SetBackdropColor(0, 0, 0, 0.6)
-        icon:SetBackdropBorderColor(NS.unpack(NS.db.queueBorderColor))
+    for i = 1, MAX_PRIORITY_ICONS do
+        local icon = NS.CreateFrame("Button", nil, f)
+
+        -- Border + background: ColorTexture (no BackdropTemplate / WHITE8X8)
+        icon.borderTex = icon:CreateTexture(nil, "BACKGROUND")
+        icon.borderTex:SetAllPoints()
+        local pbc = NS.db.priorityBorderColor
+        icon.borderTex:SetColorTexture(pbc[1], pbc[2], pbc[3], pbc[4] or 1)
+
+        icon.bg = icon:CreateTexture(nil, "BACKGROUND", nil, 1)
+        icon.bg:SetPoint("TOPLEFT", 1, -1)
+        icon.bg:SetPoint("BOTTOMRIGHT", -1, 1)
+        icon.bg:SetColorTexture(0, 0, 0, 0.6)
 
         icon.tex = icon:CreateTexture(nil, "ARTWORK")
         if NS.masque then
@@ -118,17 +246,17 @@ function NS:CreateQueueDisplay()
         icon.cd:SetHideCountdownNumbers(false)
 
         icon.hotkey = icon:CreateFontString(nil, "OVERLAY")
-        icon.hotkey:SetFont(NS.ResolveFontPath("queueKeybindFont"), NS.db.queueKeybindFontSize, NS.ResolveFontOutline("queueKeybindFont", "queueKeybindOutline"))
-        icon.hotkey:SetPoint("TOPRIGHT", -1, -1)
+        icon.hotkey:SetFont(NS.ResolveFontPath("priorityKeybindFont"), NS.db.priorityKeybindFontSize, NS.ResolveFontOutline("priorityKeybindFont", "priorityKeybindOutline"))
+        icon.hotkey:SetPoint("TOPRIGHT", NS.db.priorityKeybindOffsetX or -1, NS.db.priorityKeybindOffsetY or -1)
         icon.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
         icon.spellID = nil
         icon:Hide()
-        queueIcons[i] = icon
+        priorityIcons[i] = icon
 
         -- Register with Masque (create required textures for skin compatibility)
-        if NS.masqueQueueGroup then
-            local iconSize = NS.db.queueIconSize
+        if NS.masquePriorityGroup then
+            local iconSize = NS.db.priorityIconSize
             local normalTex = icon:CreateTexture()
             normalTex:SetTexture("Interface\\Buttons\\UI-Quickslot2")
             normalTex:SetSize(iconSize * 1.7, iconSize * 1.7)
@@ -157,7 +285,7 @@ function NS:CreateQueueDisplay()
             borderTex:Hide()
             icon.Border = borderTex
 
-            NS.masqueQueueGroup:AddButton(icon, {
+            NS.masquePriorityGroup:AddButton(icon, {
                 Icon = icon.tex,
                 Cooldown = icon.cd,
                 Normal = normalTex,
@@ -167,8 +295,9 @@ function NS:CreateQueueDisplay()
                 Border = borderTex,
             })
 
-            -- Masque handles appearance — hide our backdrop
-            icon:SetBackdrop(nil)
+            -- Masque handles appearance — hide our textures
+            if icon.borderTex then icon.borderTex:Hide() end
+            if icon.bg then icon.bg:Hide() end
         end
     end
 
@@ -190,17 +319,24 @@ function NS:CreateQueueDisplay()
     overlayText:SetPoint("CENTER")
     overlayText:SetTextColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3])
 
+    -- Overlay intercepts mouse when visible (sits above icon buttons).
+    -- Uses OnMouseDown/OnMouseUp instead of RegisterForDrag — WoW's drag
+    -- system is unreliable on BackdropTemplate child frames.
     overlay:EnableMouse(true)
-    overlay:RegisterForDrag("LeftButton")
-    overlay:SetScript("OnDragStart", function() QueueDragStart() end)
-    overlay:SetScript("OnDragStop", function() QueueDragStop() end)
     overlay:SetScript("OnMouseDown", function(_, button)
-        if button == "RightButton" then
-            -- Right-click: commit position, exit drag mode
-            NS.db.queueDetached = false
-            NS.db.queueFreePosition = nil
-            NS.LayoutQueue()
+        if button == "LeftButton" then
+            PriorityDragStart()
+        elseif button == "RightButton" then
+            -- Right-click: snap back to main button, exit detach mode
+            NS.db.priorityDetached = false
+            NS.db.priorityFreePosition = nil
+            NS.LayoutPriority()
             NS.UpdateDetachOverlay()
+        end
+    end)
+    overlay:SetScript("OnMouseUp", function(_, button)
+        if button == "LeftButton" and f._dragging then
+            PriorityDragStop()
         end
     end)
 
@@ -208,20 +344,21 @@ function NS:CreateQueueDisplay()
     f._overlayText = overlayText
 
     function NS.UpdateDetachOverlay()
-        if not NS.db.queueDetached then
+        if not NS.db.priorityDetached then
             overlay:Hide()
             return
         end
         overlay:Show()
+        overlay:SetAlpha(1)  -- restore visibility (drag sets it to 0)
         overlayText:SetText("DRAG TO MOVE")
         overlayText:SetTextColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3])
         overlay:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 0.8)
         overlay:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.7)
     end
 
-    self.queueFrame = f
-    f:SetScale(NS.db.queueScale or 1.0)
-    NS.LayoutQueue()
+    self.priorityFrame = f
+    f:SetScale(NS.db.priorityScale or 1.0)
+    NS.LayoutPriority()
     NS.UpdateDetachOverlay()
 
     -- Create snap feedback elements (lazy, hidden by default)
@@ -233,8 +370,8 @@ end
 ----------------------------------------------------------------
 -- Layout icons based on position setting
 ----------------------------------------------------------------
-local QUEUE_ANCHORS = {
-    RIGHT       = { from = "LEFT",        to = "RIGHT",       ox =  4, oy =  0 },
+local PRIORITY_ANCHORS = {
+    RIGHT       = { from = "LEFT",        to = "RIGHT",       ox = -3, oy = -16 },
     LEFT        = { from = "RIGHT",       to = "LEFT",        ox = -4, oy =  0 },
     TOP         = { from = "BOTTOM",      to = "TOP",         ox =  0, oy =  4 },
     BOTTOM      = { from = "TOP",         to = "BOTTOM",      ox =  0, oy = -4 },
@@ -244,16 +381,16 @@ local QUEUE_ANCHORS = {
     BOTTOMLEFT  = { from = "TOPRIGHT",    to = "BOTTOMLEFT",  ox = -4, oy = -4 },
 }
 
-function NS.LayoutQueue()
-    local f = NS.queueFrame
+function NS.LayoutPriority()
+    local f = NS.priorityFrame
     local btn = NS.mainButton
     if not f or not btn then return end
 
     local db = NS.db
-    local iconSize = db.queueIconSize
-    local spacing = db.queueSpacing
+    local iconSize = db.priorityIconSize
+    local spacing = db.prioritySpacing
 
-    for i, icon in NS.ipairs(queueIcons) do
+    for i, icon in NS.ipairs(priorityIcons) do
         icon:SetSize(iconSize, iconSize)
         icon:ClearAllPoints()
     end
@@ -261,23 +398,23 @@ function NS.LayoutQueue()
     f:ClearAllPoints()
     f.label:ClearAllPoints()
 
-    local lx = db.queueLabelOffsetX or 0
-    local ly = db.queueLabelOffsetY or 0
+    local lx = db.priorityLabelOffsetX or 0
+    local ly = db.priorityLabelOffsetY or 0
 
-    -- Queue frame offset (attached mode fine-tuning)
-    local qox = db.queueOffsetX or 0
-    local qoy = db.queueOffsetY or 0
+    -- Priority frame offset (attached mode fine-tuning)
+    local pox = db.priorityOffsetX or 0
+    local poy = db.priorityOffsetY or 0
 
     -- Free position: use saved absolute position (persists even after drag mode off)
-    if db.queueFreePosition then
-        local pos = db.queueFreePosition
+    if db.priorityFreePosition then
+        local pos = db.priorityFreePosition
         f:SetPoint(pos.point, NS.UIParent, pos.relPoint, pos.x, pos.y)
         f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
     else
         -- Attached: anchor to main button with optional offset
-        local pos = db.queuePosition
-        local anchor = QUEUE_ANCHORS[pos] or QUEUE_ANCHORS.RIGHT
-        f:SetPoint(anchor.from, btn, anchor.to, anchor.ox + qox, anchor.oy + qoy)
+        local pos = db.priorityPosition
+        local anchor = PRIORITY_ANCHORS[pos] or PRIORITY_ANCHORS.RIGHT
+        f:SetPoint(anchor.from, btn, anchor.to, anchor.ox + pox, anchor.oy + poy)
 
         local labelAboveFrame = (pos == "TOP" or pos == "BOTTOM"
             or pos == "TOPRIGHT" or pos == "TOPLEFT"
@@ -285,20 +422,20 @@ function NS.LayoutQueue()
         if labelAboveFrame then
             f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
         else
-            f.label:SetPoint("BOTTOM", queueIcons[1], "TOP", lx, 2 + ly)
+            f.label:SetPoint("BOTTOM", priorityIcons[1], "TOP", lx, 2 + ly)
         end
     end
 
     -- Layout icons in a horizontal row
-    for i, icon in NS.ipairs(queueIcons) do
+    for i, icon in NS.ipairs(priorityIcons) do
         if i == 1 then
             icon:SetPoint("LEFT", f, "LEFT", 3, 0)
         else
-            icon:SetPoint("LEFT", queueIcons[i - 1], "RIGHT", spacing, 0)
+            icon:SetPoint("LEFT", priorityIcons[i - 1], "RIGHT", spacing, 0)
         end
     end
 
-    local count = math.min(MAX_QUEUE_ICONS, #queueIcons)
+    local count = math.min(MAX_PRIORITY_ICONS, #priorityIcons)
     f:SetSize(count * (iconSize + spacing) - spacing + 6, iconSize + 6)
 
     NS.MasqueReSkin()
@@ -308,7 +445,7 @@ end
 -- Snap proximity detection
 ----------------------------------------------------------------
 function NS.GetSnapDistance()
-    local f = NS.queueFrame
+    local f = NS.priorityFrame
     local btn = NS.mainButton
     if not f or not btn then return 9999 end
     local fx, fy = f:GetCenter()
@@ -384,8 +521,8 @@ function NS.CreateSnapEffects()
         bubbles[i] = b
     end
 
-    -- Particle bubbles (queue frame)
-    bubbles._queue = {}
+    -- Particle bubbles (priority frame)
+    bubbles._priority = {}
     for i = 1, NUM_BUBBLES do
         local b = NS.CreateFrame("Frame", nil, NS.UIParent)
         b:SetSize(6, 6)
@@ -399,7 +536,7 @@ function NS.CreateSnapEffects()
         b._speed = 1.2 + (i % 3) * 0.6
         b._radius = 0
         b:Hide()
-        bubbles._queue[i] = b
+        bubbles._priority[i] = b
     end
 
     -- Dotted connection line (small square "dots" between frames)
@@ -456,12 +593,12 @@ function NS.UpdateSnapBubbles(intensity, elapsed)
         UpdateBubbleSet(bubbles, bx, by, intensity, elapsed, 30 + (1 - intensity) * 20)
     end
 
-    -- Queue frame bubbles
-    local qf = NS.queueFrame
-    if qf and bubbles._queue then
-        local qx, qy = qf:GetCenter()
-        if qx then
-            UpdateBubbleSet(bubbles._queue, qx, qy, intensity, elapsed, 20 + (1 - intensity) * 15)
+    -- Priority frame bubbles
+    local pf = NS.priorityFrame
+    if pf and bubbles._priority then
+        local px, py = pf:GetCenter()
+        if px then
+            UpdateBubbleSet(bubbles._priority, px, py, intensity, elapsed, 20 + (1 - intensity) * 15)
         end
     end
 end
@@ -469,12 +606,12 @@ end
 function NS.UpdateSnapDots(intensity)
     if not bubbles or not bubbles._dots then return end
     local btn = NS.mainButton
-    local qf = NS.queueFrame
-    if not btn or not qf then return end
+    local pf = NS.priorityFrame
+    if not btn or not pf then return end
 
     local bx, by = btn:GetCenter()
-    local qx, qy = qf:GetCenter()
-    if not bx or not qx then return end
+    local px, py = pf:GetCenter()
+    if not bx or not px then return end
 
     -- Color: red (far) -> orange/yellow (mid) -> green (close/snap)
     local r, g, b
@@ -495,8 +632,8 @@ function NS.UpdateSnapDots(intensity)
     local NUM_DOTS = #bubbles._dots
     for i, d in NS.ipairs(bubbles._dots) do
         local pct = (i - 1) / (NUM_DOTS - 1)
-        local dx = bx + (qx - bx) * pct
-        local dy = by + (qy - by) * pct
+        local dx = bx + (px - bx) * pct
+        local dy = by + (py - by) * pct
         d:ClearAllPoints()
         d:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", dx, dy)
         d.tex:SetColorTexture(r, g, b, intensity * 0.9)
@@ -526,8 +663,8 @@ function NS.HideSnapEffects()
     if glowFrame then glowFrame:Hide() end
     if bubbles then
         for _, b in NS.ipairs(bubbles) do b:Hide() end
-        if bubbles._queue then
-            for _, b in NS.ipairs(bubbles._queue) do b:Hide() end
+        if bubbles._priority then
+            for _, b in NS.ipairs(bubbles._priority) do b:Hide() end
         end
         if bubbles._dots then
             for _, d in NS.ipairs(bubbles._dots) do d:Hide() end
@@ -591,8 +728,8 @@ function NS.PlaySnapEffect()
         b:SetAlpha(1); b:SetSize(8, 8); b:Show()
         allBubbles[#allBubbles + 1] = b
     end
-    if bubbles._queue then
-        for _, b in NS.ipairs(bubbles._queue) do
+    if bubbles._priority then
+        for _, b in NS.ipairs(bubbles._priority) do
             b:SetAlpha(1); b:SetSize(8, 8); b:Show()
             allBubbles[#allBubbles + 1] = b
         end
@@ -648,36 +785,41 @@ function NS.PlaySnapEffect()
 end
 
 ----------------------------------------------------------------
--- Apply font settings to queue label + icon keybind text
+-- Apply font settings to priority label + icon keybind text
 ----------------------------------------------------------------
-function NS.ApplyQueueFonts()
-    local f = NS.queueFrame
+function NS.ApplyPriorityFonts()
+    local f = NS.priorityFrame
     if not f then return end
     if f.label then
         f.label:SetFont(
-            NS.ResolveFontPath("queueLabelFont"),
-            NS.db.queueLabelFontSize,
-            NS.ResolveFontOutline("queueLabelFont", "queueLabelOutline"))
+            NS.ResolveFontPath("priorityLabelFont"),
+            NS.db.priorityLabelFontSize,
+            NS.ResolveFontOutline("priorityLabelFont", "priorityLabelOutline"))
     end
-    for _, icon in NS.ipairs(queueIcons) do
+    for _, icon in NS.ipairs(priorityIcons) do
         if icon.hotkey then
             icon.hotkey:SetFont(
-                NS.ResolveFontPath("queueKeybindFont"),
-                NS.db.queueKeybindFontSize,
-                NS.ResolveFontOutline("queueKeybindFont", "queueKeybindOutline"))
+                NS.ResolveFontPath("priorityKeybindFont"),
+                NS.db.priorityKeybindFontSize,
+                NS.ResolveFontOutline("priorityKeybindFont", "priorityKeybindOutline"))
+            icon.hotkey:ClearAllPoints()
+            icon.hotkey:SetPoint("TOPRIGHT",
+                NS.db.priorityKeybindOffsetX or -1,
+                NS.db.priorityKeybindOffsetY or -1)
         end
     end
 end
 
 ----------------------------------------------------------------
--- Update queue icons with rotation spells
+-- Update priority icons with rotation spells (sorted by priority)
 ----------------------------------------------------------------
-function NS.UpdateQueueDisplay()
-    local f = NS.queueFrame
+function NS.UpdatePriorityDisplay()
+    local f = NS.priorityFrame
     if not f then return end
 
-    if not NS.db.showQueue then
+    if not NS.db.showPriority then
         f:Hide()
+        HideActiveGlow()
         return
     end
 
@@ -686,31 +828,42 @@ function NS.UpdateQueueDisplay()
 
     if not rotationSpells or #rotationSpells == 0 then
         f:Hide()
+        HideActiveGlow()
         return
     end
 
     f:Show()
 
-    -- Queue alpha: match combat state
+    -- Priority alpha: match combat state
     local inCombat = InCombatLockdown()
-    f:SetAlpha(inCombat and 1.0 or (NS.db.queueAlphaOOC or 0.6))
+    f:SetAlpha(inCombat and 1.0 or (NS.db.priorityAlphaOOC or 0.6))
+
+    -- Sort spells by priority (next-cast first, ready by importance, on-CD by remaining)
+    local sorted = SortByPriority(rotationSpells, nextSpell)
 
     local visibleCount = 0
-    for i = 1, MAX_QUEUE_ICONS do
-        local icon = queueIcons[i]
-        local spellID = rotationSpells[i]
+    local glowTarget = nil
+
+    for i = 1, MAX_PRIORITY_ICONS do
+        local icon = priorityIcons[i]
+        local spellID = sorted[i]
 
         if spellID and spellID ~= 0 then
             icon.spellID = spellID
             visibleCount = visibleCount + 1
 
-            local tex = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(spellID)
+            local tex = NS.GetSpellTextureCached(spellID)
             if tex then
                 icon.tex:SetTexture(tex)
             end
 
             -- Border color: importance color when enabled, neon fallback for next-cast
             local isNext = (spellID == nextSpell)
+
+            -- Track the first icon that is the next-cast for glow
+            if isNext and not glowTarget then
+                glowTarget = icon
+            end
 
             if NS.db.importanceBorders then
                 -- Importance borders ON: use spell's importance color for ALL icons
@@ -719,14 +872,15 @@ function NS.UpdateQueueDisplay()
                     if icon.Border then
                         icon.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
                         icon.Border:Show()
-                    else
-                        icon:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
+                    elseif icon.borderTex then
+                        icon.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
                     end
                 else
                     if icon.Border then
                         icon.Border:Hide()
-                    else
-                        icon:SetBackdropBorderColor(NS.unpack(NS.db.queueBorderColor))
+                    elseif icon.borderTex then
+                        local pbc = NS.db.priorityBorderColor
+                        icon.borderTex:SetColorTexture(pbc[1], pbc[2], pbc[3], pbc[4] or 1)
                     end
                 end
             elseif isNext then
@@ -734,15 +888,16 @@ function NS.UpdateQueueDisplay()
                 if icon.Border then
                     icon.Border:SetVertexColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 1)
                     icon.Border:Show()
-                else
-                    icon:SetBackdropBorderColor(NS.unpack(T.NEON_NEXT))
+                elseif icon.borderTex then
+                    icon.borderTex:SetColorTexture(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 1)
                 end
             else
                 -- Importance borders OFF + not next: default border
                 if icon.Border then
                     icon.Border:Hide()
-                else
-                    icon:SetBackdropBorderColor(NS.unpack(NS.db.queueBorderColor))
+                elseif icon.borderTex then
+                    local pbc = NS.db.priorityBorderColor
+                    icon.borderTex:SetColorTexture(pbc[1], pbc[2], pbc[3], pbc[4] or 1)
                 end
             end
 
@@ -763,7 +918,7 @@ function NS.UpdateQueueDisplay()
             end
 
             -- Keybind text
-            if NS.db.showQueueKeybinds then
+            if NS.db.showPriorityKeybinds then
                 local key = NS.GetKeybindForSpell(spellID)
                 icon.hotkey:SetText(key or "")
                 icon.hotkey:Show()
@@ -777,9 +932,16 @@ function NS.UpdateQueueDisplay()
         end
     end
 
+    -- Active spell glow on the next-cast icon
+    if NS.db.showActiveGlow and glowTarget and ActionButton_ShowOverlayGlow then
+        ShowActiveGlow(glowTarget)
+    else
+        HideActiveGlow()
+    end
+
     -- Tooltip on individual icons
-    for i = 1, MAX_QUEUE_ICONS do
-        local icon = queueIcons[i]
+    for i = 1, MAX_PRIORITY_ICONS do
+        local icon = priorityIcons[i]
         if not icon._tooltipHooked then
             icon:EnableMouse(true)
             icon:SetScript("OnEnter", function(self)
@@ -798,8 +960,8 @@ function NS.UpdateQueueDisplay()
 
     -- Resize frame to fit visible icons
     if visibleCount > 0 then
-        local iconSize = NS.db.queueIconSize
-        local spacing = NS.db.queueSpacing
+        local iconSize = NS.db.priorityIconSize
+        local spacing = NS.db.prioritySpacing
         f:SetSize(visibleCount * (iconSize + spacing) - spacing + 6, iconSize + 6)
     end
 end

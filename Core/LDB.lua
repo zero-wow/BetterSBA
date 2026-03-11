@@ -16,7 +16,10 @@ function NS.InitLDB()
         icon = NS.ICON_PATH,
         iconCoords = { 0.20, 0.80, 0.20, 0.80 },
         OnClick = function(_, button)
-            if button == "LeftButton" then
+            if button == "LeftButton" and (IsShiftKeyDown() or IsControlKeyDown()) then
+                ReloadUI()
+                return
+            elseif button == "LeftButton" then
                 NS.Config:Toggle()
             elseif button == "RightButton" then
                 NS.db.locked = not NS.db.locked
@@ -41,7 +44,10 @@ function NS.InitLDB()
                 local keyStr = NS.table_concat(keys, ", ")
                 local bar = NS.math_floor((slot - 1) / 12) + 1
                 local btn = ((slot - 1) % 12) + 1
-                tip:AddLine("Intercept: |cFF44FF44[" .. keyStr .. "]|r [BAR: " .. bar .. "] [SLOT: " .. btn .. "]")
+                tip:AddLine("Keybind Intercept:")
+                tip:AddDoubleLine("  Keybind", "|cFF44FF44" .. keyStr .. "|r")
+                tip:AddDoubleLine("  Action Bar", "|cFFFFFFFF" .. bar .. "|r")
+                tip:AddDoubleLine("  Slot", "|cFFFFFFFF" .. btn .. "|r")
             else
                 local reason = NS.GetInterceptBlockReason()
                 if reason then
@@ -51,18 +57,28 @@ function NS.InitLDB()
                 end
             end
 
-            if NS.mainButton and NS.mainButton.spellID then
-                local name = NS.C_Spell and NS.C_Spell.GetSpellName
-                    and NS.C_Spell.GetSpellName(NS.mainButton.spellID)
-                if name then
-                    tip:AddLine(" ")
-                    tip:AddLine("Next: |cFFFFFFFF" .. name .. "|r")
-                end
-            end
+            -- "Next Up" line — track which line index it occupies for live updates
+            tip:AddLine(" ")
+            local nextName = NS._GetNextSpellName()
+            tip:AddLine("Next: |cFFFFFFFF" .. (nextName or "---") .. "|r")
+            NS._ldbTooltip = tip
+            NS._ldbTooltipNextLine = tip:NumLines()
+            NS._ldbTooltipLastSpell = nextName
 
             tip:AddLine(" ")
             tip:AddLine("|cFFCCCCCCLeft-Click|r  Open settings", 0.6, 0.6, 0.6)
+            tip:AddLine("|cFFCCCCCCShift/Ctrl-Click|r  Reload UI", 0.6, 0.6, 0.6)
             tip:AddLine("|cFFCCCCCCRight-Click|r  Toggle lock", 0.6, 0.6, 0.6)
+
+            -- Hook OnHide once to clean up live-update state
+            if not tip._bsbaHideHooked then
+                tip:HookScript("OnHide", function()
+                    NS._ldbTooltip = nil
+                    NS._ldbTooltipNextLine = nil
+                    NS._ldbTooltipLastSpell = nil
+                end)
+                tip._bsbaHideHooked = true
+            end
         end,
     })
 
@@ -104,6 +120,40 @@ function NS.InitLDB()
 
     -- Initial text update
     NS.UpdateLDBText()
+end
+
+----------------------------------------------------------------
+-- Helper: current next-spell name (nil if none)
+----------------------------------------------------------------
+function NS._GetNextSpellName()
+    if NS.mainButton and NS.mainButton.spellID then
+        local getName = NS.C_Spell and NS.C_Spell.GetSpellName
+        if getName then return getName(NS.mainButton.spellID) end
+    end
+    return nil
+end
+
+----------------------------------------------------------------
+-- Live-update the "Next Up" line while tooltip is open.
+-- Called from UpdateNow() — only does work when tooltip is
+-- visible AND the spell has actually changed.
+----------------------------------------------------------------
+function NS.RefreshLDBTooltipNextSpell()
+    local tip = NS._ldbTooltip
+    if not tip or not tip:IsShown() then return end
+
+    local line = NS._ldbTooltipNextLine
+    if not line then return end
+
+    local name = NS._GetNextSpellName()
+    if name == NS._ldbTooltipLastSpell then return end
+    NS._ldbTooltipLastSpell = name
+
+    local fs = _G[tip:GetName() .. "TextLeft" .. line]
+    if fs then
+        fs:SetText("Next: |cFFFFFFFF" .. (name or "---") .. "|r")
+        tip:Show()  -- recalculate tooltip width
+    end
 end
 
 ----------------------------------------------------------------
@@ -171,7 +221,7 @@ function NS.UpdateLDBText()
         local keyStr = NS.table_concat(keys, ", ")
         local bar = NS.math_floor((slot - 1) / 12) + 1
         local btn = ((slot - 1) % 12) + 1
-        ldbCachedText = "Intercepting [" .. keyStr .. "] [BAR: " .. bar .. "] [SLOT: " .. btn .. "]"
+        ldbCachedText = "Intercepting [KB: " .. keyStr .. "] [BAR: " .. bar .. "] [SLOT: " .. btn .. "]"
     else
         if reason then
             ldbCachedText = "Paused: " .. reason

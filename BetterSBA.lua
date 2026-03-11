@@ -43,7 +43,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         NS.InitMasque()
         NS.InitLDB()
         NS:CreateMainButton()
-        NS:CreateQueueDisplay()
+        NS:CreatePriorityDisplay()
         NS.ScanKeybinds()
         NS:RegisterSlashCommands()
         NS:RegisterAssistedCombatCallbacks()
@@ -88,9 +88,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if event == "PLAYER_SPECIALIZATION_CHANGED" then
             NS.ClearBaseCDCache()
             NS.InvalidateRotationCache()
+            NS.InvalidateResolveCache()
+            NS.InvalidateTextureCache()
+            NS.InvalidateCooldownCache()
+            NS.RebuildMacroText()  -- class-specific off-GCD lines may change on spec swap
         end
         if event == "SPELLS_CHANGED" then
             NS.InvalidateRotationCache()
+            NS.InvalidateResolveCache()
+            NS.InvalidateTextureCache()
+            NS.InvalidateCooldownCache()
         end
         if event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_BONUS_ACTIONBAR"
             or event == "UPDATE_OVERRIDE_ACTIONBAR" or event == "UPDATE_VEHICLE_ACTIONBAR" then
@@ -115,10 +122,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         end
 
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
-        -- Mount/dismount: action bars may shuffle. Rescan at 0.5s and 1.5s
-        -- to catch the API lag from skyriding/mount transitions.
+        -- Mount/dismount: immediate scan + delayed retries to catch API lag.
+        NS.ScanKeybinds()
         NS.UpdateNow()
-        NS.C_Timer_After(0.5, function()
+        NS.C_Timer_After(0.3, function()
+            NS.ClearSBASlotCache()
+            NS.ScanKeybinds()
+            NS.UpdateNow()
+        end)
+        NS.C_Timer_After(0.8, function()
             NS.ClearSBASlotCache()
             NS.ScanKeybinds()
             NS.UpdateNow()
@@ -131,6 +143,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_TARGET_CHANGED" or event == "SPELL_UPDATE_COOLDOWN"
         or event == "UNIT_AURA" or event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
+        if event == "SPELL_UPDATE_COOLDOWN" then
+            NS.InvalidateCooldownCache()
+        end
         NS.UpdateNow()
 
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
@@ -143,7 +158,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                     break
                 end
             end
-            -- Immediately refresh display so cooldowns show right after cast
+            -- Refresh display after animation starts (outgoing already
+            -- captured the cast spell; incoming defers its own UpdateNow)
             NS.UpdateNow()
         end
 
@@ -151,7 +167,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         NS.C_Timer_After(0.5, function()
             NS.ScanKeybinds()
             NS.ApplyButtonSettings()  -- reapply fonts/size after full load
-            NS.LayoutQueue()
+            NS.LayoutPriority()
             NS.UpdateNow()
         end)
     end

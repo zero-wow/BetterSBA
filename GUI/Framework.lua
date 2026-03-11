@@ -649,8 +649,8 @@ function NS.CreateFontDropdown(parent, label, dbKey, yOffset, onChange, width)
             if fontName then
                 entry.fontName = fontName
                 local fontPath = NS.GetFontPath(fontName)
-                if not entry.text:SetFont(fontPath, 11, "") then
-                    entry.text:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+                if not entry.text:SetFont(fontPath, 11, NS.GetConfigFontOutline()) then
+                    entry.text:SetFont("Fonts\\FRIZQT__.TTF", 11, NS.GetConfigFontOutline())
                 end
                 entry.text:SetText(fontName)
                 local fsc = parent._sectionColor or T.ACCENT
@@ -681,8 +681,8 @@ function NS.CreateFontDropdown(parent, label, dbKey, yOffset, onChange, width)
     Refresh = function()
         local fontName = NS.db[dbKey]
         local fontPath = NS.GetFontPath(fontName)
-        if not btnText:SetFont(fontPath, 11, "") then
-            btnText:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
+        if not btnText:SetFont(fontPath, 11, NS.GetConfigFontOutline()) then
+            btnText:SetFont("Fonts\\FRIZQT__.TTF", 11, NS.GetConfigFontOutline())
         end
         btnText:SetText(fontName)
         btnText:SetTextColor(NS.unpack(parent._sectionColor or T.ACCENT))
