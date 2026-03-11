@@ -125,20 +125,32 @@ end
 ----------------------------------------------------------------
 -- Masque integration
 ----------------------------------------------------------------
+-- Reapply our hotkey offsets after Masque repositions elements
+local function PostMasqueSkinFix()
+    local btn = NS.mainButton
+    if btn and btn.hotkey then
+        btn.hotkey:ClearAllPoints()
+        btn.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
+    end
+end
+
 function NS.InitMasque()
     local MSQ = LibStub and LibStub("Masque", true)
     if not MSQ then return end
     NS.masque = MSQ
+
+    -- Masque callback fires when user changes skin — reapply our offsets after
+    local function onSkinChanged() NS.C_Timer_After(0, PostMasqueSkinFix) end
+
     NS.masqueMainGroup = MSQ:Group("BetterSBA", "Main Button")
+    NS.masqueMainGroup.SkinChanged = onSkinChanged
     NS.masquePriorityGroup = MSQ:Group("BetterSBA", "Rotation")
     NS.masqueAnimGroup = MSQ:Group("BetterSBA", "Animated Button")
 end
 
-function NS.MasqueReSkin()
-    if NS.masqueMainGroup then NS.masqueMainGroup:ReSkin() end
-    if NS.masquePriorityGroup then NS.masquePriorityGroup:ReSkin() end
-    if NS.masqueAnimGroup then NS.masqueAnimGroup:ReSkin() end
-end
+-- No-op: Masque handles its own reskinning via callbacks.
+-- Kept for any remaining call sites during transition.
+function NS.MasqueReSkin() end
 
 ----------------------------------------------------------------
 -- Safe API wrapper
@@ -1779,7 +1791,7 @@ local function AcquireAnimFrame()
 
     -- Keybind text (cloned from main button each animation)
     f.hotkey = f:CreateFontString(nil, "OVERLAY")
-    f.hotkey:SetPoint("TOPRIGHT", NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+    f.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
     f.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
     local ag = f:CreateAnimationGroup()
@@ -1927,8 +1939,8 @@ function NS.PlayCastAnimation(spellID)
                 anim.hotkey:SetFont(font, fontSize, flags)
             end
             anim.hotkey:ClearAllPoints()
-            anim.hotkey:SetPoint("TOPRIGHT",
-                NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+            anim.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT",
+                NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
             anim.hotkey:SetText(btn.hotkey:GetText() or "")
             anim.hotkey:Show()
         else
@@ -2045,8 +2057,8 @@ function NS.PlayCastAnimation(spellID)
                     local font, fontSize, flags = btn.hotkey:GetFont()
                     if font then incoming.hotkey:SetFont(font, fontSize, flags) end
                     incoming.hotkey:ClearAllPoints()
-                    incoming.hotkey:SetPoint("TOPRIGHT",
-                        NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+                    incoming.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT",
+                        NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
                     incoming.hotkey:SetText(btn.hotkey:GetText() or "")
                     incoming.hotkey:Show()
                 else

@@ -56,7 +56,7 @@ function NS:CreateMainButton()
         NS.ResolveFontPath("keybindFont"),
         db.keybindFontSize,
         NS.ResolveFontOutline("keybindFont", "keybindOutline"))
-    btn.hotkey:SetPoint("TOPRIGHT", db.keybindOffsetX or -2, db.keybindOffsetY or -2)
+    btn.hotkey:SetPoint(db.keybindAnchor or "TOPRIGHT", db.keybindOffsetX or -5, db.keybindOffsetY or -5)
     btn.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
     -- Pause overlay (text-based with outline for clarity)
@@ -597,7 +597,7 @@ function NS.ApplyButtonSettings()
             NS.db.keybindFontSize,
             NS.ResolveFontOutline("keybindFont", "keybindOutline"))
         btn.hotkey:ClearAllPoints()
-        btn.hotkey:SetPoint("TOPRIGHT", NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+        btn.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
     end
     if btn.pauseOverlay then
         local po = btn.pauseOverlay
@@ -619,5 +619,4 @@ function NS.ApplyButtonSettings()
         btn.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
     end
     if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
-    NS.MasqueReSkin()
 end

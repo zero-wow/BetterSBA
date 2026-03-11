@@ -247,7 +247,7 @@ function NS:CreatePriorityDisplay()
 
         icon.hotkey = icon:CreateFontString(nil, "OVERLAY")
         icon.hotkey:SetFont(NS.ResolveFontPath("priorityKeybindFont"), NS.db.priorityKeybindFontSize, NS.ResolveFontOutline("priorityKeybindFont", "priorityKeybindOutline"))
-        icon.hotkey:SetPoint("TOPRIGHT", NS.db.priorityKeybindOffsetX or -1, NS.db.priorityKeybindOffsetY or -1)
+        icon.hotkey:SetPoint(NS.db.priorityKeybindAnchor or "TOPRIGHT", NS.db.priorityKeybindOffsetX or -5, NS.db.priorityKeybindOffsetY or -5)
         icon.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
         icon.spellID = nil
@@ -438,7 +438,6 @@ function NS.LayoutPriority()
     local count = math.min(MAX_PRIORITY_ICONS, #priorityIcons)
     f:SetSize(count * (iconSize + spacing) - spacing + 6, iconSize + 6)
 
-    NS.MasqueReSkin()
 end
 
 ----------------------------------------------------------------
@@ -803,9 +802,9 @@ function NS.ApplyPriorityFonts()
                 NS.db.priorityKeybindFontSize,
                 NS.ResolveFontOutline("priorityKeybindFont", "priorityKeybindOutline"))
             icon.hotkey:ClearAllPoints()
-            icon.hotkey:SetPoint("TOPRIGHT",
-                NS.db.priorityKeybindOffsetX or -1,
-                NS.db.priorityKeybindOffsetY or -1)
+            icon.hotkey:SetPoint(NS.db.priorityKeybindAnchor or "TOPRIGHT",
+                NS.db.priorityKeybindOffsetX or -5,
+                NS.db.priorityKeybindOffsetY or -5)
         end
     end
 end

@@ -1178,17 +1178,23 @@ function NS.Config:Create()
         "Shows in the " .. V .. "top-right" .. R .. " corner of the icon.",
     }, c)
     y = y - 24
-    -- Side-by-side: Keybind X/Y Offset
+    -- Keybind Anchor + X/Y Offset
     do
     local halfW = math.floor((contentW - 28 - 6) / 2)
     local function ApplyKeybindOffset()
         local btn = NS.mainButton
         if btn and btn.hotkey then
             btn.hotkey:ClearAllPoints()
-            btn.hotkey:SetPoint("TOPRIGHT",
-                NS.db.keybindOffsetX or -2, NS.db.keybindOffsetY or -2)
+            btn.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT",
+                NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
         end
     end
+    local kbAnchor = NS.CreateDropdown(c, "Keybind Anchor", "keybindAnchor", NS.KEYBIND_ANCHORS, y, ApplyKeybindOffset)
+    NS.AddTooltip(kbAnchor, "Keybind Anchor", {
+        "Anchor point for the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "Active Display" .. R .. " button.",
+    }, c)
+    y = y - 46
     local kbOfsX = NS.CreateSlider(c, "Keybind X", "keybindOffsetX", -20, 20, 1, y, ApplyKeybindOffset)
     kbOfsX:SetSize(halfW, 32)
     NS.AddTooltip(kbOfsX, "Keybind X Offset", {
@@ -1350,7 +1356,15 @@ function NS.Config:Create()
     }, c)
     y = y - 24
 
-    -- Side-by-side: Priority Keybind X/Y Offset
+    -- Priority Keybind Anchor + X/Y Offset
+    local pkbAnchor = NS.CreateDropdown(c, "Keybind Anchor", "priorityKeybindAnchor", NS.KEYBIND_ANCHORS, y, function()
+        NS.ApplyPriorityFonts()
+    end)
+    NS.AddTooltip(pkbAnchor, "Priority Keybind Anchor", {
+        "Anchor point for " .. K .. "keybind" .. R .. " text on",
+        U .. "Priority Display" .. R .. " icons.",
+    }, c)
+    y = y - 46
     local pkbX = NS.CreateSlider(c, "Keybind X", "priorityKeybindOffsetX", -20, 20, 1, y, function()
         NS.ApplyPriorityFonts()
     end)
@@ -2686,6 +2700,7 @@ function NS.Config:Create()
         { label = "Active Display", section = 3, isSection = true },
         { label = "Button Size", section = 3 },
         { label = "Show Keybind", section = 3 },
+        { label = "Keybind Anchor", section = 3 },
         { label = "Keybind X Offset", section = 3 },
         { label = "Keybind Y Offset", section = 3 },
         { label = "Show Cooldown", section = 3 },
@@ -2697,6 +2712,7 @@ function NS.Config:Create()
         { label = "Priority Icon Size", section = 4 },
         { label = "Priority Scale", section = 4 },
         { label = "Show Priority Keybinds", section = 4 },
+        { label = "Priority Keybind Anchor", section = 4 },
         { label = "Priority Keybind X Offset", section = 4 },
         { label = "Priority Keybind Y Offset", section = 4 },
         { label = "Position", section = 4 },

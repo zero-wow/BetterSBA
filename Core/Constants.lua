@@ -106,8 +106,9 @@ NS.defaults = {
     showCooldown = true,
     rangeColoring = true,
     keybindFontSize = 12,
-    keybindOffsetX = -2,
-    keybindOffsetY = -2,
+    keybindOffsetX = -5,
+    keybindOffsetY = -5,
+    keybindAnchor = "TOPRIGHT",
 
     -- Priority Display
     showPriority = true,
@@ -115,9 +116,10 @@ NS.defaults = {
     prioritySpacing = 3,
     priorityPosition = "RIGHT",
     showPriorityKeybinds = false,
-    priorityKeybindFontSize = 8,
-    priorityKeybindOffsetX = -1,
-    priorityKeybindOffsetY = -1,
+    priorityKeybindFontSize = 7,
+    priorityKeybindOffsetX = -5,
+    priorityKeybindOffsetY = -5,
+    priorityKeybindAnchor = "TOPRIGHT",
     priorityDetached = false,
     priorityFreePosition = nil,
     priorityOffsetX = 0,
@@ -264,6 +266,9 @@ NS.CAST_ANIMATIONS = { "NONE", "DRIFT", "PULSE", "SPIN", "ZOOM", "SLAM", "POP!" 
 
 -- Priority display position options
 NS.PRIORITY_POSITIONS = { "RIGHT", "LEFT", "TOP", "BOTTOM", "TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT" }
+
+-- Keybind anchor point options
+NS.KEYBIND_ANCHORS = { "TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT", "TOP", "BOTTOM", "LEFT", "RIGHT", "CENTER" }
 
 -- Keybind abbreviations
 NS.KEYBIND_SUBS = {
