@@ -18,6 +18,14 @@ Core\Constants.lua
 Core\Palettes.lua
 Core\Database.lua
 Core\Functions.lua
+Core\Functions\Debug.lua
+Core\Functions\Masque.lua
+Core\Functions\Spells.lua
+Core\Functions\Bindings.lua
+Core\Functions\Fonts.lua
+Core\Functions\Display.lua
+Core\Functions\Particles.lua
+Core\Functions\Animations.lua
 Core\LDB.lua
 
 # GUI
