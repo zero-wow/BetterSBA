@@ -366,10 +366,20 @@ local function PositionAnimCloneHotkey(hk)
     hk:SetPoint(anchor, parent, anchor, NS.db.animCloneKeybindOffsetX or -5, NS.db.animCloneKeybindOffsetY or -5)
 end
 
+local function LayoutAnimCloneHotkeyFrame(anim)
+    local hkFrame = anim and anim._hkFrame
+    local icon = anim and anim.icon
+    if not hkFrame or not icon then return end
+    hkFrame:ClearAllPoints()
+    hkFrame:SetPoint("TOPLEFT", icon, "TOPLEFT")
+    hkFrame:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT")
+end
+
 local function DebugAnimClone(phase, anim, spellID, sourceBtn)
     if not NS.IsDebugChannelEnabled("anim") or not anim then return end
 
     local hk = anim.hotkey
+    local hkFrame = anim._hkFrame
     local point, relPoint, ox, oy = "nil", "nil", "nil", "nil"
     if hk then
         local ok, a, _, c, d, e = NS.pcall(hk.GetPoint, hk, 1)
@@ -403,6 +413,8 @@ local function DebugAnimClone(phase, anim, spellID, sourceBtn)
         "| effectiveScale:", anim:GetEffectiveScale(),
         "| iconSize:", anim.icon and math.floor(anim.icon:GetWidth() + 0.5) or "nil",
         "x", anim.icon and math.floor(anim.icon:GetHeight() + 0.5) or "nil",
+        "| hotkeyFrameSize:", hkFrame and math.floor(hkFrame:GetWidth() + 0.5) or "nil",
+        "x", hkFrame and math.floor(hkFrame:GetHeight() + 0.5) or "nil",
         "| hotkeySize:", hk and math.floor(hk:GetWidth() + 0.5) or "nil",
         "x", hk and math.floor(hk:GetHeight() + 0.5) or "nil",
         "| hotkeyJustify:", hk and hk:GetJustifyH() or "nil", "/", hk and hk:GetJustifyV() or "nil",
@@ -417,6 +429,7 @@ local function ApplyAnimHotkey(anim, spellID)
     local hk = anim and anim.hotkey
     if not hk then return end
     anim._spellID = spellID
+    LayoutAnimCloneHotkeyFrame(anim)
     hk:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
         NS.ResolveFontOutline("keybindFont", "keybindOutline"))
     PositionAnimCloneHotkey(hk)
@@ -434,6 +447,7 @@ end
 function NS.RefreshAnimHotkeys()
     for _, f in NS.ipairs(animPool) do
         if f.hotkey then
+            LayoutAnimCloneHotkeyFrame(f)
             f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
                 NS.ResolveFontOutline("keybindFont", "keybindOutline"))
             PositionAnimCloneHotkey(f.hotkey)
@@ -621,16 +635,16 @@ local function AcquireAnimFrame()
 
     -- Keybind â€” on a child frame so Masque can't hook the FontString
     local hkFrame = NS.CreateFrame("Frame", nil, f)
-    hkFrame:SetAllPoints()
     hkFrame:SetFrameLevel(f:GetFrameLevel() + 5)
     f.hotkey = hkFrame:CreateFontString(nil, "OVERLAY")
     f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
         NS.ResolveFontOutline("keybindFont", "keybindOutline"))
     f.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
+    f._hkFrame = hkFrame
+    LayoutAnimCloneHotkeyFrame(f)
     PositionAnimCloneHotkey(f.hotkey)
     f.hotkey:SetText("")
     f.hotkey:Hide()
-    f._hkFrame = hkFrame
 
     local ag = f:CreateAnimationGroup()
     ag._scale = ag:CreateAnimation("Scale")

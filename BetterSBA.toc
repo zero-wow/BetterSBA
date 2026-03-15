@@ -1,6 +1,6 @@
 ## Interface: 110207, 120001
 ## Title: |cFF66B8D9Better|r|cFFFFFFFFSBA|r
-## Version: R1.8835.3f961cf.0006.9
+## Version: R1.13041.31de34a.0007.16
 ## Notes: Enhanced Single-Button Assistant with auto-targeting, pet attack, and priority display.
 ## Author: |cFF9B59B6fostot|r
 ## SavedVariables: BetterSBA_DB
