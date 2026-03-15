@@ -128,6 +128,8 @@ NS.defaults = {
     keybindOffsetX = -5,
     keybindOffsetY = -5,
     keybindAnchor = "TOPRIGHT",
+    animCloneKeybindOffsetX = -5,
+    animCloneKeybindOffsetY = -5,
 
     -- Priority Display
     showPriority = true,
@@ -220,6 +222,8 @@ NS.defaults = {
     animateIncoming = false,
     gcdDuration = 1.9,
     animHideButton = true,
+    animCloneMasque = true,
+    animCloneReapplyKey = "",
 
     -- Particle system (per-animation: <animKey>Particles, <animKey>ParticleTiming, etc.)
     -- POP! has particles ON by default, all others OFF
@@ -260,7 +264,9 @@ NS.defaults = {
 
     -- Debug
     debug = false,
-    debugSpellSubs = false,
+    debugSpellUpdates = true,
+    debugAnimClone = true,
+    debugOther = true,
 
     -- Modifier scaling
     modifierScaling = true,

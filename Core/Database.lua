@@ -68,6 +68,11 @@ local function MigrateProfileSettings(profile)
     profile.queueDetached = false     -- legacy key cleanup
     profile.priorityDetached = false  -- drag mode is session-only
 
+    if profile.debugSpellSubs ~= nil and profile.debugSpellUpdates == nil then
+        profile.debugSpellUpdates = profile.debugSpellSubs
+    end
+    profile.debugSpellSubs = nil
+
     -- Migrate queue* → priority* DB keys (v0006 rename)
     local QUEUE_TO_PRIORITY = {
         showQueue              = "showPriority",
@@ -587,6 +592,8 @@ function NS:ApplyProfileVisuals()
     end
     -- Update main button size, fonts, position
     if NS.ApplyButtonSettings then NS.ApplyButtonSettings() end
+    if NS.ApplyAnimCloneDebugBinding then NS.ApplyAnimCloneDebugBinding() end
+    if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
     -- Update priority display
     if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     if NS.LayoutPriority then NS.LayoutPriority() end

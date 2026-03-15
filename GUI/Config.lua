@@ -11,6 +11,168 @@ local function ApplyFont()
     end
 end
 
+function NS.GetAnimCloneReapplyBindingText()
+    local key = NS.db and NS.db.animCloneReapplyKey
+    if not key or key == "" then
+        return "Not Set"
+    end
+    local formatted = NS.FormatKeybind and NS.FormatKeybind(key)
+    if formatted and formatted ~= "" then
+        return formatted
+    end
+    return key
+end
+
+function NS.OpenAnimCloneReapplyKeyCapture(onApplied)
+    local popup = NS.Config and NS.Config._animCloneReapplyKeyPopup
+    local parent = (NS.Config and NS.Config.frame) or NS.UIParent
+    if not popup then
+        popup = NS.CreateFrame("Frame", "BetterSBA_AnimCloneReapplyKeyPopup", parent, "BackdropTemplate")
+        popup:SetSize(300, 92)
+        popup:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        popup:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.98)
+        popup:SetBackdropBorderColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.6)
+        popup:SetFrameStrata("DIALOG")
+        popup:EnableKeyboard(true)
+        popup:SetPropagateKeyboardInput(false)
+
+        local title = popup:CreateFontString(nil, "OVERLAY")
+        title:SetFont(NS.GetConfigFontPath(), 10, "OUTLINE")
+        title:SetPoint("TOP", 0, -10)
+        title:SetTextColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3])
+        title:SetText("Press a key combo")
+
+        local hint = popup:CreateFontString(nil, "OVERLAY")
+        hint:SetFont(NS.GetConfigFontPath(), 9, "")
+        hint:SetPoint("TOP", title, "BOTTOM", 0, -10)
+        hint:SetTextColor(NS.unpack(T.TEXT))
+        hint:SetText("This only re-applies the animated clone hotkey text.")
+
+        local hint2 = popup:CreateFontString(nil, "OVERLAY")
+        hint2:SetFont(NS.GetConfigFontPath(), 8, "")
+        hint2:SetPoint("TOP", hint, "BOTTOM", 0, -8)
+        hint2:SetTextColor(NS.unpack(T.TEXT_MUTED))
+        hint2:SetText("ESC cancels. Pick a spare combo.")
+
+        popup:SetScript("OnHide", function(self)
+            self._onApplied = nil
+        end)
+        popup:SetScript("OnKeyDown", function(self, key)
+            if key == "ESCAPE" and not IsShiftKeyDown() and not IsControlKeyDown() and not IsAltKeyDown() then
+                self:Hide()
+                return
+            end
+            local binding = NS.BuildBindingChord and NS.BuildBindingChord(key)
+            if not binding then return end
+            NS.db.animCloneReapplyKey = binding
+            if NS.ApplyAnimCloneDebugBinding then NS.ApplyAnimCloneDebugBinding() end
+            if self._onApplied then self._onApplied(binding) end
+            self:Hide()
+        end)
+        NS.Config._animCloneReapplyKeyPopup = popup
+    end
+    popup._onApplied = onApplied
+    popup:SetParent(parent)
+    popup:SetFrameLevel(parent:GetFrameLevel() + 20)
+    popup:ClearAllPoints()
+    popup:SetPoint("CENTER", parent, "CENTER")
+    popup:Show()
+end
+
+function NS.CreateAnimCloneReapplyKeyControl(parent, yOffset, width)
+    local W = width or ((parent._contentWidth or parent:GetWidth()) - 28)
+    local row = NS.CreateFrame("Frame", nil, parent)
+    row:SetSize(W, 38)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yOffset)
+
+    local lbl = row:CreateFontString(nil, "OVERLAY")
+    lbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
+    lbl:SetPoint("TOPLEFT", 0, 0)
+    lbl:SetTextColor(NS.unpack(T.TEXT_DIM))
+    lbl:SetText("Reapply Clone Hotkey")
+
+    local bindW = W - 46
+    local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
+    btn:SetSize(bindW, 20)
+    btn:SetPoint("TOPLEFT", 0, -16)
+    btn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    btn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+    btn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+
+    local btnText = btn:CreateFontString(nil, "OVERLAY")
+    btnText:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    btnText:SetPoint("LEFT", 6, 0)
+    btnText:SetPoint("RIGHT", -6, 0)
+    btnText:SetJustifyH("LEFT")
+    btnText:SetTextColor(NS.unpack(parent._sectionColor or T.ACCENT))
+
+    local clear = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
+    clear:SetSize(40, 20)
+    clear:SetPoint("TOPLEFT", btn, "TOPRIGHT", 6, 0)
+    clear:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    clear:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+    clear:SetBackdropBorderColor(NS.unpack(T.BORDER))
+
+    local clearText = clear:CreateFontString(nil, "OVERLAY")
+    clearText:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+    clearText:SetPoint("CENTER")
+    clearText:SetText("Clear")
+
+    row.Refresh = function()
+        local hasKey = NS.db and NS.db.animCloneReapplyKey and NS.db.animCloneReapplyKey ~= ""
+        btnText:SetText(NS.GetAnimCloneReapplyBindingText())
+        if hasKey then
+            clearText:SetTextColor(NS.unpack(T.TEXT))
+        else
+            clearText:SetTextColor(NS.unpack(T.TEXT_MUTED))
+        end
+    end
+
+    btn:SetScript("OnClick", function()
+        NS.OpenAnimCloneReapplyKeyCapture(function()
+            row.Refresh()
+        end)
+    end)
+    btn:SetScript("OnEnter", function(self)
+        local sc = parent._sectionColorDim or T.ACCENT_DIM
+        self:SetBackdropBorderColor(NS.unpack(sc))
+    end)
+    btn:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    end)
+
+    clear:SetScript("OnClick", function()
+        if not NS.db or not NS.db.animCloneReapplyKey or NS.db.animCloneReapplyKey == "" then return end
+        NS.db.animCloneReapplyKey = ""
+        if NS.ApplyAnimCloneDebugBinding then NS.ApplyAnimCloneDebugBinding() end
+        row.Refresh()
+    end)
+    clear:SetScript("OnEnter", function(self)
+        local sc = parent._sectionColorDim or T.ACCENT_DIM
+        self:SetBackdropBorderColor(NS.unpack(sc))
+    end)
+    clear:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    end)
+
+    row.btn = btn
+    row.clear = clear
+    row.Refresh()
+    return row
+end
+
 ----------------------------------------------------------------
 -- Create the config panel (dual-panel: left nav + right content)
 ----------------------------------------------------------------
@@ -1002,7 +1164,7 @@ function NS.Config:Create()
         line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = line
-        CreateDefaultBtn(c, hdr, {"castAnimation", "animateIncoming", "animHideButton", "cfgAnimTransitions", "gcdDuration"})
+        CreateDefaultBtn(c, hdr, {"castAnimation", "animateIncoming", "animHideButton", "animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX", "animCloneKeybindOffsetY", "cfgAnimTransitions", "gcdDuration"})
     end
     y = y - 18
 
@@ -1093,7 +1255,58 @@ function NS.Config:Create()
         "When " .. W .. "disabled" .. R .. ", the button stays " .. V .. "visible" .. R,
         "underneath the animation.",
     }, c)
-    y = y - 36
+    y = y - 28
+
+    local animMasque = NS.CreateToggle(c, "Masque Skin Animated Clone", "animCloneMasque", y, function()
+        if NS.ResetAnimClonePool then NS.ResetAnimClonePool() end
+    end)
+    NS.AddTooltip(animMasque, "Masque Skin Animated Clone", {
+        "When " .. V .. "enabled" .. R .. ", the " .. U .. "animation clone" .. R .. " uses",
+        "the " .. V .. "Animated Button" .. R .. " Masque group skin.",
+        " ",
+        "When " .. W .. "disabled" .. R .. ", only the " .. U .. "clone" .. R .. " falls back",
+        "to BetterSBA's own border/icon layout.",
+        " ",
+        "The " .. U .. "Active Display" .. R .. " still uses Masque normally.",
+    }, c)
+    y = y - 32
+
+    local animBindRow = NS.CreateAnimCloneReapplyKeyControl(c, y, contentW - 28)
+    NS.AddTooltip(animBindRow.btn, "Reapply Clone Hotkey", {
+        "Sets a debug key that re-applies the " .. U .. "animated clone" .. R .. " keybind text",
+        "font, text, and X/Y anchor while the clone is visible.",
+        " ",
+        "Uses the cached spell keybind table only.",
+        "Does " .. W .. "not" .. R .. " change the secure " .. U .. "SBA" .. R .. " binding.",
+        " ",
+        "This uses an override binding while set, so pick a spare combo.",
+    }, c)
+    y = y - 46
+
+    local cloneHalfW = math.floor((contentW - 28 - 6) / 2)
+    local cloneKbX = NS.CreateSlider(c, "Clone Keybind X", "animCloneKeybindOffsetX", -20, 20, 1, y, function()
+        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
+    end)
+    cloneKbX:SetSize(cloneHalfW, 32)
+    NS.AddTooltip(cloneKbX, "Animated Clone Keybind X Offset", {
+        "Horizontal offset of the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "animated clone" .. R .. " only.",
+        " ",
+        "The " .. U .. "Active Display" .. R .. " keeps using its own X offset.",
+    }, c)
+    local cloneKbY = NS.CreateSlider(c, "Clone Keybind Y", "animCloneKeybindOffsetY", -20, 20, 1, y, function()
+        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
+    end)
+    cloneKbY:SetSize(cloneHalfW, 32)
+    cloneKbY:ClearAllPoints()
+    cloneKbY:SetPoint("TOPLEFT", cloneKbX, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(cloneKbY, "Animated Clone Keybind Y Offset", {
+        "Vertical offset of the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "animated clone" .. R .. " only.",
+        " ",
+        "The " .. U .. "Active Display" .. R .. " keeps using its own Y offset.",
+    }, c)
+    y = y - 38
 
     local gcdSlider = NS.CreateSlider(c, "GCD Duration", "gcdDuration", 0.5, 3.0, 0.1, y)
     NS.AddTooltip(gcdSlider, "GCD Duration", {
@@ -2266,7 +2479,7 @@ function NS.Config:Create()
     y = -6
     do
     local genHdr = CreateSubHeader(c, "GENERAL", y)
-    CreateDefaultBtn(c, genHdr, {"modifierScaling", "locked", "debug", "debugSpellSubs"})
+    CreateDefaultBtn(c, genHdr, {"modifierScaling", "locked"})
     y = y - 18
     local modScaleRow = NS.CreateToggle(c, "Modifier Scaling", "modifierScaling", y)
     NS.AddTooltip(modScaleRow, "Modifier Scaling", {
@@ -2288,28 +2501,75 @@ function NS.Config:Create()
         "When " .. V .. "locked" .. R .. ", the button cannot be moved.",
         "Use " .. K .. "/bs unlock" .. R .. " to toggle from chat.",
     }, c)
-    y = y - 24
-    local dbgRow = NS.CreateToggle(c, "Debug Mode", "debug", y, function(on)
-        if on then NS.StartDebugDump() else NS.StopDebugDump() end
+    y = y - 32
+
+    do
+        local col = c._sectionColor or T.TEXT_DIM
+        local dbgHdr = c:CreateFontString(nil, "OVERLAY")
+        dbgHdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        dbgHdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        dbgHdr:SetTextColor(col[1], col[2], col[3])
+        dbgHdr:SetText("DEBUG")
+        local dbgLine = c:CreateTexture(nil, "ARTWORK")
+        dbgLine:SetHeight(1)
+        dbgLine:SetColorTexture(col[1], col[2], col[3], 0.4)
+        dbgLine:SetPoint("TOPLEFT", dbgHdr, "BOTTOMLEFT", 0, -3)
+        dbgLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
+        subHeaderLines[#subHeaderLines + 1] = dbgLine
+        CreateDefaultBtn(c, dbgHdr, {"debug", "debugSpellUpdates", "debugAnimClone", "debugOther"})
+    end
+    y = y - 18
+
+    local dbgRow = NS.CreateToggle(c, "Debug Mode", "debug", y, function()
+        if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
     end)
     NS.AddTooltip(dbgRow, "Debug Mode", {
-        "Prints " .. V .. "detailed diagnostic" .. R .. " information to chat:",
+        "Master switch for BetterSBA chat diagnostics.",
         " ",
-        "Shows macro execution, target state, keybind",
-        "interception details, and API call results.",
-        W .. "Verbose" .. R .. " \226\128\148 creates lots of chat output.",
+        "Turn this on first, then choose which debug",
+        "output buckets should print below.",
     }, c)
     y = y - 24
-    local subsDbgRow = NS.CreateToggle(c, "Log Spell Substitutions", "debugSpellSubs", y)
-    NS.AddTooltip(subsDbgRow, "Log Spell Substitutions", {
-        "Prints spell ID " .. V .. "resolution" .. R .. " to chat:",
+
+    local spellDbgRow = NS.CreateToggle(c, "Spell Updates", "debugSpellUpdates", y, function()
+        if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
+    end)
+    spellDbgRow:ClearAllPoints()
+    spellDbgRow:SetPoint("TOPLEFT", c, "TOPLEFT", 30, y)
+    spellDbgRow:SetSize(contentW - 44, 20)
+    NS.AddTooltip(spellDbgRow, "Spell Updates", {
+        "Prints display-update diagnostics to chat.",
         " ",
-        "Shows when SBA spell IDs are " .. V .. "auto-resolved" .. R,
-        "via override APIs, " .. V .. "manually mapped" .. R .. ",",
-        "or " .. W .. "filtered out" .. R .. " (no texture found).",
+        "Includes recommendation resolution, action-bar fallback,",
+        "display spell changes, and spell substitution logging.",
+    }, c)
+    y = y - 22
+
+    local animDbgRow = NS.CreateToggle(c, "Animate Clone", "debugAnimClone", y, function()
+        if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
+    end)
+    animDbgRow:ClearAllPoints()
+    animDbgRow:SetPoint("TOPLEFT", c, "TOPLEFT", 30, y)
+    animDbgRow:SetSize(contentW - 44, 20)
+    NS.AddTooltip(animDbgRow, "Animate Clone", {
+        "Prints animated clone diagnostics to chat.",
         " ",
-        "Useful for discovering bad IDs to add to",
-        "the " .. K .. "SPELL_SUBSTITUTIONS" .. R .. " table.",
+        "Includes clone size, scale, anchor, Masque state,",
+        "and manual reapply output.",
+    }, c)
+    y = y - 22
+
+    local otherDbgRow = NS.CreateToggle(c, "Other", "debugOther", y, function()
+        if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
+    end)
+    otherDbgRow:ClearAllPoints()
+    otherDbgRow:SetPoint("TOPLEFT", c, "TOPLEFT", 30, y)
+    otherDbgRow:SetSize(contentW - 44, 20)
+    NS.AddTooltip(otherDbgRow, "Other", {
+        "Prints the remaining debug output to chat.",
+        " ",
+        "Includes API availability, keybind interception status,",
+        "and click/macro execution diagnostics.",
     }, c)
     y = y - 32
 
@@ -3556,7 +3816,11 @@ function NS.Config:Create()
         { label = "Target Memory", section = 7 },
         { label = "Modifier Scaling", section = 7 },
         { label = "Lock Position", section = 7 },
+        { label = "Debug", section = 7 },
         { label = "Debug Mode", section = 7 },
+        { label = "Spell Updates", section = 7 },
+        { label = "Animate Clone", section = 7 },
+        { label = "Other", section = 7 },
         { label = "Color Theme", section = 7 },
         { label = "Theme", section = 7 },
         { label = "LDB / Minimap Options", section = 7 },

@@ -165,7 +165,7 @@ function NS:CreateMainButton()
 
     -- Debug: PreClick fires BEFORE the macro executes
     secure:SetScript("PreClick", function(self, button, down)
-        if not NS.db.debug then return end
+        if not NS.IsDebugChannelEnabled or not NS.IsDebugChannelEnabled("other") then return end
         local macro = self:GetAttribute("macrotext") or ""
         local spellName = btn.spellID and NS.C_Spell and NS.C_Spell.GetSpellName
             and NS.C_Spell.GetSpellName(btn.spellID)
@@ -222,7 +222,7 @@ function NS:CreateMainButton()
 
     -- Debug: PostClick fires AFTER the macro executes
     secure:SetScript("PostClick", function(self, button, down)
-        if not NS.db.debug then return end
+        if not NS.IsDebugChannelEnabled or not NS.IsDebugChannelEnabled("other") then return end
         local hasTarget = NS.UnitExists("target")
         NS.DebugPrintAlways("Macro done | Target:", hasTarget and "yes" or "no")
     end)
@@ -621,6 +621,7 @@ function NS.ApplyButtonSettings()
         btn.hotkey:ClearAllPoints()
         btn.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
     end
+    if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
     if btn.pauseOverlay then
         local po = btn.pauseOverlay
         if po.symbolText then

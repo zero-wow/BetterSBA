@@ -22,10 +22,23 @@ NS._durGT = _durGT
 local DEBUG_PREFIX = "|cFF66B8D9[BetterSBA Debug]|r "
 local debugVerbose = false  -- toggled on for periodic dumps
 
-function NS.DebugPrint(...)
-    if not NS.db or not NS.db.debug then return end
-    -- Pipeline debug only prints during verbose windows
-    if not debugVerbose then return end
+local function DebugChannelEnabled(channel)
+    if not NS.db or not NS.db.debug then return false end
+    if channel == "spell" then
+        return NS.db.debugSpellUpdates ~= false
+    end
+    if channel == "anim" then
+        return NS.db.debugAnimClone ~= false
+    end
+    return NS.db.debugOther ~= false
+end
+
+function NS.IsDebugChannelEnabled(channel)
+    return DebugChannelEnabled(channel)
+end
+
+local function DebugPrintImpl(channel, ...)
+    if not DebugChannelEnabled(channel) then return end
     local parts = {}
     for i = 1, select("#", ...) do
         parts[i] = NS.tostring(select(i, ...))
@@ -33,14 +46,31 @@ function NS.DebugPrint(...)
     print(DEBUG_PREFIX .. NS.table_concat(parts, " "))
 end
 
--- Always print (for click events and important messages)
-function NS.DebugPrintAlways(...)
-    if not NS.db or not NS.db.debug then return end
-    local parts = {}
-    for i = 1, select("#", ...) do
-        parts[i] = NS.tostring(select(i, ...))
+function NS.DebugPrint(...)
+    if not debugVerbose then return end
+    local channel = select(1, ...)
+    if channel == "spell" or channel == "anim" or channel == "other" then
+        DebugPrintImpl(channel, select(2, ...))
+        return
     end
-    print(DEBUG_PREFIX .. NS.table_concat(parts, " "))
+    DebugPrintImpl("spell", ...)
+end
+
+-- Always print (for click events and important messages)
+function NS.DebugPrintAlways(channel, ...)
+    if channel == "spell" or channel == "anim" or channel == "other" then
+        DebugPrintImpl(channel, ...)
+        return
+    end
+    DebugPrintImpl("other", channel, ...)
+end
+
+function NS.ApplyDebugSettings()
+    if NS.db and NS.db.debug and ((NS.db.debugSpellUpdates ~= false) or (NS.db.debugOther ~= false)) then
+        NS.StartDebugDump()
+    else
+        NS.StopDebugDump()
+    end
 end
 
 -- Periodic debug dump: runs one verbose update every 3 seconds
@@ -50,7 +80,7 @@ local debugDumpedAPI = false
 function NS.StartDebugDump()
     if debugDumpTicker then return end
     debugDumpTicker = C_Timer.NewTicker(3, function()
-        if not NS.db or not NS.db.debug then
+        if not NS.db or not NS.db.debug or ((NS.db.debugSpellUpdates == false) and (NS.db.debugOther == false)) then
             NS.StopDebugDump()
             return
         end
@@ -58,22 +88,22 @@ function NS.StartDebugDump()
         if not debugDumpedAPI then
             debugDumpedAPI = true
             local ac = NS.C_AssistedCombat
-            NS.DebugPrintAlways("--- |cFF44FF44API CHECK|r ---")
-            NS.DebugPrintAlways("C_AssistedCombat:", ac and "EXISTS" or "|cFFFF4444NIL|r")
+            NS.DebugPrintAlways("other", "--- |cFF44FF44API CHECK|r ---")
+            NS.DebugPrintAlways("other", "C_AssistedCombat:", ac and "EXISTS" or "|cFFFF4444NIL|r")
             if ac then
-                NS.DebugPrintAlways("  .GetNextCastSpell:", ac.GetNextCastSpell and "yes" or "|cFFFF4444no|r")
-                NS.DebugPrintAlways("  .GetActionSpell:", ac.GetActionSpell and "yes" or "|cFFFF4444no|r")
-                NS.DebugPrintAlways("  .GetRotationSpells:", ac.GetRotationSpells and "yes" or "|cFFFF4444no|r")
-                NS.DebugPrintAlways("  .IsAvailable:", ac.IsAvailable and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("other", "  .GetNextCastSpell:", ac.GetNextCastSpell and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("other", "  .GetActionSpell:", ac.GetActionSpell and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("other", "  .GetRotationSpells:", ac.GetRotationSpells and "yes" or "|cFFFF4444no|r")
+                NS.DebugPrintAlways("other", "  .IsAvailable:", ac.IsAvailable and "yes" or "|cFFFF4444no|r")
                 if ac.IsAvailable then
                     local ok, avail = NS.pcall(ac.IsAvailable)
-                    NS.DebugPrintAlways("  .IsAvailable():", ok and NS.tostring(avail) or "ERROR")
+                    NS.DebugPrintAlways("other", "  .IsAvailable():", ok and NS.tostring(avail) or "ERROR")
                 end
             end
-            NS.DebugPrintAlways("C_ActionBar.FindAssistedCombatActionButtons:",
+            NS.DebugPrintAlways("other", "C_ActionBar.FindAssistedCombatActionButtons:",
                 (NS.C_ActionBar and NS.C_ActionBar.FindAssistedCombatActionButtons) and "yes" or "|cFFFF4444no|r")
-            NS.DebugPrintAlways("SBA Spell ID:", NS.SBA_SPELL_ID)
-            NS.DebugPrintAlways("SBA Spell Name:", NS.GetSBASpellName())
+            NS.DebugPrintAlways("other", "SBA Spell ID:", NS.SBA_SPELL_ID)
+            NS.DebugPrintAlways("other", "SBA Spell Name:", NS.GetSBASpellName())
         end
         -- Override keybind status (macro text is shown on actual clicks via PreClick)
         if NS._overrideKeys and #NS._overrideKeys > 0 then
@@ -97,18 +127,19 @@ function NS.StartDebugDump()
             NS.DebugPrintAlways("Override: |cFFFF4444not active|r — keybind interception OFF")
         end
 
-        -- Run one verbose update cycle
-        NS.DebugPrintAlways("--- |cFF44FF44SPELL UPDATE|r ---")
-        debugVerbose = true
-        local spellID = NS.GetDisplaySpell()
-        debugVerbose = false
-        if spellID then
-            local name = NS.C_Spell and NS.C_Spell.GetSpellName and NS.C_Spell.GetSpellName(spellID)
-            NS.DebugPrintAlways("Display:", name or "?", "(ID:", spellID, ")")
-        elseif NS._fallbackTexture then
-            NS.DebugPrintAlways("Display: |cFFFFCC00fallback texture|r", NS._fallbackTexture)
-        else
-            NS.DebugPrintAlways("Display: |cFFFF4444nothing|r")
+        if DebugChannelEnabled("spell") then
+            NS.DebugPrintAlways("spell", "--- |cFF44FF44SPELL UPDATE|r ---")
+            debugVerbose = true
+            local spellID = NS.GetDisplaySpell()
+            debugVerbose = false
+            if spellID then
+                local name = NS.C_Spell and NS.C_Spell.GetSpellName and NS.C_Spell.GetSpellName(spellID)
+                NS.DebugPrintAlways("spell", "Display:", name or "?", "(ID:", spellID, ")")
+            elseif NS._fallbackTexture then
+                NS.DebugPrintAlways("spell", "Display: |cFFFFCC00fallback texture|r", NS._fallbackTexture)
+            else
+                NS.DebugPrintAlways("spell", "Display: |cFFFF4444nothing|r")
+            end
         end
     end)
 end
@@ -658,7 +689,7 @@ end
 local SUBS_PREFIX = "|cFF66B8D9[BetterSBA Subs]|r "
 
 local function SubsDebugPrint(...)
-    if not NS.db or not NS.db.debugSpellSubs then return end
+    if not DebugChannelEnabled("spell") then return end
     local parts = {}
     for i = 1, select("#", ...) do
         parts[i] = NS.tostring(select(i, ...))
@@ -1078,6 +1109,28 @@ end
 
 function NS.GetKeybindForSpell(spellID)
     return keybindCache[spellID]
+end
+
+function NS.BuildBindingChord(key)
+    if not key then return nil end
+    key = key:upper()
+    if key == "UNKNOWN"
+        or key == "LSHIFT" or key == "RSHIFT"
+        or key == "LCTRL" or key == "RCTRL"
+        or key == "LALT" or key == "RALT" then
+        return nil
+    end
+    local binding = key
+    if IsShiftKeyDown() then
+        binding = "SHIFT-" .. binding
+    end
+    if IsControlKeyDown() then
+        binding = "CTRL-" .. binding
+    end
+    if IsAltKeyDown() then
+        binding = "ALT-" .. binding
+    end
+    return binding
 end
 
 ----------------------------------------------------------------
@@ -2201,27 +2254,207 @@ end
 
 local MAX_ANIM_POOL = 10  -- cap to prevent unbounded frame creation
 
-local function AcquireAnimFrame()
+local function UseMasqueAnimClone()
+    return NS.masqueAnimGroup and NS.db.animCloneMasque ~= false
+end
+
+local function PositionKeybindHotkey(hk)
+    if not hk then return end
+    local parent = hk:GetParent()
+    local anchor = NS.db.keybindAnchor or "TOPRIGHT"
+    hk:ClearAllPoints()
+    hk:SetPoint(anchor, parent, anchor, NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
+end
+
+local function PositionAnimCloneHotkey(hk)
+    if not hk then return end
+    local parent = hk:GetParent()
+    local anchor = NS.db.keybindAnchor or "TOPRIGHT"
+    hk:ClearAllPoints()
+    hk:SetPoint(anchor, parent, anchor, NS.db.animCloneKeybindOffsetX or -5, NS.db.animCloneKeybindOffsetY or -5)
+end
+
+local function DebugAnimClone(phase, anim, spellID, sourceBtn)
+    if not DebugChannelEnabled("anim") or not anim then return end
+
+    local hk = anim.hotkey
+    local point, relPoint, ox, oy = "nil", "nil", "nil", "nil"
+    if hk then
+        local ok, a, _, c, d, e = NS.pcall(hk.GetPoint, hk, 1)
+        if ok then
+            point = a or "nil"
+            relPoint = c or "nil"
+            ox = d or 0
+            oy = e or 0
+        end
+    end
+
+    local hkParent = hk and hk:GetParent()
+    local hkParentName = hkParent and hkParent.GetName and hkParent:GetName()
+    local hkParentType = hkParent and hkParent.GetObjectType and hkParent:GetObjectType() or "nil"
+    local group = NS.masqueAnimGroup
+    local gdb = group and group.db
+
+    NS.DebugPrintAlways("anim",
+        "ANIM CLONE", phase,
+        "| acquire:", anim._acquireKind or "unknown",
+        "| spellID:", spellID or "nil",
+        "| masque:", anim._usesMasque and "on" or "off",
+        "| skin:", (gdb and gdb.SkinID) or "nil",
+        "| groupScale:", (gdb and gdb.Scale) or "nil",
+        "| groupUseScale:", (gdb and gdb.UseScale) and "true" or "false",
+        "| sourceSize:", sourceBtn and math.floor(sourceBtn:GetWidth() + 0.5) or "nil",
+        "x", sourceBtn and math.floor(sourceBtn:GetHeight() + 0.5) or "nil",
+        "| sourceScale:", sourceBtn and sourceBtn:GetScale() or "nil",
+        "| frameSize:", math.floor(anim:GetWidth() + 0.5), "x", math.floor(anim:GetHeight() + 0.5),
+        "| frameScale:", anim:GetScale(),
+        "| effectiveScale:", anim:GetEffectiveScale(),
+        "| iconSize:", anim.icon and math.floor(anim.icon:GetWidth() + 0.5) or "nil",
+        "x", anim.icon and math.floor(anim.icon:GetHeight() + 0.5) or "nil",
+        "| hotkeySize:", hk and math.floor(hk:GetWidth() + 0.5) or "nil",
+        "x", hk and math.floor(hk:GetHeight() + 0.5) or "nil",
+        "| hotkeyJustify:", hk and hk:GetJustifyH() or "nil", "/", hk and hk:GetJustifyV() or "nil",
+        "| hotkeyPoint:", point, relPoint, ox, oy,
+        "| hotkeyParent:", hkParentType, hkParentName or "nil",
+        "| dbAnchor:", NS.db.keybindAnchor or "TOPRIGHT",
+        "| dbOffset:", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5,
+        "| cloneDbOffset:", NS.db.animCloneKeybindOffsetX or -5, NS.db.animCloneKeybindOffsetY or -5)
+end
+
+local function ApplyAnimHotkey(anim, spellID)
+    local hk = anim and anim.hotkey
+    if not hk then return end
+    anim._spellID = spellID
+    hk:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
+        NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+    PositionAnimCloneHotkey(hk)
+    if NS.db.showKeybind then
+        local keyText = spellID and keybindCache[spellID]
+        if not keyText or keyText == "" then keyText = "#" end
+        hk:SetText(keyText)
+        hk:Show()
+    else
+        hk:SetText("")
+        hk:Hide()
+    end
+end
+
+function NS.RefreshAnimHotkeys()
     for _, f in NS.ipairs(animPool) do
-        if not f._inUse then
+        if f.hotkey then
+            f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
+                NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+            PositionAnimCloneHotkey(f.hotkey)
+            if not NS.db.showKeybind then
+                f.hotkey:SetText("")
+                f.hotkey:Hide()
+            end
+        end
+    end
+end
+
+function NS.ReapplyAnimCloneHotkeysNow()
+    local count = 0
+    for _, f in NS.ipairs(animPool) do
+        if f._inUse and f:IsShown() and f.hotkey then
+            count = count + 1
+            DebugAnimClone("MANUAL-BEFORE", f, f._spellID, f._sourceBtn)
+            ApplyAnimHotkey(f, f._spellID)
+            DebugAnimClone("MANUAL-AFTER", f, f._spellID, f._sourceBtn)
+        end
+    end
+    if count == 0 then
+        print("|cFF66B8D9BetterSBA|r: No active animation clone")
+    elseif DebugChannelEnabled("anim") then
+        NS.DebugPrintAlways("anim", "ANIM CLONE", "MANUAL", "| reapplied:", count)
+    end
+end
+
+function NS.ApplyAnimCloneDebugBinding()
+    if NS.InCombatLockdown() then
+        NS._pendingAnimCloneDebugBinding = true
+        return
+    end
+    local btn = _G["BetterSBA_AnimCloneReapplyButton"]
+    if not btn then
+        btn = NS.CreateFrame("Button", "BetterSBA_AnimCloneReapplyButton", NS.UIParent)
+        btn:SetSize(1, 1)
+        btn:SetPoint("TOPLEFT", NS.UIParent, "BOTTOMLEFT", -100, 100)
+        btn:SetAlpha(0)
+        btn:RegisterForClicks("AnyDown", "AnyUp")
+        btn:SetScript("OnClick", NS.ReapplyAnimCloneHotkeysNow)
+    end
+    ClearOverrideBindings(btn)
+    local key = NS.db and NS.db.animCloneReapplyKey
+    if key and key ~= "" then
+        SetOverrideBindingClick(btn, true, key, btn:GetName(), "LeftButton")
+    end
+    NS._pendingAnimCloneDebugBinding = nil
+end
+
+function NS.ResetAnimClonePool()
+    slamBounceTarget = nil
+    slamBounceElapsed = 0
+    slamBounceDriver:Hide()
+    for _, f in NS.ipairs(animPool) do
+        if f.ag then f.ag:Stop() end
+        f:Hide()
+        f:ClearAllPoints()
+        f:SetScale(1)
+        f:SetAlpha(0)
+        f._sourceBtn = nil
+        f._animType = nil
+        f._isIncoming = nil
+        f._hasIncomingPeer = nil
+        f._fireParticlesOnEnd = nil
+        f._particleStyle = nil
+        f._particlePalette = nil
+        f._particleGcdScale = nil
+        f._gcdScale = nil
+        f._spellID = nil
+        f._inUse = false
+        if f.hotkey then
+            f.hotkey:SetText("")
+            f.hotkey:Hide()
+        end
+        if NS.masqueAnimGroup and f._usesMasque and NS.masqueAnimGroup.RemoveButton then
+            NS.masqueAnimGroup:RemoveButton(f)
+        end
+    end
+    for i = 1, #animPool do
+        animPool[i] = nil
+    end
+end
+
+local function AcquireAnimFrame()
+    local useMasque = UseMasqueAnimClone()
+    for _, f in NS.ipairs(animPool) do
+        if not f._inUse and f._usesMasque == useMasque then
             f._inUse = true
+            f._acquireKind = "reuse"
             if f.ag then f.ag:Stop() end
             f:SetScale(1)
             f:SetAlpha(0)
+            f._spellID = nil
             return f
         end
     end
 
     -- Pool full — recycle the oldest frame
     if #animPool >= MAX_ANIM_POOL then
-        local oldest = animPool[1]
-        if oldest.ag then oldest.ag:Stop() end
-        oldest:Hide()
-        oldest:ClearAllPoints()
-        oldest:SetScale(1)
-        oldest:SetAlpha(0)
-        oldest._inUse = true
-        return oldest
+        for _, oldest in NS.ipairs(animPool) do
+            if oldest._usesMasque == useMasque then
+                if oldest.ag then oldest.ag:Stop() end
+                oldest:Hide()
+                oldest:ClearAllPoints()
+                oldest:SetScale(1)
+                oldest:SetAlpha(0)
+                oldest._spellID = nil
+                oldest._inUse = true
+                oldest._acquireKind = "recycle"
+                return oldest
+            end
+        end
     end
 
     -- NO BackdropTemplate — WHITE8X8 can flash white during WoW rendering
@@ -2231,9 +2464,10 @@ local function AcquireAnimFrame()
     f:SetFrameStrata("HIGH")
     f:Hide()
     f:EnableMouse(false)  -- don't intercept clicks during animation
+    f._usesMasque = useMasque
 
     -- Register with Masque animated button group
-    if NS.masqueAnimGroup then
+    if useMasque then
         f.icon = f:CreateTexture(nil, "ARTWORK")
         f.icon:SetAllPoints()
 
@@ -2301,6 +2535,9 @@ local function AcquireAnimFrame()
     f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
         NS.ResolveFontOutline("keybindFont", "keybindOutline"))
     f.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
+    PositionAnimCloneHotkey(f.hotkey)
+    f.hotkey:SetText("")
+    f.hotkey:Hide()
     f._hkFrame = hkFrame
 
     local ag = f:CreateAnimationGroup()
@@ -2345,6 +2582,7 @@ local function AcquireAnimFrame()
         f._particlePalette = nil
         f._particleGcdScale = nil
         f._gcdScale = nil
+        f._spellID = nil
         f._inUse = false
 
         if srcBtn then
@@ -2366,6 +2604,7 @@ local function AcquireAnimFrame()
 
     f.ag = ag
     f._inUse = true
+    f._acquireKind = "new"
     animPool[#animPool + 1] = f
     return f
 end
@@ -2404,6 +2643,7 @@ function NS.PlayCastAnimation(spellID)
         slamBounceTarget._sourceBtn = nil
         slamBounceTarget._animType = nil
         slamBounceTarget._isIncoming = nil
+        slamBounceTarget._spellID = nil
         slamBounceTarget._inUse = false
         slamBounceTarget = nil
         slamBounceDriver:Hide()
@@ -2474,29 +2714,13 @@ function NS.PlayCastAnimation(spellID)
     end
 
     -- 5. ReSkin Masque at current size
-    if NS.masqueAnimGroup then
+    if anim._usesMasque then
         NS.masqueAnimGroup:ReSkin()
     end
 
-    -- 6. Keybind text — deferred to next frame so Masque/ReSkin can't override
-    if anim.hotkey then
-        local keyText = spellID and keybindCache[spellID]
-        if not keyText or keyText == "" then keyText = "#" end
-        if NS.db.showKeybind then
-            anim.hotkey:SetText(keyText)
-            anim.hotkey:Show()
-            local hk = anim.hotkey
-            local anchor = NS.db.keybindAnchor or "TOPRIGHT"
-            local ox = NS.db.keybindOffsetX or -5
-            local oy = NS.db.keybindOffsetY or -5
-            NS.C_Timer_After(0, function()
-                hk:ClearAllPoints()
-                hk:SetPoint(anchor, ox, oy)
-            end)
-        else
-            anim.hotkey:Hide()
-        end
-    end
+    -- 6. Keybind text
+    ApplyAnimHotkey(anim, spellID)
+    DebugAnimClone("OUT", anim, spellID, btn)
 
     -- 7. Store references for OnFinished
     anim._sourceBtn = btn
@@ -2591,20 +2815,6 @@ function NS.PlayCastAnimation(spellID)
             incoming:SetPoint("CENTER", btn, "CENTER", ox, oy)
             incoming.icon:SetTexture(nextTex)
 
-            if incoming.hotkey then
-                local keyText = nextSpellID and keybindCache[nextSpellID]
-                if not keyText or keyText == "" then keyText = "#" end
-                if NS.db.showKeybind then
-                    incoming.hotkey:ClearAllPoints()
-                    incoming.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT",
-                        NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
-                    incoming.hotkey:SetText(keyText)
-                    incoming.hotkey:Show()
-                else
-                    incoming.hotkey:Hide()
-                end
-            end
-
             -- Background + importance border
             if not NS.masque and incoming.bg then
                 local bgColor = NS.db.buttonBgColor
@@ -2630,7 +2840,10 @@ function NS.PlayCastAnimation(spellID)
                 end
             end
 
-            if NS.masqueAnimGroup then NS.masqueAnimGroup:ReSkin() end
+            if incoming._usesMasque then NS.masqueAnimGroup:ReSkin() end
+
+            ApplyAnimHotkey(incoming, nextSpellID)
+            DebugAnimClone("IN", incoming, nextSpellID, btn)
 
             incoming._sourceBtn = btn
             incoming._animType = animType

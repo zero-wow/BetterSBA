@@ -49,6 +49,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         NS:CreateMainButton()
         NS:CreatePriorityDisplay()
         NS.ScanKeybinds()
+        if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
+        NS.ApplyAnimCloneDebugBinding()
         NS:RegisterSlashCommands()
         NS:RegisterAssistedCombatCallbacks()
 
@@ -58,7 +60,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         NS.StartGCTicker()
 
         print("|cFF66B8D9Better|r|cFFFFFFFFSBA|r |cFF888888v" .. NS.VERSION .. "|r |cFF66B8D9loaded|r - /bs")
-        if NS.db.debug then
+        if NS.IsDebugChannelEnabled and NS.IsDebugChannelEnabled("other") then
             print("|cFF66B8D9BetterSBA|r: DB.locked = " .. NS.tostring(NS.db.locked))
         end
 
@@ -86,6 +88,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if NS._pendingButtonSettings then
             NS._pendingButtonSettings = nil
             NS.ApplyButtonSettings()
+        end
+        if NS._pendingAnimCloneDebugBinding then
+            NS._pendingAnimCloneDebugBinding = nil
+            NS.ApplyAnimCloneDebugBinding()
         end
         -- Seed virtual cooldowns if deferred from combat load
         NS.CheckPendingVirtualCD()
@@ -233,12 +239,8 @@ function NS:RegisterSlashCommands()
             print("|cFF66B8D9BetterSBA|r: " .. (NS.db.enabled and "Enabled" or "Disabled"))
         elseif msg == "debug" then
             NS.db.debug = not NS.db.debug
-            if NS.db.debug then
-                NS.StartDebugDump()
-            else
-                NS.StopDebugDump()
-            end
-            print("|cFF66B8D9BetterSBA|r: Debug mode " .. (NS.db.debug and "|cFF44FF44ON|r (check chat for API diagnostics)" or "|cFFFF4444OFF|r"))
+            if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
+            print("|cFF66B8D9BetterSBA|r: Debug mode " .. (NS.db.debug and "|cFF44FF44ON|r" or "|cFFFF4444OFF|r"))
         elseif msg == "reset" then
             NS.db.position = nil
             if NS.mainButton then
