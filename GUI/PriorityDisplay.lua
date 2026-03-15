@@ -5,13 +5,6 @@ local MAX_PRIORITY_ICONS = 6
 local priorityIcons = {}
 
 ----------------------------------------------------------------
--- Snap-back constants
-----------------------------------------------------------------
-local SNAP_DISTANCE = 80
-local GLOW_DISTANCE = 200
-local NUM_BUBBLES = 6
-
-----------------------------------------------------------------
 -- Priority sorting helpers
 ----------------------------------------------------------------
 local sortBuffer = {}  -- reusable table (no GC pressure)
@@ -27,8 +20,9 @@ local function CleanNumber(val)
     return tonumber(s) or 0
 end
 
--- Get cooldown remaining (seconds). Returns 0 if ready or on error.
+-- Get cooldown remaining (seconds). Returns 0 if ready, not seeded, or on error.
 local function GetCDRemaining(spellID)
+    if not NS.IsVirtualCDReady() then return 0 end  -- graceful degrade: no CD data yet
     local cdInfo = NS.GetCooldownCached(spellID)
     if not cdInfo then return 0 end
     local st = CleanNumber(cdInfo.startTime)
@@ -92,26 +86,31 @@ local function SortByPriority(spells, nextSpellID)
 end
 
 ----------------------------------------------------------------
--- Active spell glow tracking
+-- Active spell glow tracking (multi-target: next-cast + high-importance ready spells)
 ----------------------------------------------------------------
-local currentGlowIcon = nil
-
-local function ShowActiveGlow(icon)
-    if currentGlowIcon == icon then return end
-    if currentGlowIcon and ActionButton_HideOverlayGlow then
-        ActionButton_HideOverlayGlow(currentGlowIcon)
-    end
-    currentGlowIcon = icon
-    if icon and ActionButton_ShowOverlayGlow then
-        ActionButton_ShowOverlayGlow(icon)
-    end
+local function ColorOverlayGlow(icon, r, g, b)
+    local overlay = icon.overlay
+    if not overlay then return end
+    -- Blizzard overlay has: ants (animated dashed border), innerGlow, outerGlow,
+    -- outerGlowOver, spark, innerGlowOver
+    if overlay.ants then overlay.ants:SetVertexColor(r, g, b) end
+    if overlay.innerGlow then overlay.innerGlow:SetVertexColor(r, g, b) end
+    if overlay.outerGlow then overlay.outerGlow:SetVertexColor(r, g, b) end
+    if overlay.outerGlowOver then overlay.outerGlowOver:SetVertexColor(r, g, b) end
+    if overlay.spark then overlay.spark:SetVertexColor(r, g, b) end
+    if overlay.innerGlowOver then overlay.innerGlowOver:SetVertexColor(r, g, b) end
 end
 
-local function HideActiveGlow()
-    if currentGlowIcon and ActionButton_HideOverlayGlow then
-        ActionButton_HideOverlayGlow(currentGlowIcon)
+NS.ColorOverlayGlow = ColorOverlayGlow
+
+local function HideAllGlows()
+    if not priorityIcons then return end
+    for i = 1, MAX_PRIORITY_ICONS do
+        local icon = priorityIcons[i]
+        if icon then
+            icon._wantGlow = false
+        end
     end
-    currentGlowIcon = nil
 end
 
 ----------------------------------------------------------------
@@ -149,10 +148,9 @@ function NS:CreatePriorityDisplay()
     -- StartMoving() silently fails when called from a child frame's
     -- drag handler (WoW requires mouse focus on the frame being moved).
     local function PriorityDragStart()
-        if NS.db.locked or not NS.db.priorityDetached or NS.InCombatLockdown() then return end
+        if NS.db.priorityLocked or not NS.db.priorityDetached or NS.InCombatLockdown() then return end
         -- Convert anchored position to absolute on first drag
         if not NS.db.priorityFreePosition then
-            f._firstDrag = true  -- skip snap on initial placement
             local cx, cy = f:GetCenter()
             f:ClearAllPoints()
             f:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", cx, cy)
@@ -174,30 +172,15 @@ function NS:CreatePriorityDisplay()
         end)
         -- Make overlay invisible while dragging (keep frame active for drag events)
         if f._overlay then f._overlay:SetAlpha(0) end
-        NS.StartSnapDetection()
     end
 
     local function PriorityDragStop()
         f:SetScript("OnUpdate", nil)  -- stop cursor tracking
         f._dragging = false
 
-        -- Skip snap check on the very first drag (priority starts on top of button)
-        local skipSnap = f._firstDrag
-        f._firstDrag = nil
-
-        if not skipSnap and NS.ShouldSnap() then
-            -- Snap back to main button
-            NS.db.priorityDetached = false
-            NS.db.priorityFreePosition = nil
-            NS.LayoutPriority()
-            NS.PlaySnapEffect()
-            NS.HideMainButtonOverlay()
-        else
-            -- Save free position
-            local p, _, rp, x, y = f:GetPoint()
-            NS.db.priorityFreePosition = { point = p, relPoint = rp, x = x, y = y }
-        end
-        NS.StopSnapDetection()
+        -- Save free position
+        local p, _, rp, x, yy = f:GetPoint()
+        NS.db.priorityFreePosition = { point = p, relPoint = rp, x = x, y = yy }
         NS.UpdateDetachOverlay()
     end
 
@@ -301,6 +284,8 @@ function NS:CreatePriorityDisplay()
         end
     end
 
+    NS._priorityIcons = priorityIcons
+
     -- Detach overlay ("DRAG TO MOVE" indicator, right-click to commit)
     local overlay = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
     overlay:SetAllPoints()
@@ -344,7 +329,7 @@ function NS:CreatePriorityDisplay()
     f._overlayText = overlayText
 
     function NS.UpdateDetachOverlay()
-        if not NS.db.priorityDetached then
+        if not NS.db.priorityDetached or NS.db.priorityLocked then
             overlay:Hide()
             return
         end
@@ -360,9 +345,6 @@ function NS:CreatePriorityDisplay()
     f:SetScale(NS.db.priorityScale or 1.0)
     NS.LayoutPriority()
     NS.UpdateDetachOverlay()
-
-    -- Create snap feedback elements (lazy, hidden by default)
-    NS.CreateSnapEffects()
 
     return f
 end
@@ -405,13 +387,18 @@ function NS.LayoutPriority()
     local pox = db.priorityOffsetX or 0
     local poy = db.priorityOffsetY or 0
 
-    -- Free position: use saved absolute position (persists even after drag mode off)
     if db.priorityFreePosition then
         local pos = db.priorityFreePosition
         f:SetPoint(pos.point, NS.UIParent, pos.relPoint, pos.x, pos.y)
         f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
+    elseif db.priorityDetached then
+        local bindName = db.priorityBindFrame or "BetterSBA_MainButton"
+        local bindFrame = _G[bindName] or btn
+        local myPt = db.priorityMyPoint or "LEFT"
+        local theirPt = db.priorityTheirPoint or "RIGHT"
+        f:SetPoint(myPt, bindFrame, theirPt, pox, poy)
+        f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
     else
-        -- Attached: anchor to main button with optional offset
         local pos = db.priorityPosition
         local anchor = PRIORITY_ANCHORS[pos] or PRIORITY_ANCHORS.RIGHT
         f:SetPoint(anchor.from, btn, anchor.to, anchor.ox + pox, anchor.oy + poy)
@@ -440,347 +427,10 @@ function NS.LayoutPriority()
 
 end
 
-----------------------------------------------------------------
--- Snap proximity detection
-----------------------------------------------------------------
-function NS.GetSnapDistance()
-    local f = NS.priorityFrame
-    local btn = NS.mainButton
-    if not f or not btn then return 9999 end
-    local fx, fy = f:GetCenter()
-    local bx, by = btn:GetCenter()
-    if not fx or not bx then return 9999 end
-    local dx, dy = fx - bx, fy - by
-    return math.sqrt(dx * dx + dy * dy)
-end
 
-function NS.ShouldSnap()
-    return NS.GetSnapDistance() < SNAP_DISTANCE
-end
-
-----------------------------------------------------------------
--- Snap visual feedback
-----------------------------------------------------------------
-local snapFrame = NS.CreateFrame("Frame")
-local glowFrame, bubbles
-
-local mainBtnOverlay
-
-function NS.CreateSnapEffects()
-    local btn = NS.mainButton
-    if not btn or glowFrame then return end
-
-    -- Snap overlay on main button ("SNAP HERE" indicator)
-    mainBtnOverlay = NS.CreateFrame("Frame", nil, btn, "BackdropTemplate")
-    mainBtnOverlay:SetAllPoints()
-    mainBtnOverlay:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 2,
-    })
-    mainBtnOverlay:SetBackdropColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 0.15)
-    mainBtnOverlay:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 0)
-    mainBtnOverlay:SetFrameLevel(btn:GetFrameLevel() + 3)
-    mainBtnOverlay:Hide()
-
-    local snapText = mainBtnOverlay:CreateFontString(nil, "OVERLAY")
-    snapText:SetFont("Fonts\\FRIZQT__.TTF", 8, "OUTLINE")
-    snapText:SetPoint("CENTER")
-    snapText:SetTextColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3])
-    snapText:SetText("SNAP")
-    mainBtnOverlay._text = snapText
-
-    -- Neon glow border around main button
-    glowFrame = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
-    glowFrame:SetBackdrop({
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 2,
-    })
-    glowFrame:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 0)
-    glowFrame:SetFrameStrata("MEDIUM")
-    glowFrame:SetFrameLevel(3)
-    glowFrame:Hide()
-
-    -- Particle bubbles (main button)
-    bubbles = {}
-    local colors = { T.NEON_NEXT, T.ACCENT_BRIGHT, T.ACCENT, T.TOGGLE_ON }
-    for i = 1, NUM_BUBBLES do
-        local b = NS.CreateFrame("Frame", nil, NS.UIParent)
-        b:SetSize(6, 6)
-        b:SetFrameStrata("HIGH")
-        b.tex = b:CreateTexture(nil, "ARTWORK")
-        b.tex:SetAllPoints()
-        b.tex:SetTexture("Interface\\Buttons\\WHITE8X8")
-        local c = colors[((i - 1) % #colors) + 1]
-        b.tex:SetColorTexture(c[1], c[2], c[3], 0.8)
-        b._angle = (i - 1) * (6.2832 / NUM_BUBBLES)
-        b._speed = 1.5 + (i % 3) * 0.5
-        b._radius = 0
-        b:Hide()
-        bubbles[i] = b
-    end
-
-    -- Particle bubbles (priority frame)
-    bubbles._priority = {}
-    for i = 1, NUM_BUBBLES do
-        local b = NS.CreateFrame("Frame", nil, NS.UIParent)
-        b:SetSize(6, 6)
-        b:SetFrameStrata("HIGH")
-        b.tex = b:CreateTexture(nil, "ARTWORK")
-        b.tex:SetAllPoints()
-        b.tex:SetTexture("Interface\\Buttons\\WHITE8X8")
-        local c = colors[((i - 1) % #colors) + 1]
-        b.tex:SetColorTexture(c[1], c[2], c[3], 0.8)
-        b._angle = (i - 1) * (6.2832 / NUM_BUBBLES) + 0.5  -- offset phase
-        b._speed = 1.2 + (i % 3) * 0.6
-        b._radius = 0
-        b:Hide()
-        bubbles._priority[i] = b
-    end
-
-    -- Dotted connection line (small square "dots" between frames)
-    local NUM_DOTS = 8
-    bubbles._dots = {}
-    for i = 1, NUM_DOTS do
-        local d = NS.CreateFrame("Frame", nil, NS.UIParent)
-        d:SetSize(3, 3)
-        d:SetFrameStrata("HIGH")
-        d.tex = d:CreateTexture(nil, "ARTWORK")
-        d.tex:SetAllPoints()
-        d.tex:SetTexture("Interface\\Buttons\\WHITE8X8")
-        d.tex:SetColorTexture(0.85, 0.2, 0.2, 1) -- start red
-        d:Hide()
-        bubbles._dots[i] = d
-    end
-end
-
-function NS.UpdateSnapGlow(intensity)
-    if not glowFrame or not NS.mainButton then return end
-    local btn = NS.mainButton
-    local pad = 4 + intensity * 4
-    glowFrame:ClearAllPoints()
-    glowFrame:SetPoint("TOPLEFT", btn, "TOPLEFT", -pad, pad)
-    glowFrame:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", pad, -pad)
-    glowFrame:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], intensity * 0.9)
-    glowFrame:Show()
-end
-
-local function UpdateBubbleSet(set, cx, cy, intensity, elapsed, radiusBase)
-    if not set then return end
-    local base = radiusBase or (30 + (1 - intensity) * 20)
-    for i, b in NS.ipairs(set) do
-        b._angle = b._angle + elapsed * b._speed * (0.5 + intensity * 1.5)
-        b._radius = base + math.sin(b._angle * 2) * 8
-        local bSize = 4 + intensity * 4
-        b:SetSize(bSize, bSize)
-        b:SetAlpha(intensity * 0.8)
-        local x = cx + math.cos(b._angle) * b._radius
-        local y = cy + math.sin(b._angle) * b._radius
-        b:ClearAllPoints()
-        b:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", x, y)
-        b:Show()
-    end
-end
-
-function NS.UpdateSnapBubbles(intensity, elapsed)
-    if not bubbles or not NS.mainButton then return end
-
-    -- Main button bubbles
-    local btn = NS.mainButton
-    local bx, by = btn:GetCenter()
-    if bx then
-        UpdateBubbleSet(bubbles, bx, by, intensity, elapsed, 30 + (1 - intensity) * 20)
-    end
-
-    -- Priority frame bubbles
-    local pf = NS.priorityFrame
-    if pf and bubbles._priority then
-        local px, py = pf:GetCenter()
-        if px then
-            UpdateBubbleSet(bubbles._priority, px, py, intensity, elapsed, 20 + (1 - intensity) * 15)
-        end
-    end
-end
-
-function NS.UpdateSnapDots(intensity)
-    if not bubbles or not bubbles._dots then return end
-    local btn = NS.mainButton
-    local pf = NS.priorityFrame
-    if not btn or not pf then return end
-
-    local bx, by = btn:GetCenter()
-    local px, py = pf:GetCenter()
-    if not bx or not px then return end
-
-    -- Color: red (far) -> orange/yellow (mid) -> green (close/snap)
-    local r, g, b
-    if intensity < 0.5 then
-        -- Red to orange/yellow
-        local t = intensity / 0.5
-        r = 0.85 + t * 0.15
-        g = 0.20 + t * 0.60
-        b = 0.05
-    else
-        -- Yellow to green
-        local t = (intensity - 0.5) / 0.5
-        r = 1.0 - t * 0.7
-        g = 0.80 + t * 0.20
-        b = 0.05 + t * 0.35
-    end
-
-    local NUM_DOTS = #bubbles._dots
-    for i, d in NS.ipairs(bubbles._dots) do
-        local pct = (i - 1) / (NUM_DOTS - 1)
-        local dx = bx + (px - bx) * pct
-        local dy = by + (py - by) * pct
-        d:ClearAllPoints()
-        d:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", dx, dy)
-        d.tex:SetColorTexture(r, g, b, intensity * 0.9)
-        local dotSize = 2 + intensity * 2
-        d:SetSize(dotSize, dotSize)
-        d:Show()
-    end
-end
-
-function NS.UpdateMainButtonOverlay(intensity)
-    if not mainBtnOverlay then return end
-    if intensity > 0 then
-        mainBtnOverlay:Show()
-        mainBtnOverlay:SetBackdropColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], intensity * 0.2)
-        mainBtnOverlay:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], intensity * 0.9)
-        mainBtnOverlay._text:SetAlpha(intensity)
-    else
-        mainBtnOverlay:Hide()
-    end
-end
-
-function NS.HideMainButtonOverlay()
-    if mainBtnOverlay then mainBtnOverlay:Hide() end
-end
-
-function NS.HideSnapEffects()
-    if glowFrame then glowFrame:Hide() end
-    if bubbles then
-        for _, b in NS.ipairs(bubbles) do b:Hide() end
-        if bubbles._priority then
-            for _, b in NS.ipairs(bubbles._priority) do b:Hide() end
-        end
-        if bubbles._dots then
-            for _, d in NS.ipairs(bubbles._dots) do d:Hide() end
-        end
-    end
-    NS.HideMainButtonOverlay()
-end
-
-function NS.StartSnapDetection()
-    snapFrame:SetScript("OnUpdate", function(self, elapsed)
-        local dist = NS.GetSnapDistance()
-
-        -- Snap intensity: 0 at GLOW_DISTANCE, 1 at SNAP_DISTANCE
-        local snapIntensity = 1 - ((dist - SNAP_DISTANCE) / (GLOW_DISTANCE - SNAP_DISTANCE))
-        snapIntensity = math.max(0, math.min(1, snapIntensity))
-
-        -- Bubbles + dots always visible while dragging, minimum 0.15 intensity
-        local dragIntensity = math.max(0.15, snapIntensity)
-
-        NS.UpdateSnapBubbles(dragIntensity, elapsed)
-        NS.UpdateSnapDots(dragIntensity)
-
-        -- Glow + main overlay only when within glow distance
-        if snapIntensity > 0 then
-            NS.UpdateSnapGlow(snapIntensity)
-            NS.UpdateMainButtonOverlay(snapIntensity)
-        else
-            if glowFrame then glowFrame:Hide() end
-            NS.HideMainButtonOverlay()
-        end
-    end)
-end
-
-function NS.StopSnapDetection()
-    snapFrame:SetScript("OnUpdate", nil)
-    NS.HideSnapEffects()
-end
-
-----------------------------------------------------------------
--- Snap completion burst effect
-----------------------------------------------------------------
-function NS.PlaySnapEffect()
-    if not bubbles or not NS.mainButton then return end
-    local btn = NS.mainButton
-    local bx, by = btn:GetCenter()
-    if not bx then return end
-
-    -- Flash the glow bright then fade
-    if glowFrame then
-        glowFrame:Show()
-        glowFrame:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 1)
-        local pad = 8
-        glowFrame:ClearAllPoints()
-        glowFrame:SetPoint("TOPLEFT", btn, "TOPLEFT", -pad, pad)
-        glowFrame:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", pad, -pad)
-    end
-
-    -- Burst all bubbles outward
-    local allBubbles = {}
-    for _, b in NS.ipairs(bubbles) do
-        b:SetAlpha(1); b:SetSize(8, 8); b:Show()
-        allBubbles[#allBubbles + 1] = b
-    end
-    if bubbles._priority then
-        for _, b in NS.ipairs(bubbles._priority) do
-            b:SetAlpha(1); b:SetSize(8, 8); b:Show()
-            allBubbles[#allBubbles + 1] = b
-        end
-    end
-
-    -- Flash dots green then fade
-    if bubbles._dots then
-        for _, d in NS.ipairs(bubbles._dots) do
-            d.tex:SetColorTexture(0.3, 1.0, 0.4, 1)
-            d:SetSize(4, 4)
-            d:Show()
-        end
-    end
-
-    -- Fade out over 0.5s
-    local elapsed = 0
-    snapFrame:SetScript("OnUpdate", function(self, dt)
-        elapsed = elapsed + dt
-        local pct = elapsed / 0.5
-        if pct >= 1 then
-            NS.HideSnapEffects()
-            self:SetScript("OnUpdate", nil)
-            return
-        end
-
-        local fade = 1 - pct
-        if glowFrame then
-            glowFrame:SetBackdropBorderColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], fade)
-        end
-
-        for _, b in NS.ipairs(allBubbles) do
-            local burstR = 30 + pct * 80
-            local x = bx + math.cos(b._angle) * burstR
-            local y = by + math.sin(b._angle) * burstR
-            b:ClearAllPoints()
-            b:SetPoint("CENTER", NS.UIParent, "BOTTOMLEFT", x, y)
-            b:SetAlpha(fade * 0.8)
-            b:SetSize(8 * fade, 8 * fade)
-        end
-
-        if bubbles._dots then
-            for _, d in NS.ipairs(bubbles._dots) do
-                d.tex:SetColorTexture(0.3, 1.0, 0.4, fade)
-                d:SetSize(4 * fade, 4 * fade)
-            end
-        end
-
-        if mainBtnOverlay then
-            mainBtnOverlay:SetBackdropBorderColor(0.3, 1.0, 0.4, fade)
-            mainBtnOverlay._text:SetAlpha(fade)
-        end
-    end)
+function NS.ApplyPriorityBinding()
+    NS.db.priorityFreePosition = nil
+    NS.LayoutPriority()
 end
 
 ----------------------------------------------------------------
@@ -818,7 +468,7 @@ function NS.UpdatePriorityDisplay()
 
     if not NS.db.showPriority then
         f:Hide()
-        HideActiveGlow()
+        HideAllGlows()
         return
     end
 
@@ -827,7 +477,7 @@ function NS.UpdatePriorityDisplay()
 
     if not rotationSpells or #rotationSpells == 0 then
         f:Hide()
-        HideActiveGlow()
+        HideAllGlows()
         return
     end
 
@@ -841,11 +491,12 @@ function NS.UpdatePriorityDisplay()
     local sorted = SortByPriority(rotationSpells, nextSpell)
 
     local visibleCount = 0
-    local glowTarget = nil
 
     for i = 1, MAX_PRIORITY_ICONS do
         local icon = priorityIcons[i]
         local spellID = sorted[i]
+        -- Reset per-tick glow color (avoids table allocation)
+        icon._wantGlow = false
 
         if spellID and spellID ~= 0 then
             icon.spellID = spellID
@@ -859,9 +510,30 @@ function NS.UpdatePriorityDisplay()
             -- Border color: importance color when enabled, neon fallback for next-cast
             local isNext = (spellID == nextSpell)
 
-            -- Track the first icon that is the next-cast for glow
-            if isNext and not glowTarget then
-                glowTarget = icon
+            -- Mark icons for glow: store color directly on icon (zero-alloc)
+            if isNext then
+                icon._wantGlow = true
+                icon._glowR = T.NEON_NEXT[1]
+                icon._glowG = T.NEON_NEXT[2]
+                icon._glowB = T.NEON_NEXT[3]
+            elseif NS.db.showActiveGlow then
+                local impKey = NS.GetSpellImportanceKey(spellID)
+                if impKey == "LONG_CD" or impKey == "MAJOR_CD" then
+                    local cdInfo = NS.GetCooldownCached(spellID)
+                    local isReady = true
+                    if cdInfo then
+                        local ok, isLong = pcall(NS._durGT, cdInfo, 1.5)
+                        if ok and isLong then isReady = false end
+                    end
+                    if isReady then
+                        local brightColor = NS.GetSpellBorderColorBright(spellID)
+                            or NS.SPELL_IMPORTANCE_BRIGHT[impKey]
+                        icon._wantGlow = true
+                        icon._glowR = brightColor[1]
+                        icon._glowG = brightColor[2]
+                        icon._glowB = brightColor[3]
+                    end
+                end
             end
 
             if NS.db.importanceBorders then
@@ -931,11 +603,20 @@ function NS.UpdatePriorityDisplay()
         end
     end
 
-    -- Active spell glow on the next-cast icon
-    if NS.db.showActiveGlow and glowTarget and ActionButton_ShowOverlayGlow then
-        ShowActiveGlow(glowTarget)
-    else
-        HideActiveGlow()
+    -- Active spell highlight: bright border color on qualifying icons (zero-alloc)
+    -- Uses the existing borderTex/Border — no Blizzard overlay glow frames needed
+    if NS.db.showActiveGlow then
+        for gi = 1, MAX_PRIORITY_ICONS do
+            local icon = priorityIcons[gi]
+            if icon._wantGlow then
+                if icon.Border then
+                    icon.Border:SetVertexColor(icon._glowR, icon._glowG, icon._glowB, 1)
+                    icon.Border:Show()
+                elseif icon.borderTex then
+                    icon.borderTex:SetColorTexture(icon._glowR, icon._glowG, icon._glowB, 1)
+                end
+            end
+        end
     end
 
     -- Tooltip on individual icons

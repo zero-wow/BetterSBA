@@ -5,10 +5,17 @@
 ## Author: |cFF9B59B6fostot|r
 ## SavedVariables: BetterSBA_DB
 ## IconTexture: Interface\AddOns\BetterSBA\IMG\BetterSBA
-## OptionalDeps: Bartender4, Dominos, ElvUI, Masque, LibSharedMedia-3.0, LibDBIcon-1.0, LibDataBroker-1.1
+## AddonCompartmentFunc: BetterSBA_OnAddonCompartmentClick
+## AddonCompartmentFuncOnEnter: BetterSBA_OnAddonCompartmentEnter
+## AddonCompartmentFuncOnLeave: BetterSBA_OnAddonCompartmentLeave
+## OptionalDeps: Bartender4, Dominos, ElvUI, Masque, LibSharedMedia-3.0, LibDBIcon-1.0, LibDataBroker-1.1, ConsolePort
+
+# Registration (LSM fonts — must load before anything uses them)
+Register.lua
 
 # Core
 Core\Constants.lua
+Core\Palettes.lua
 Core\Database.lua
 Core\Functions.lua
 Core\LDB.lua

@@ -40,6 +40,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
         NS._loadTime = GetTime()
         NS:InitializeDatabase()
+        -- Apply saved theme preset before any UI creation
+        if NS.db.themePreset and NS.db.themePreset ~= "Default" then
+            NS.ApplyThemePreset(NS.db.themePreset)
+        end
         NS.InitMasque()
         NS.InitLDB()
         NS:CreateMainButton()
@@ -61,6 +65,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_LOGIN" then
         NS.ScanKeybinds()
         NS.C_Timer_After(1, NS.ScanKeybinds)
+        -- Seed virtual cooldown system (must be out of combat)
+        NS.C_Timer_After(1.5, function()
+            NS.SeedVirtualCooldowns()
+        end)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Left combat: apply pending changes
@@ -71,10 +79,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             NS._pendingKeybindOverride = nil
             NS.OverrideSBAKeybind()
         end
+        if NS._pendingClickIntercept then
+            NS._pendingClickIntercept = nil
+            NS.UpdateClickIntercept()
+        end
         if NS._pendingButtonSettings then
             NS._pendingButtonSettings = nil
             NS.ApplyButtonSettings()
         end
+        -- Seed virtual cooldowns if deferred from combat load
+        NS.CheckPendingVirtualCD()
         NS.UpdateNow()
 
     elseif event == "PLAYER_REGEN_DISABLED" then
@@ -87,6 +101,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         or event == "UPDATE_VEHICLE_ACTIONBAR" then
         if event == "PLAYER_SPECIALIZATION_CHANGED" then
             NS.ClearBaseCDCache()
+            NS.ResetVirtualCooldowns()
             NS.InvalidateRotationCache()
             NS.InvalidateResolveCache()
             NS.InvalidateTextureCache()
@@ -151,6 +166,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, _, spellID = ...
         if unit == "player" and spellID then
+            -- Update virtual cooldown tracker
+            NS.OnSpellCastSucceeded(spellID)
             local rotationSpells = NS.CollectRotationSpells()
             for idx = 1, #rotationSpells do
                 if rotationSpells[idx] == spellID then
@@ -229,6 +246,10 @@ function NS:RegisterSlashCommands()
                 NS.mainButton:SetPoint("CENTER", NS.UIParent, "CENTER", 0, -100)
             end
             print("|cFF66B8D9BetterSBA|r: Position reset")
+        elseif msg == "preview" then
+            NS.StartPreviewMode()
+        elseif msg == "stop" then
+            NS.StopPreviewMode()
         elseif msg == "macro" then
             local macro = NS.secureButton and NS.secureButton:GetAttribute("macrotext") or "NOT SET"
             print("|cFF66B8D9BetterSBA|r: Current macrotext:")

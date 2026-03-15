@@ -396,6 +396,32 @@ end
 function NS.GetCooldownCached(spellID)
     if not _GetSpellCooldown then return nil end
 
+    -- Virtual cooldown path: if seeded, use virtual data for rotation spells
+    if virtualCDSeeded then
+        local vcd = virtualCD[spellID]
+        if vcd then
+            local now = GetTime()
+            if (vcd.startTime + vcd.duration) > now then
+                -- Still on CD — return virtual data in the same shape as API
+                local cached = cdCache[spellID]
+                if cached and cached ~= CACHE_NIL then
+                    cached.startTime = vcd.startTime
+                    cached.duration = vcd.duration
+                    cached.isEnabled = 1
+                    cached.modRate = 1
+                    return cached
+                end
+                -- Create a new entry
+                local entry = { startTime = vcd.startTime, duration = vcd.duration, isEnabled = 1, modRate = 1 }
+                cdCache[spellID] = entry
+                return entry
+            else
+                -- Virtual entry expired — remove it
+                virtualCD[spellID] = nil
+            end
+        end
+    end
+
     local cached = cdCache[spellID]
 
     -- Fast path: cache is clean — return whatever we have
@@ -431,18 +457,140 @@ end
 -- Called by SPELL_UPDATE_COOLDOWN event handler
 function NS.InvalidateCooldownCache()
     cdCacheDirty = true
+    -- Reconcile virtual state with API to catch cooldown reset procs
+    if virtualCDSeeded then
+        NS.ReconcileVirtualCooldowns()
+    end
 end
 
 ----------------------------------------------------------------
--- GC: we do NOT call collectgarbage() at all.  Lua's built-in
--- incremental GC handles collection automatically.  Forced GC
--- steps/collects cause microstutters and white flashes because
--- the entire Lua VM pauses while collection runs.  Instead we
--- minimize garbage at the source (event-driven caches, no
--- per-tick closures, reused tables).
+-- Virtual Cooldown System: tracks cooldowns via UNIT_SPELLCAST_SUCCEEDED
+-- events instead of querying GetSpellCooldown every tick.  Seeded once
+-- on login (out of combat), then maintained purely from cast events +
+-- base cooldown data.  Zero API calls per tick, zero table garbage.
 ----------------------------------------------------------------
-function NS.StartGCTicker() end   -- no-op, kept for call-site compat
-function NS.StopGCTicker()  end   -- no-op
+local virtualCD = {}            -- [spellID] = { startTime, duration }
+local virtualCDSeeded = false
+local virtualCDPending = false  -- true if loaded in combat, waiting for OOC
+
+function NS.IsVirtualCDReady()
+    return virtualCDSeeded
+end
+
+function NS.SeedVirtualCooldowns()
+    if NS.InCombatLockdown() then
+        virtualCDPending = true
+        return
+    end
+    virtualCDPending = false
+
+    local spells = NS.CollectRotationSpells()
+    for i = 1, #spells do
+        local sid = spells[i]
+        if sid and sid ~= 0 and _GetSpellCooldown then
+            -- Cache base cooldown (permanent)
+            NS.GetSpellBaseCooldown(sid)
+            -- Read current cooldown state
+            local ok, cdInfo = pcall(_GetSpellCooldown, sid)
+            if ok and cdInfo then
+                local dur = tonumber(tostring(cdInfo.duration)) or 0
+                if dur > 1.5 then
+                    virtualCD[sid] = {
+                        startTime = tonumber(tostring(cdInfo.startTime)) or 0,
+                        duration = dur,
+                    }
+                else
+                    virtualCD[sid] = nil
+                end
+            end
+        end
+    end
+    virtualCDSeeded = true
+end
+
+function NS.OnSpellCastSucceeded(spellID)
+    if not virtualCDSeeded or not spellID then return end
+    local baseCD = NS.GetSpellBaseCooldown(spellID)
+    if baseCD and baseCD > 1.5 then
+        virtualCD[spellID] = {
+            startTime = GetTime(),
+            duration = baseCD,
+        }
+    end
+end
+
+-- Reconcile virtual state with API on SPELL_UPDATE_COOLDOWN.
+-- Only queries spells that virtual tracking thinks are on CD,
+-- catching cooldown reset procs that the virtual system would miss.
+function NS.ReconcileVirtualCooldowns()
+    if not virtualCDSeeded or not _GetSpellCooldown then return end
+    local now = GetTime()
+    for sid, entry in pairs(virtualCD) do
+        -- Only reconcile entries that haven't expired yet
+        if (entry.startTime + entry.duration) > now then
+            local ok, cdInfo = pcall(_GetSpellCooldown, sid)
+            if ok and cdInfo then
+                local dur = tonumber(tostring(cdInfo.duration)) or 0
+                if dur <= 1.5 then
+                    -- API says it's ready but virtual says on CD → was reset by a proc
+                    virtualCD[sid] = nil
+                else
+                    -- Update with API's values (may differ due to haste changes)
+                    entry.startTime = tonumber(tostring(cdInfo.startTime)) or entry.startTime
+                    entry.duration = dur
+                end
+            end
+        else
+            -- Expired — clear
+            virtualCD[sid] = nil
+        end
+    end
+end
+
+function NS.ResetVirtualCooldowns()
+    virtualCD = {}
+    virtualCDSeeded = false
+    virtualCDPending = false
+end
+
+-- Deferred seeding check (called from PLAYER_REGEN_ENABLED)
+function NS.CheckPendingVirtualCD()
+    if virtualCDPending then
+        NS.SeedVirtualCooldowns()
+    end
+end
+
+----------------------------------------------------------------
+-- GC: tune Lua's built-in incremental collector via setpause/setstepmul.
+-- This spreads GC work across allocations with zero spikes — no manual
+-- "step" calls that freeze the VM.  Target MB controls aggressiveness:
+-- lower target = tighter pause + faster stepmul.
+----------------------------------------------------------------
+local gcSavedPause, gcSavedStepMul
+function NS.StartGCTicker()
+    NS.StopGCTicker()
+    if not NS.db or not NS.db.enableGC then return end
+    local targetMB = NS.db.gcTargetMB or 0
+    if targetMB <= 0 then
+        gcSavedPause = collectgarbage("setpause", 150)
+        gcSavedStepMul = collectgarbage("setstepmul", 200)
+    else
+        local pause = math.max(100, NS.math_floor(100 + targetMB * 10))
+        local stepmul = math.max(200, NS.math_floor(600 / targetMB))
+        gcSavedPause = collectgarbage("setpause", pause)
+        gcSavedStepMul = collectgarbage("setstepmul", stepmul)
+    end
+end
+function NS.StopGCTicker()
+    if gcSavedPause then
+        collectgarbage("setpause", gcSavedPause)
+        gcSavedPause = nil
+    end
+    if gcSavedStepMul then
+        collectgarbage("setstepmul", gcSavedStepMul)
+        gcSavedStepMul = nil
+    end
+end
 
 function NS.BeginUpdate()
     updateGeneration = updateGeneration + 1
@@ -462,6 +610,17 @@ end
 -- Call this from event handlers that change the rotation pool
 function NS.InvalidateRotationCache()
     rotationDirty = true
+    -- Rotation changed — virtual CD data may be stale, re-seed when possible
+    if virtualCDSeeded then
+        NS.ResetVirtualCooldowns()
+        if not NS.InCombatLockdown() then
+            NS.C_Timer_After(0.5, function()
+                NS.SeedVirtualCooldowns()
+            end)
+        else
+            virtualCDPending = true
+        end
+    end
 end
 
 -- Call this from event handlers that change spell overrides (spec/talent/spell changes)
@@ -768,8 +927,12 @@ function NS.RebuildMacroText()
         NS._pendingMacroRebuild = true
         return
     end
+    local macro = NS.BuildMacroText()
     if NS.secureButton then
-        NS.secureButton:SetAttribute("macrotext", NS.BuildMacroText())
+        NS.secureButton:SetAttribute("macrotext", macro)
+    end
+    if _G["BetterSBA_ClickIntercept"] and _G["BetterSBA_ClickIntercept"]:IsShown() then
+        _G["BetterSBA_ClickIntercept"]:SetAttribute("macrotext", macro)
     end
     NS._pendingMacroRebuild = false
 end
@@ -868,10 +1031,49 @@ function NS.ScanKeybinds()
         end
     end
 
+    -- ConsolePort (gamepad) keybind support: read bindings from ConsolePort's API
+    if NS.C_AddOns.IsAddOnLoaded("ConsolePort") and _G["ConsolePort"] then
+        local CP = _G["ConsolePort"]
+        -- ConsolePort stores action bar bindings; scan them into our cache
+        if CP.GetActionBinding then
+            for i = 1, 180 do
+                local actionType, id = NS.GetActionInfo(i)
+                if actionType == "spell" and id and not keybindCache[id] then
+                    local key = CP.GetActionBinding(i)
+                    if key then
+                        keybindCache[id] = NS.FormatKeybind(key)
+                    end
+                end
+            end
+        end
+    end
+
+    -- Class-specific bonus bar priority: certain specs use bonus/override bars
+    -- (Druid forms, Rogue stealth, etc.). Scan the bonus bar (slots 73-84)
+    -- with higher priority so form-specific keybinds are preferred.
+    local bonusBarOffset = GetBonusBarOffset and GetBonusBarOffset() or 0
+    if bonusBarOffset > 0 then
+        local baseSlot = (bonusBarOffset + 5) * 12  -- bonus bars start at bar 7+
+        for btnIdx = 1, 12 do
+            local slot = baseSlot + btnIdx
+            if slot <= 180 then
+                local actionType, id = NS.GetActionInfo(slot)
+                if actionType == "spell" and id then
+                    -- Override with main bar keybind (bonus bar uses ACTIONBUTTON bindings)
+                    local key = NS.GetBindingKey("ACTIONBUTTON" .. btnIdx)
+                    if key then
+                        keybindCache[id] = NS.FormatKeybind(key)
+                    end
+                end
+            end
+        end
+    end
+
     -- ALWAYS update the SBA override — clear when mounted/vehicle,
     -- re-establish when on foot.  This must run regardless of which
     -- bar addon is active (the early-returns above were preventing it).
     NS.OverrideSBAKeybind()
+    NS.UpdateClickIntercept()
 end
 
 function NS.GetKeybindForSpell(spellID)
@@ -891,6 +1093,17 @@ function NS.OverrideSBAKeybind()
 
     local secure = NS.secureButton
     if not secure then return end
+
+    local iType = NS.db and NS.db.interceptionType or "Keybind"
+    if iType == "Click" then
+        if NS._overrideKeys then
+            ClearOverrideBindings(secure)
+        end
+        NS._overrideKeys = nil
+        NS._overrideSlot = nil
+        NS.UpdateKeybindStatus()
+        return
+    end
 
     -- If on a special bar, mounted, or in a vehicle, always clear our
     -- overrides so the bar's own keybinds work unimpeded.
@@ -994,6 +1207,166 @@ end
 function NS.UpdateKeybindStatus()
     -- LDB text always updates even before Config panel is created
     if NS.UpdateLDBText then NS.UpdateLDBText() end
+end
+
+----------------------------------------------------------------
+-- Click interception: overlay the SBA action bar button so
+-- clicking it fires our macrotext instead of the raw spell.
+----------------------------------------------------------------
+local BAR_BUTTON_PREFIX = {
+    "ActionButton",
+    "MultiBarBottomLeftButton",
+    "MultiBarBottomRightButton",
+    "MultiBarRightButton",
+    "MultiBarLeftButton",
+    "MultiBar5Button",
+    "MultiBar6Button",
+    "MultiBar7Button",
+}
+
+local function FindSBABarButton(slot)
+    if not slot then return nil end
+
+    if _G["Bartender4"] then
+        return _G["BT4Button" .. slot]
+    end
+
+    if _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
+        for bar = 1, 15 do
+            for btn = 1, 12 do
+                local elvBtn = _G["ElvUI_Bar" .. bar .. "Button" .. btn]
+                if elvBtn and elvBtn._state_action == slot then
+                    return elvBtn
+                end
+            end
+        end
+        return nil
+    end
+
+    local barIndex = NS.math_floor((slot - 1) / 12)
+    local btnIndex = ((slot - 1) % 12) + 1
+    local prefix = BAR_BUTTON_PREFIX[barIndex + 1]
+    if prefix then
+        return _G[prefix .. btnIndex]
+    end
+    return nil
+end
+
+local clickOverlay = nil
+local clickBorder = nil
+
+local function ShowClickBorder(barBtn)
+    if not clickBorder then
+        clickBorder = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
+        clickBorder:SetBackdrop({
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        local sc = NS.db.sectionColorCombat or NS.defaults.sectionColorCombat
+        clickBorder:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.8)
+    end
+    clickBorder:ClearAllPoints()
+    clickBorder:SetPoint("TOPLEFT", barBtn, "TOPLEFT", -1, 1)
+    clickBorder:SetPoint("BOTTOMRIGHT", barBtn, "BOTTOMRIGHT", 1, -1)
+    clickBorder:SetFrameStrata(barBtn:GetFrameStrata())
+    clickBorder:SetFrameLevel(barBtn:GetFrameLevel() + 4)
+    clickBorder:Show()
+end
+
+local function HideClickBorder()
+    if clickBorder then clickBorder:Hide() end
+end
+
+function NS.UpdateClickIntercept()
+    if NS.InCombatLockdown() then
+        NS._pendingClickIntercept = true
+        return
+    end
+
+    local db = NS.db
+    local iType = db and db.interceptionType or "Keybind"
+    if not db or (iType ~= "Click" and iType ~= "Both") then
+        if clickOverlay then
+            clickOverlay:Hide()
+            clickOverlay:ClearAllPoints()
+        end
+        HideClickBorder()
+        return
+    end
+
+    local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
+        or (HasOverrideActionBar and HasOverrideActionBar())
+        or (HasVehicleActionBar and HasVehicleActionBar())
+        or (IsPossessBarVisible and IsPossessBarVisible())
+        or (IsMounted and IsMounted())
+    if onSpecialBar then
+        if clickOverlay then clickOverlay:Hide() end
+        HideClickBorder()
+        return
+    end
+
+    local slot = sbaActionSlot or NS.FindSBAActionSlot()
+    if not slot then
+        if clickOverlay then clickOverlay:Hide() end
+        HideClickBorder()
+        return
+    end
+
+    local barBtn = FindSBABarButton(slot)
+    if not barBtn then
+        if clickOverlay then clickOverlay:Hide() end
+        HideClickBorder()
+        return
+    end
+
+    if not clickOverlay then
+        local ov = NS.CreateFrame("Button", "BetterSBA_ClickIntercept", NS.UIParent,
+            "SecureActionButtonTemplate")
+        ov:SetAttribute("type", "macro")
+        ov:RegisterForClicks("AnyDown", "AnyUp")
+
+        local ovName = ov:GetName()
+        for _, suffix in NS.ipairs({"Icon", "Flash", "Count", "Border", "Name", "NewActionTexture", "HotKey"}) do
+            local region = _G[ovName .. suffix]
+            if region then
+                if region.SetTexture then region:SetTexture(nil) end
+                if region.SetText then region:SetText("") end
+                region:Hide()
+            end
+        end
+        local pushed = ov:GetPushedTexture()
+        if pushed then pushed:SetAlpha(0) end
+        local highlight = ov:GetHighlightTexture()
+        if highlight then highlight:SetAlpha(0) end
+        local normal = ov:GetNormalTexture()
+        if normal then normal:SetAlpha(0) end
+
+        ov:SetScript("OnEnter", function(self)
+            local target = self._barBtn
+            if target then
+                local fn = target:GetScript("OnEnter")
+                if fn then fn(target) end
+            end
+        end)
+        ov:SetScript("OnLeave", function(self)
+            local target = self._barBtn
+            if target then
+                local fn = target:GetScript("OnLeave")
+                if fn then fn(target) end
+            end
+        end)
+
+        clickOverlay = ov
+    end
+
+    clickOverlay:SetAttribute("macrotext", NS.BuildMacroText())
+    clickOverlay._barBtn = barBtn
+    clickOverlay:ClearAllPoints()
+    clickOverlay:SetAllPoints(barBtn)
+    clickOverlay:SetFrameStrata(barBtn:GetFrameStrata())
+    clickOverlay:SetFrameLevel(barBtn:GetFrameLevel() + 5)
+    clickOverlay:Show()
+    ShowClickBorder(barBtn)
 end
 
 ----------------------------------------------------------------
@@ -1310,27 +1683,12 @@ function NS.GetDisplaySpell()
 end
 
 ----------------------------------------------------------------
--- POP! particle burst system — colored fragments explode outward
+-- Particle burst system — style-aware, palette-driven
 ----------------------------------------------------------------
-local POP_PARTICLE_COUNT = 12     -- fragments per burst
-local POP_PARTICLE_POOL = {}      -- recycled frame pool
-local POP_BURST_DUR = 0.45        -- seconds for particles to fly + fade
-local POP_BURST_DIST = 60         -- max pixel distance from center
+local PARTICLE_POOL = {}          -- recycled frame pool
 
--- Balloon pop colors: bright, saturated party colors
-local POP_COLORS = {
-    { 1.0, 0.25, 0.25 },   -- red
-    { 1.0, 0.55, 0.15 },   -- orange
-    { 1.0, 0.90, 0.20 },   -- yellow
-    { 0.30, 0.90, 0.30 },  -- green
-    { 0.30, 0.70, 1.0 },   -- blue
-    { 0.70, 0.40, 1.0 },   -- purple
-    { 1.0, 0.45, 0.75 },   -- pink
-    { 0.20, 0.95, 0.85 },  -- cyan
-}
-
-local function AcquirePopParticle()
-    for _, p in NS.ipairs(POP_PARTICLE_POOL) do
+local function AcquireParticle()
+    for _, p in NS.ipairs(PARTICLE_POOL) do
         if not p._inUse then
             p._inUse = true
             return p
@@ -1342,51 +1700,129 @@ local function AcquirePopParticle()
     f:SetFrameLevel(300)
     f:Hide()
 
-    -- Dark outline layer (slightly larger, sits behind the color)
+    -- Dark outline layer (1px black border for visibility)
     f.outline = f:CreateTexture(nil, "ARTWORK")
     f.outline:SetPoint("TOPLEFT", -1, 1)
     f.outline:SetPoint("BOTTOMRIGHT", 1, -1)
     f.outline:SetColorTexture(0, 0, 0, 0.9)
 
-    -- Colored confetti layer on top
+    -- Colored particle layer on top
     f.tex = f:CreateTexture(nil, "OVERLAY")
     f.tex:SetAllPoints()
     f.tex:SetColorTexture(1, 1, 1, 1)
 
     f._inUse = true
-    POP_PARTICLE_POOL[#POP_PARTICLE_POOL + 1] = f
+    PARTICLE_POOL[#PARTICLE_POOL + 1] = f
     return f
 end
 
--- Fire a burst of colored particles from the center of `btn`
-local function FirePopBurst(btn)
+-- Style configs: count, duration, distance, per-particle setup
+local PARTICLE_STYLE_CONFIGS = {
+    Confetti = {
+        count = 20, duration = 1.8, distance = 100,
+        setup = function(p, angle, dist, dur, clr)
+            local sz = math.random(4, 10)
+            p:SetSize(sz, sz * (0.4 + 0.6 * math.random()))
+            local shade = 0.8 + 0.4 * math.random()
+            p.tex:SetColorTexture(math.min(1, clr[1]*shade), math.min(1, clr[2]*shade), math.min(1, clr[3]*shade), 1)
+            local stagger = math.random() * 0.20
+            local ag = p._ag
+            ag._trans:SetOffset(math.cos(angle)*dist, math.sin(angle)*dist)
+            ag._trans:SetDuration(dur); ag._trans:SetSmoothing("OUT"); ag._trans:SetStartDelay(stagger)
+            ag._alpha:SetFromAlpha(1); ag._alpha:SetToAlpha(0)
+            ag._alpha:SetDuration(dur*0.4); ag._alpha:SetSmoothing("IN"); ag._alpha:SetStartDelay(stagger + dur*0.5)
+            ag._scale:SetScale(0.3, 0.3); ag._scale:SetDuration(dur); ag._scale:SetSmoothing("IN"); ag._scale:SetStartDelay(stagger)
+            ag._rot:SetDegrees(math.random(0, 360)); ag._rot:SetDuration(0.001); ag._rot:SetSmoothing("NONE"); ag._rot:SetStartDelay(0)
+        end,
+    },
+    Lasers = {
+        count = 16, duration = 1.2, distance = 140,
+        setup = function(p, angle, dist, dur, clr)
+            p:SetSize(2, 16)
+            p.tex:SetColorTexture(math.min(1, clr[1]*1.2), math.min(1, clr[2]*1.2), math.min(1, clr[3]*1.2), 1)
+            local stagger = math.random() * 0.15
+            local ag = p._ag
+            ag._trans:SetOffset(math.cos(angle)*dist, math.sin(angle)*dist)
+            ag._trans:SetDuration(dur); ag._trans:SetSmoothing("NONE"); ag._trans:SetStartDelay(stagger)
+            ag._alpha:SetFromAlpha(1); ag._alpha:SetToAlpha(0)
+            ag._alpha:SetDuration(dur*0.3); ag._alpha:SetSmoothing("IN"); ag._alpha:SetStartDelay(stagger + dur*0.6)
+            ag._scale:SetScale(1.5, 0.5); ag._scale:SetDuration(dur); ag._scale:SetSmoothing("OUT"); ag._scale:SetStartDelay(stagger)
+            ag._rot:SetDegrees(math.deg(angle) - 90); ag._rot:SetDuration(0.001); ag._rot:SetSmoothing("NONE"); ag._rot:SetStartDelay(0)
+        end,
+    },
+    Sparks = {
+        count = 28, duration = 1.4, distance = 80,
+        setup = function(p, angle, dist, dur, clr)
+            local sz = math.random(3, 7)
+            p:SetSize(sz, sz * (0.3 + 0.4 * math.random()))
+            p.tex:SetColorTexture(clr[1], clr[2], clr[3], 1)
+            local stagger = math.random() * 0.20
+            local ag = p._ag
+            ag._trans:SetOffset(math.cos(angle)*dist, math.sin(angle)*dist)
+            ag._trans:SetDuration(dur); ag._trans:SetSmoothing("OUT"); ag._trans:SetStartDelay(stagger)
+            ag._alpha:SetFromAlpha(1); ag._alpha:SetToAlpha(0)
+            ag._alpha:SetDuration(dur*0.4); ag._alpha:SetSmoothing("IN"); ag._alpha:SetStartDelay(stagger + dur*0.4)
+            ag._scale:SetScale(0.4, 0.4); ag._scale:SetDuration(dur); ag._scale:SetSmoothing("IN"); ag._scale:SetStartDelay(stagger)
+            ag._rot:SetDegrees(math.random(0, 360)); ag._rot:SetDuration(0.001); ag._rot:SetSmoothing("NONE"); ag._rot:SetStartDelay(0)
+        end,
+    },
+    Squares = {
+        count = 16, duration = 2.0, distance = 85,
+        setup = function(p, angle, dist, dur, clr)
+            local sz = math.random(6, 11)
+            p:SetSize(sz, sz)
+            local shade = 0.9 + 0.2 * math.random()
+            p.tex:SetColorTexture(math.min(1, clr[1]*shade), math.min(1, clr[2]*shade), math.min(1, clr[3]*shade), 1)
+            local stagger = math.random() * 0.25
+            local ag = p._ag
+            ag._trans:SetOffset(math.cos(angle)*dist*0.7, math.sin(angle)*dist*0.7)
+            ag._trans:SetDuration(dur); ag._trans:SetSmoothing("OUT"); ag._trans:SetStartDelay(stagger)
+            ag._alpha:SetFromAlpha(1); ag._alpha:SetToAlpha(0)
+            ag._alpha:SetDuration(dur*0.3); ag._alpha:SetSmoothing("IN"); ag._alpha:SetStartDelay(stagger + dur*0.6)
+            ag._scale:SetScale(0.5, 0.5); ag._scale:SetDuration(dur); ag._scale:SetSmoothing("OUT"); ag._scale:SetStartDelay(stagger)
+            ag._rot:SetDegrees(45); ag._rot:SetDuration(0.001); ag._rot:SetSmoothing("NONE"); ag._rot:SetStartDelay(0)
+        end,
+    },
+}
+
+-- Fire a burst of particles from the center of `btn`
+local RANDOM_STYLE_KEYS = { "Confetti", "Lasers", "Sparks", "Squares" }
+
+function NS.FireParticleBurst(btn, styleName, paletteName, gcdScale)
     if not btn then return end
+    if styleName == "None" then return end
 
-    for i = 1, POP_PARTICLE_COUNT do
-        local p = AcquirePopParticle()
+    if styleName == "Random" then
+        styleName = RANDOM_STYLE_KEYS[math.random(#RANDOM_STYLE_KEYS)]
+    end
 
-        -- Random angle + distance + size
+    local styleConfig = PARTICLE_STYLE_CONFIGS[styleName or "Confetti"]
+    if not styleConfig then styleConfig = PARTICLE_STYLE_CONFIGS.Confetti end
+
+    local colors = NS:GetPalette(paletteName or "Confetti")
+    if not colors or #colors == 0 then
+        colors = NS.BUILTIN_PALETTES.Confetti
+    end
+
+    local g = gcdScale or ((NS.db.gcdDuration or 1.9) / 1.9)
+    local count = styleConfig.count
+    local dur = styleConfig.duration * g
+    local maxDist = styleConfig.distance
+
+    for i = 1, count do
+        local p = AcquireParticle()
+
         local angle = math.random() * 2 * math.pi
-        local dist = POP_BURST_DIST * (0.5 + 0.5 * math.random())
-        local sz = math.random(4, 8)
+        local dist = maxDist * (0.5 + 0.5 * math.random())
+        local clr = colors[math.random(#colors)]
 
-        -- Random color
-        local clr = POP_COLORS[math.random(#POP_COLORS)]
-        local shade = 0.8 + 0.4 * math.random()
-        p.tex:SetColorTexture(
-            math.min(1, clr[1] * shade),
-            math.min(1, clr[2] * shade),
-            math.min(1, clr[3] * shade),
-            1
-        )
-
-        p:SetSize(sz, sz * (0.4 + 0.6 * math.random()))  -- rectangular shards
         p:ClearAllPoints()
-        p:SetPoint("CENTER", btn, "CENTER")  -- anchor directly to button center
+        p:SetPoint("CENTER", btn, "CENTER")
         p:SetAlpha(1)
+        p:SetScale(1)
         p:Show()
 
-        -- Animate: translate outward + fade + shrink
+        -- Ensure animation group exists
         local ag = p._ag
         if not ag then
             ag = p:CreateAnimationGroup()
@@ -1404,34 +1840,16 @@ local function FirePopBurst(btn)
             p._ag = ag
         end
 
-        local stagger = math.random() * 0.04
-        local tx = math.cos(angle) * dist
-        local ty = math.sin(angle) * dist
-
-        ag._trans:SetOffset(tx, ty)
-        ag._trans:SetDuration(POP_BURST_DUR)
-        ag._trans:SetSmoothing("OUT")
-        ag._trans:SetStartDelay(stagger)
-
-        ag._alpha:SetFromAlpha(1)
-        ag._alpha:SetToAlpha(0)
-        ag._alpha:SetDuration(POP_BURST_DUR * 0.6)
-        ag._alpha:SetSmoothing("IN")
-        ag._alpha:SetStartDelay(stagger + POP_BURST_DUR * 0.3)
-
-        ag._scale:SetScale(0.3, 0.3)
-        ag._scale:SetDuration(POP_BURST_DUR)
-        ag._scale:SetSmoothing("IN")
-        ag._scale:SetStartDelay(stagger)
-
-        ag._rot:SetDegrees(math.random(0, 360))
-        ag._rot:SetDuration(0.001)
-        ag._rot:SetSmoothing("NONE")
-        ag._rot:SetStartDelay(0)
+        styleConfig.setup(p, angle, dist, dur, clr)
 
         ag:Stop()
         ag:Play()
     end
+end
+
+-- Legacy wrapper for any remaining call sites
+local function FirePopBurst(btn)
+    NS.FireParticleBurst(btn, "Confetti", "Confetti")
 end
 
 ----------------------------------------------------------------
@@ -1439,54 +1857,84 @@ end
 ----------------------------------------------------------------
 local animPool = {}
 
+local BASE_GCD = 1.9
 local ANIM_CONFIGS = {
-    DRIFT = function(ag)
+    DRIFT = function(ag, g)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        s:SetScale(0.3, 0.3); s:SetDuration(0.8); s:SetSmoothing("OUT"); s:SetStartDelay(0)
-        t:SetOffset(-80, -15); t:SetDuration(0.8); t:SetSmoothing("OUT"); t:SetStartDelay(0)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.8); a:SetSmoothing("IN"); a:SetStartDelay(0.05)
-        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+        s:SetScale(0.3, 0.3); s:SetDuration(1.2*g); s:SetSmoothing("IN_OUT"); s:SetStartDelay(0)
+        t:SetOffset(-80, -15); t:SetDuration(1.0*g); t:SetSmoothing("OUT"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(1.3*g); a:SetSmoothing("IN"); a:SetStartDelay(0.05*g)
+        r:SetDegrees(180); r:SetDuration(1.2*g); r:SetSmoothing("OUT"); r:SetStartDelay(0)
     end,
-    PULSE = function(ag)
+    PULSE = function(ag, g)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        s:SetScale(2.0, 2.0); s:SetDuration(0.45); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        s:SetScale(2.0, 2.0); s:SetDuration(0.45*g); s:SetSmoothing("OUT"); s:SetStartDelay(0)
         t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.45); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(1.4*g); a:SetSmoothing("IN"); a:SetStartDelay(0)
         r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
     end,
-    SPIN = function(ag)
+    VORTEX = function(ag, g)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        s:SetScale(0.15, 0.15); s:SetDuration(0.7); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        s:SetScale(0.15, 0.15); s:SetDuration(0.7*g); s:SetSmoothing("OUT"); s:SetStartDelay(0)
         t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.7); a:SetSmoothing("IN"); a:SetStartDelay(0)
-        r:SetDegrees(360); r:SetDuration(0.7); r:SetSmoothing("OUT"); r:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(1.3*g); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        r:SetDegrees(360); r:SetDuration(0.7*g); r:SetSmoothing("OUT"); r:SetStartDelay(0)
     end,
-    ZOOM = function(ag)
+    ZOOM = function(ag, g)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        s:SetScale(3.5, 3.5); s:SetDuration(0.55); s:SetSmoothing("OUT"); s:SetStartDelay(0)
-        t:SetOffset(0, 25); t:SetDuration(0.55); t:SetSmoothing("OUT"); t:SetStartDelay(0)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.55); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        s:SetScale(3.5, 3.5); s:SetDuration(0.55*g); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, 25); t:SetDuration(0.55*g); t:SetSmoothing("OUT"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(1.3*g); a:SetSmoothing("IN"); a:SetStartDelay(0)
         r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
     end,
-    SLAM = function(ag)
+    SLAM = function(ag, g)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        -- 0.15s pulse (dislodge) → 0.70s gravity drop (IN = accelerates) = 0.85s
-        s:SetScale(1.15, 1.15); s:SetDuration(0.15); s:SetSmoothing("IN_OUT"); s:SetStartDelay(0)
-        t:SetOffset(0, -55); t:SetDuration(0.70); t:SetSmoothing("IN"); t:SetStartDelay(0.15)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.65); a:SetSmoothing("IN"); a:SetStartDelay(0.15)
+        s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(0)
+        t:SetOffset(0, -28); t:SetDuration(0.70*g); t:SetSmoothing("IN"); t:SetStartDelay(0)
+        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(1.3*g); a:SetSmoothing("IN"); a:SetStartDelay(0)
         r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
     end,
-    -- POP!: icon shrinks away while fading as confetti bursts out
-    -- 0.00–0.15s   alpha fades 1→0 (icon dissolves)
-    -- 0.08s        confetti fires
-    -- 0.00–0.20s   scale shrinks to 0.3x (icon collapses away)
-    -- 0.20s        OnFinished
-    ["POP!"] = function(ag)
+    ["POP!"] = function(ag, g)
         local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-        s:SetScale(0.3, 0.3); s:SetDuration(0.20); s:SetSmoothing("IN"); s:SetStartDelay(0)
+        s:SetScale(1.25, 1.25); s:SetDuration(0.12*g); s:SetSmoothing("OUT"); s:SetStartDelay(0)
         t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
-        a:SetFromAlpha(1.0); a:SetToAlpha(0); a:SetDuration(0.15); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(1.4*g); a:SetSmoothing("IN"); a:SetStartDelay(0.10*g)
         r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    BURST = function(ag, g)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(1.5, 1.5); s:SetDuration(0.45*g); s:SetSmoothing("IN_OUT"); s:SetStartDelay(0)
+        t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
+        a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(1.4*g); a:SetSmoothing("IN"); a:SetStartDelay(0.15*g)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    FADE = function(ag, g)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(0)
+        t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
+        a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(1.5*g); a:SetSmoothing("IN_OUT"); a:SetStartDelay(0)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    FLIP = function(ag, g)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(0.01, 1); s:SetDuration(0.50*g); s:SetSmoothing("IN"); s:SetStartDelay(0)
+        t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(0)
+        a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(1.3*g); a:SetSmoothing("IN"); a:SetStartDelay(0.10*g)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    RISE = function(ag, g)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(0)
+        t:SetOffset(0, 35); t:SetDuration(0.80*g); t:SetSmoothing("OUT"); t:SetStartDelay(0)
+        a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(1.3*g); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(0)
+    end,
+    SCATTER = function(ag, g)
+        local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+        s:SetScale(0.4, 0.4); s:SetDuration(0.70*g); s:SetSmoothing("OUT"); s:SetStartDelay(0)
+        t:SetOffset(65, 40); t:SetDuration(0.70*g); t:SetSmoothing("OUT"); t:SetStartDelay(0)
+        a:SetFromAlpha(1); a:SetToAlpha(0); a:SetDuration(1.2*g); a:SetSmoothing("IN"); a:SetStartDelay(0)
+        r:SetDegrees(270); r:SetDuration(0.80*g); r:SetSmoothing("OUT"); r:SetStartDelay(0)
     end,
 }
 
@@ -1504,96 +1952,146 @@ local ANIM_CONFIGS = {
 --               (overlap point into the outgoing animation)
 --   setup(ag, d) – configures the AnimationGroup with start delay d
 local REVERSE_ANIM_CONFIGS = {
-    -- DRIFT forward: drifts left (-80,-15), shrinks to 0.3, fades out (0.8s)
-    -- Incoming: arrives from right, starts small, grows — overlaps at 0.30s
     DRIFT = {
         offset = { 80, 15 },
-        preScale = 0.3,
-        delay = 0.30,
-        setup = function(ag, d)
-            d = d or 0
+        preScale = 1,
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
             local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-            s:SetScale(1/0.3, 1/0.3); s:SetDuration(0.55); s:SetSmoothing("IN"); s:SetStartDelay(d)
-            t:SetOffset(-80, -15); t:SetDuration(0.55); t:SetSmoothing("IN"); t:SetStartDelay(d)
-            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.55); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(-80, -15); t:SetDuration(0.55*g); t:SetSmoothing("IN"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.45*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
             r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
         end,
     },
-    -- PULSE forward: grows to 2.0, fades out in place (0.45s)
-    -- Incoming: starts large, shrinks in — cross-dissolve at 0.12s
     PULSE = {
         offset = { 0, 0 },
-        preScale = 2.0,
-        delay = 0.12,
-        setup = function(ag, d)
-            d = d or 0
-            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-            s:SetScale(1/2.0, 1/2.0); s:SetDuration(0.35); s:SetSmoothing("IN"); s:SetStartDelay(d)
-            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
-            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.35); a:SetSmoothing("OUT"); a:SetStartDelay(d)
-            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
-        end,
-    },
-    -- SPIN forward: shrinks to 0.15, spins 360°, fades out (0.7s)
-    -- Incoming: starts tiny, reverse-spins in — overlaps at 0.25s
-    SPIN = {
-        offset = { 0, 0 },
-        preScale = 0.15,
-        delay = 0.25,
-        setup = function(ag, d)
-            d = d or 0
-            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-            s:SetScale(1/0.15, 1/0.15); s:SetDuration(0.50); s:SetSmoothing("IN"); s:SetStartDelay(d)
-            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
-            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.50); a:SetSmoothing("OUT"); a:SetStartDelay(d)
-            r:SetDegrees(-360); r:SetDuration(0.50); r:SetSmoothing("IN"); r:SetStartDelay(d)
-        end,
-    },
-    -- ZOOM forward: zooms up (0,25), grows to 3.5, fades out (0.55s)
-    -- Incoming: starts large below, rises while shrinking — overlaps at 0.18s
-    ZOOM = {
-        offset = { 0, -25 },
-        preScale = 3.5,
-        delay = 0.18,
-        setup = function(ag, d)
-            d = d or 0
-            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-            s:SetScale(1/3.5, 1/3.5); s:SetDuration(0.40); s:SetSmoothing("IN"); s:SetStartDelay(d)
-            t:SetOffset(0, 25); t:SetDuration(0.40); t:SetSmoothing("IN"); t:SetStartDelay(d)
-            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40); a:SetSmoothing("OUT"); a:SetStartDelay(d)
-            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
-        end,
-    },
-    -- POP! forward: instant burst (0.20s total)
-    -- Incoming: simple fade-in at normal scale after the pop — delay 0.10s
-    ["POP!"] = {
-        offset = { 0, 0 },
         preScale = 1,
-        delay = 0.10,
-        setup = function(ag, d)
-            d = d or 0
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
             local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
             s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
             t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
-            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.20); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
             r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
         end,
     },
-    -- SLAM forward: pulse (0.15s) + gravity drop (0.70s) = 0.85s
-    -- Incoming: falls from 45px above — delay 0.40s so old icon clearly
-    -- drops away first, then new icon drops in with deceleration (landing)
-    -- Total: 0.40 + 0.50 = 0.90s, then 0.30s bounce = 1.20s grand total
-    SLAM = {
-        offset = { 0, 45 },
-        preScale = 0.85,   -- starts slightly small, grows into full size
-        delay = 0.40,
-        setup = function(ag, d)
-            d = d or 0
+    VORTEX = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
             local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
-            -- Scale UP from 0.85 to 1.0 as it lands (grows into place)
-            s:SetScale(1/0.85, 1/0.85); s:SetDuration(0.50); s:SetSmoothing("OUT"); s:SetStartDelay(d)
-            t:SetOffset(0, -45); t:SetDuration(0.50); t:SetSmoothing("OUT"); t:SetStartDelay(d)
-            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.45); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    ZOOM = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    ["POP!"] = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.20,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.35*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    BURST = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.20,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.35*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    SLAM = {
+        offset = { 0, 28 },
+        preScale = 1,
+        delay = 1.20,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, -28); t:SetDuration(0.50*g); t:SetSmoothing("OUT"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    FADE = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.20,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    FLIP = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.35*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    RISE = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.40*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
+            r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
+        end,
+    },
+    SCATTER = {
+        offset = { 0, 0 },
+        preScale = 1,
+        delay = 1.10,
+        setup = function(ag, d, g)
+            d = d or 0; g = g or 1
+            local s, t, a, r = ag._scale, ag._trans, ag._alpha, ag._rot
+            s:SetScale(1, 1); s:SetDuration(0.001); s:SetSmoothing("NONE"); s:SetStartDelay(d)
+            t:SetOffset(0, 0); t:SetDuration(0.001); t:SetSmoothing("NONE"); t:SetStartDelay(d)
+            a:SetFromAlpha(0); a:SetToAlpha(1); a:SetDuration(0.35*g); a:SetSmoothing("OUT"); a:SetStartDelay(d)
             r:SetDegrees(0); r:SetDuration(0.001); r:SetSmoothing("NONE"); r:SetStartDelay(d)
         end,
     },
@@ -1607,6 +2105,7 @@ local REVERSE_ANIM_CONFIGS = {
 local slamBounceTarget = nil
 local slamBounceElapsed = 0
 local SLAM_BOUNCE_DUR = 0.30
+local slamBounceDurScaled = SLAM_BOUNCE_DUR
 local SLAM_BOUNCE_AMP = 0.10   -- 10% scale oscillation
 local SLAM_BOUNCE_FREQ = 2.5   -- ~2.5 wobble cycles
 
@@ -1615,7 +2114,7 @@ slamBounceDriver:Hide()
 slamBounceDriver:SetScript("OnUpdate", function(self, elapsed)
     if not slamBounceTarget then self:Hide() return end
     slamBounceElapsed = slamBounceElapsed + elapsed
-    if slamBounceElapsed >= SLAM_BOUNCE_DUR then
+    if slamBounceElapsed >= slamBounceDurScaled then
         -- Bounce done — reveal real button and clean up
         local srcBtn = slamBounceTarget._sourceBtn
         if srcBtn then
@@ -1638,9 +2137,9 @@ slamBounceDriver:SetScript("OnUpdate", function(self, elapsed)
         return
     end
     -- Damped cosine: wobbles ±AMP, decaying to zero over BOUNCE_DUR
-    local decay = 1 - (slamBounceElapsed / SLAM_BOUNCE_DUR)
+    local decay = 1 - (slamBounceElapsed / slamBounceDurScaled)
     local wobble = 1 + SLAM_BOUNCE_AMP * decay * math.cos(
-        SLAM_BOUNCE_FREQ * 2 * math.pi * slamBounceElapsed / SLAM_BOUNCE_DUR)
+        SLAM_BOUNCE_FREQ * 2 * math.pi * slamBounceElapsed / slamBounceDurScaled)
     local baseScale = slamBounceTarget._btnScale or NS.db.scale or 1
     slamBounceTarget:SetScale(wobble * baseScale)
 end)
@@ -1706,6 +2205,9 @@ local function AcquireAnimFrame()
     for _, f in NS.ipairs(animPool) do
         if not f._inUse then
             f._inUse = true
+            if f.ag then f.ag:Stop() end
+            f:SetScale(1)
+            f:SetAlpha(0)
             return f
         end
     end
@@ -1716,6 +2218,8 @@ local function AcquireAnimFrame()
         if oldest.ag then oldest.ag:Stop() end
         oldest:Hide()
         oldest:ClearAllPoints()
+        oldest:SetScale(1)
+        oldest:SetAlpha(0)
         oldest._inUse = true
         return oldest
     end
@@ -1789,13 +2293,19 @@ local function AcquireAnimFrame()
         f.icon:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
     end
 
-    -- Keybind text (cloned from main button each animation)
-    f.hotkey = f:CreateFontString(nil, "OVERLAY")
-    f.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
+    -- Keybind — on a child frame so Masque can't hook the FontString
+    local hkFrame = NS.CreateFrame("Frame", nil, f)
+    hkFrame:SetAllPoints()
+    hkFrame:SetFrameLevel(f:GetFrameLevel() + 5)
+    f.hotkey = hkFrame:CreateFontString(nil, "OVERLAY")
+    f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
+        NS.ResolveFontOutline("keybindFont", "keybindOutline"))
     f.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
+    f._hkFrame = hkFrame
 
     local ag = f:CreateAnimationGroup()
     ag._scale = ag:CreateAnimation("Scale")
+    ag._scale:SetOrigin("CENTER", 0, 0)
     ag._trans = ag:CreateAnimation("Translation")
     ag._alpha = ag:CreateAnimation("Alpha")
     ag._rot = ag:CreateAnimation("Rotation")
@@ -1804,13 +2314,19 @@ local function AcquireAnimFrame()
     ag:SetScript("OnFinished", function()
         -- SLAM incoming: chain into landing bounce instead of cleanup
         if f._isIncoming and f._animType == "SLAM" and f._sourceBtn then
-            f:SetScale(f._btnScale or NS.db.scale or 1)  -- match button scale
+            f:SetScale(f._btnScale or NS.db.scale or 1)
             f:ClearAllPoints()
-            f:SetPoint("CENTER", f._sourceBtn, "CENTER")  -- snap to button
+            f:SetPoint("CENTER", f._sourceBtn, "CENTER")
             slamBounceTarget = f
             slamBounceElapsed = 0
+            slamBounceDurScaled = SLAM_BOUNCE_DUR * (f._gcdScale or 1)
             slamBounceDriver:Show()
             return  -- bounce driver handles cleanup + reveal
+        end
+
+        -- Fire particles on animation end (if configured)
+        if f._fireParticlesOnEnd and f._sourceBtn and not f._isIncoming then
+            NS.FireParticleBurst(f._sourceBtn, f._particleStyle, f._particlePalette, f._particleGcdScale)
         end
 
         f:Hide()
@@ -1824,25 +2340,27 @@ local function AcquireAnimFrame()
         f._animType = nil
         f._isIncoming = nil
         f._hasIncomingPeer = nil
+        f._fireParticlesOnEnd = nil
+        f._particleStyle = nil
+        f._particlePalette = nil
+        f._particleGcdScale = nil
+        f._gcdScale = nil
         f._inUse = false
 
         if srcBtn then
             if isIncoming then
-                -- Incoming animation done — reveal the real button
                 local targetAlpha = InCombatLockdown()
                     and (NS.db.alphaCombat or 1)
                     or  (NS.db.alphaOOC or 1)
                 srcBtn:SetAlpha(targetAlpha)
                 NS._recreateFading = false
-            elseif not hasPeer then
-                -- Outgoing done with no incoming peer — reveal button
+                elseif not hasPeer then
                 local targetAlpha = InCombatLockdown()
                     and (NS.db.alphaCombat or 1)
                     or  (NS.db.alphaOOC or 1)
                 srcBtn:SetAlpha(targetAlpha)
                 NS._recreateFading = false
-            end
-            -- If hasPeer, the incoming clone handles the reveal
+                end
         end
     end)
 
@@ -1922,34 +2440,15 @@ function NS.PlayCastAnimation(spellID)
     local size = btn:GetWidth()
     local btnScale = btn:GetScale()
 
-    -- 1. Size — exact match to the real button (including user scale)
     anim:SetSize(size, size)
-    anim:SetScale(btnScale)
+    anim:SetScale(btnScale * 1.2)
     anim:ClearAllPoints()
     anim:SetPoint("CENTER", btn, "CENTER")
 
     -- 2. Icon texture
     anim.icon:SetTexture(tex)
 
-    -- 3. Keybind text — clone font, position + text from the real button
-    if anim.hotkey then
-        if btn.hotkey and NS.db.showKeybind then
-            local font, fontSize, flags = btn.hotkey:GetFont()
-            if font then
-                anim.hotkey:SetFont(font, fontSize, flags)
-            end
-            anim.hotkey:ClearAllPoints()
-            anim.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT",
-                NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
-            anim.hotkey:SetText(btn.hotkey:GetText() or "")
-            anim.hotkey:Show()
-        else
-            anim.hotkey:SetText("")
-            anim.hotkey:Hide()
-        end
-    end
-
-    -- 4. Importance border color + backdrop (ColorTexture API — no BackdropTemplate)
+    -- 3. Importance border color + backdrop (ColorTexture API — no BackdropTemplate)
     if not NS.masque and anim.bg then
         local bgColor = NS.db.buttonBgColor
         anim.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
@@ -1979,7 +2478,27 @@ function NS.PlayCastAnimation(spellID)
         NS.masqueAnimGroup:ReSkin()
     end
 
-    -- 6. Store references for OnFinished
+    -- 6. Keybind text — deferred to next frame so Masque/ReSkin can't override
+    if anim.hotkey then
+        local keyText = spellID and keybindCache[spellID]
+        if not keyText or keyText == "" then keyText = "#" end
+        if NS.db.showKeybind then
+            anim.hotkey:SetText(keyText)
+            anim.hotkey:Show()
+            local hk = anim.hotkey
+            local anchor = NS.db.keybindAnchor or "TOPRIGHT"
+            local ox = NS.db.keybindOffsetX or -5
+            local oy = NS.db.keybindOffsetY or -5
+            NS.C_Timer_After(0, function()
+                hk:ClearAllPoints()
+                hk:SetPoint(anchor, ox, oy)
+            end)
+        else
+            anim.hotkey:Hide()
+        end
+    end
+
+    -- 7. Store references for OnFinished
     anim._sourceBtn = btn
     anim._animType = animType
     anim._isIncoming = false
@@ -1991,19 +2510,40 @@ function NS.PlayCastAnimation(spellID)
     NS._recreateFading = true
 
     -- 8. Start outgoing animation immediately
+    --    Show at alpha 0 first, then play — the animation's SetFromAlpha(1)
+    --    sets opacity on the first rendered frame, preventing a flash where
+    --    both the clone and button are visible at full size.
+    local g = (NS.db.gcdDuration or 1.9) / BASE_GCD
+    anim:SetAlpha(0)
     anim:Show()
-    anim:SetAlpha(1)
     anim.ag:Stop()
-    config(anim.ag)
+    config(anim.ag, g)
     anim.ag:Play()
 
-    -- 8b. POP! particle burst — fire shortly after the fade starts
-    if animType == "POP!" then
-        NS.C_Timer_After(0.08, function()
-            if anim._sourceBtn then
-                FirePopBurst(btn)
+    -- 8b. Particle burst — fires based on per-animation particle config
+    local animKey = NS.AnimKeyPrefix(animType)
+    local particlesOn = NS.db[animKey .. "Particles"]
+    local particleStyle = NS.db[animKey .. "ParticleStyle"] or "Confetti"
+    local particlePalette = NS.db[animKey .. "ParticlePalette"] or "Confetti"
+    local particleTiming = NS.db[animKey .. "ParticleTiming"] or "On Cast"
+
+    if particlesOn and particleStyle ~= "None" then
+        if particleTiming == "Specific" then
+            local delay = NS.db[animKey .. "ParticleDelay"] or 0.3
+            NS.C_Timer_After(delay, function()
+                NS.FireParticleBurst(btn, particleStyle, particlePalette, g)
+            end)
+        else
+            if particleTiming == "On Cast" or particleTiming == "Both" then
+                NS.FireParticleBurst(btn, particleStyle, particlePalette, g)
             end
-        end)
+            if particleTiming == "On Animation End" or particleTiming == "Both" then
+                anim._fireParticlesOnEnd = true
+                anim._particleStyle = particleStyle
+                anim._particlePalette = particlePalette
+                anim._particleGcdScale = g
+            end
+        end
     end
 
     -- 9. Defer incoming clone creation — the SBA API needs a frame to
@@ -2051,18 +2591,16 @@ function NS.PlayCastAnimation(spellID)
             incoming:SetPoint("CENTER", btn, "CENTER", ox, oy)
             incoming.icon:SetTexture(nextTex)
 
-            -- Keybind text
             if incoming.hotkey then
-                if btn.hotkey and NS.db.showKeybind then
-                    local font, fontSize, flags = btn.hotkey:GetFont()
-                    if font then incoming.hotkey:SetFont(font, fontSize, flags) end
+                local keyText = nextSpellID and keybindCache[nextSpellID]
+                if not keyText or keyText == "" then keyText = "#" end
+                if NS.db.showKeybind then
                     incoming.hotkey:ClearAllPoints()
                     incoming.hotkey:SetPoint(NS.db.keybindAnchor or "TOPRIGHT",
                         NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
-                    incoming.hotkey:SetText(btn.hotkey:GetText() or "")
+                    incoming.hotkey:SetText(keyText)
                     incoming.hotkey:Show()
                 else
-                    incoming.hotkey:SetText("")
                     incoming.hotkey:Hide()
                 end
             end
@@ -2097,16 +2635,154 @@ function NS.PlayCastAnimation(spellID)
             incoming._sourceBtn = btn
             incoming._animType = animType
             incoming._isIncoming = true
+            incoming._gcdScale = g
 
             -- Ensure incoming renders ON TOP of outgoing during overlap
             incoming:SetFrameLevel(anim:GetFrameLevel() + 5)
             incoming:Show()
             incoming:SetAlpha(0)  -- invisible during start delay period
             incoming.ag:Stop()
-            -- Subtract the 0.05s we already waited from the delay
-            local adjustedDelay = math.max(0, reverseConfig.delay - 0.05)
-            reverseConfig.setup(incoming.ag, adjustedDelay)
+            local adjustedDelay = math.max(0, reverseConfig.delay * g - 0.05)
+            reverseConfig.setup(incoming.ag, adjustedDelay, g)
             incoming.ag:Play()
         end)
+    end
+end
+
+----------------------------------------------------------------
+-- Preview mode (/bs preview — showcases all visual effects)
+----------------------------------------------------------------
+do
+    local previewTicker = nil
+    local previewGlowTicker = nil
+    local previewStep = 0
+
+    -- Importance tiers to cycle through on priority icons
+    local IMPORTANCE_KEYS = { "AUTO_ATTACK", "FILLER", "SHORT_CD", "LONG_CD", "MAJOR_CD" }
+
+    -- Demo spell textures (generic class-neutral icons)
+    local DEMO_TEXTURES = {
+        136048,   -- Spell_Nature_StarFall
+        135753,   -- Spell_Fire_FlameBolt
+        136197,   -- Spell_Nature_Lightning
+        132369,   -- Spell_Shadow_DemonBreath
+        134400,   -- Spell_Frost_FrostBolt02
+        135963,   -- Spell_Shadow_ShadowBolt
+    }
+
+    function NS.StartPreviewMode()
+        if previewTicker then
+            print("|cFF66B8D9BetterSBA|r: Preview already running — |cFFFFCC00/bs stop|r to end")
+            return
+        end
+
+        local btn = NS.mainButton
+        if not btn then
+            print("|cFF66B8D9BetterSBA|r: Main button not ready")
+            return
+        end
+
+        -- Show button + priority display unconditionally
+        btn:Show()
+        btn:SetAlpha(1)
+        if NS.priorityFrame then
+            NS.priorityFrame:Show()
+            NS.priorityFrame:SetAlpha(1)
+        end
+
+        -- Set up demo textures on priority icons
+        local icons = NS._priorityIcons
+        if icons then
+            for i = 1, math.min(#icons, #DEMO_TEXTURES) do
+                icons[i].tex:SetTexture(DEMO_TEXTURES[i])
+                icons[i].tex:SetDesaturated(false)
+                icons[i].tex:SetVertexColor(1, 1, 1)
+                icons[i]:Show()
+            end
+            NS.LayoutPriority()
+        end
+
+        print("|cFF66B8D9BetterSBA|r: |cFF44FF44Preview mode ON|r — type |cFFFFCC00/bs stop|r to end")
+
+        previewStep = 0
+
+        local previewG = (NS.db.gcdDuration or 1.9) / BASE_GCD
+        previewTicker = NS.C_Timer_NewTicker(2.5 * previewG, function()
+            previewStep = previewStep + 1
+
+            -- Play cast animation
+            NS.PlayCastAnimation(NS.SBA_SPELL_ID)
+
+            -- Cycle importance border colors on priority icons
+            if icons and NS.db.importanceBorders then
+                for i = 1, math.min(#icons, #DEMO_TEXTURES) do
+                    local icon = icons[i]
+                    if icon:IsShown() then
+                        local impIdx = ((previewStep + i - 1) % #IMPORTANCE_KEYS) + 1
+                        local impKey = IMPORTANCE_KEYS[impIdx]
+                        local color = NS.SPELL_IMPORTANCE[impKey]
+                        if icon.Border then
+                            icon.Border:SetVertexColor(color[1], color[2], color[3], 1)
+                            icon.Border:Show()
+                        elseif icon.borderTex then
+                            icon.borderTex:SetColorTexture(color[1], color[2], color[3], 1)
+                        end
+                    end
+                end
+            end
+        end)
+
+        -- Border color cycling ticker (cycles importance colors on borders at 1.5s)
+        previewGlowTicker = NS.C_Timer_NewTicker(1.5, function()
+            if not icons then return end
+            previewStep = previewStep + 1
+
+            for i = 1, math.min(#icons, #DEMO_TEXTURES) do
+                local icon = icons[i]
+                if icon:IsShown() then
+                    local impIdx = ((previewStep + i) % #IMPORTANCE_KEYS) + 1
+                    local impKey = IMPORTANCE_KEYS[impIdx]
+                    local brightColor = NS.SPELL_IMPORTANCE_BRIGHT[impKey]
+
+                    if icon.Border then
+                        icon.Border:SetVertexColor(brightColor[1], brightColor[2], brightColor[3], 1)
+                        icon.Border:Show()
+                    elseif icon.borderTex then
+                        icon.borderTex:SetColorTexture(brightColor[1], brightColor[2], brightColor[3], 1)
+                    end
+                end
+            end
+        end)
+
+        -- Fire initial burst immediately
+        NS.PlayCastAnimation(NS.SBA_SPELL_ID)
+    end
+
+    function NS.StopPreviewMode()
+        if not previewTicker and not previewGlowTicker then
+            print("|cFF66B8D9BetterSBA|r: No preview running")
+            return
+        end
+
+        if previewTicker then
+            previewTicker:Cancel()
+            previewTicker = nil
+        end
+        if previewGlowTicker then
+            previewGlowTicker:Cancel()
+            previewGlowTicker = nil
+        end
+
+        -- Reset priority icon borders
+        local icons = NS._priorityIcons
+        if icons then
+            for i = 1, #icons do
+                icons[i]._wantGlow = false
+            end
+        end
+
+        -- Restore normal display state
+        NS.UpdateNow()
+        print("|cFF66B8D9BetterSBA|r: |cFFFF4444Preview mode OFF|r")
     end
 end

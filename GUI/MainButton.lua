@@ -383,19 +383,41 @@ local function UpdateButton(btn, spellID)
         end
     end
 
-    -- Range coloring
-    if NS.db.rangeColoring and NS.C_Spell and NS.C_Spell.IsSpellInRange then
-        local inRange = NS.C_Spell.IsSpellInRange(spellID, "target")
-        if inRange == false then
-            btn.icon:SetVertexColor(T.OUT_OF_RANGE[1], T.OUT_OF_RANGE[2], T.OUT_OF_RANGE[3])
+    -- Spell usability check (grey out when not usable — OOM, etc.)
+    local usabilityDimmed = false
+    if NS.db.spellUsability and C_Spell and C_Spell.IsSpellUsable then
+        local isUsable = C_Spell.IsSpellUsable(spellID)
+        if not isUsable then
+            btn.icon:SetVertexColor(0.4, 0.4, 0.4)
             btn.icon:SetDesaturated(true)
+            usabilityDimmed = true
+        end
+    end
+
+    -- Range coloring (overrides usability dim if out of range)
+    if not usabilityDimmed then
+        if NS.db.rangeColoring and NS.C_Spell and NS.C_Spell.IsSpellInRange then
+            local inRange = NS.C_Spell.IsSpellInRange(spellID, "target")
+            if inRange == false then
+                btn.icon:SetVertexColor(T.OUT_OF_RANGE[1], T.OUT_OF_RANGE[2], T.OUT_OF_RANGE[3])
+                btn.icon:SetDesaturated(true)
+                -- Out-of-range sound cue (throttled to avoid spam)
+                if NS.db.outOfRangeSound then
+                    local now = GetTime()
+                    if not btn._lastRangeSound or (now - btn._lastRangeSound) > 1.0 then
+                        btn._lastRangeSound = now
+                        PlaySound(8959, "SFX") -- SOUNDKIT.IG_PLAYER_INVITE_DECLINE (subtle error beep)
+                    end
+                end
+            else
+                btn.icon:SetVertexColor(1, 1, 1)
+                btn.icon:SetDesaturated(false)
+                btn._lastRangeSound = nil
+            end
         else
             btn.icon:SetVertexColor(1, 1, 1)
             btn.icon:SetDesaturated(false)
         end
-    else
-        btn.icon:SetVertexColor(1, 1, 1)
-        btn.icon:SetDesaturated(false)
     end
 end
 
@@ -587,10 +609,10 @@ function NS.ApplyButtonSettings()
     if not btn then return end
     if NS.InCombatLockdown() then
         NS._pendingButtonSettings = true
-    else
-        btn:SetSize(NS.db.buttonSize, NS.db.buttonSize)
-        btn:SetScale(NS.db.scale)
+        return
     end
+    btn:SetSize(NS.db.buttonSize, NS.db.buttonSize)
+    btn:SetScale(NS.db.scale)
     if btn.hotkey then
         btn.hotkey:SetFont(
             NS.ResolveFontPath("keybindFont"),

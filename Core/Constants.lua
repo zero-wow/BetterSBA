@@ -47,6 +47,22 @@ NS.SPELL_IMPORTANCE_BRIGHT = {
 -- Icon
 NS.ICON_PATH = "Interface\\AddOns\\BetterSBA\\IMG\\BetterSBA"
 
+-- Nerd Font (for special glyphs: stars, arrows, play/stop, etc.)
+NS.NERD_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\CascadiaCodeNF-SemiBold.ttf"
+
+-- Glyph constants (UTF-8 sequences for Nerd Font characters)
+NS.GLYPH_STAR_FILLED  = "\226\152\133"   -- ★ U+2605
+NS.GLYPH_STAR_EMPTY   = "\226\152\134"   -- ☆ U+2606
+NS.GLYPH_TRI_DOWN     = "\226\150\190"   -- ▾ U+25BE
+NS.GLYPH_TRI_RIGHT    = "\226\150\184"   -- ▸ U+25B8
+NS.GLYPH_PLAY         = "\226\150\182"   -- ▶ U+25B6
+NS.GLYPH_STOP         = "\226\150\160"   -- ■ U+25A0
+NS.GLYPH_DIAMOND      = "\226\151\134"   -- ◆ U+25C6
+NS.GLYPH_CHEVRON_DOWN = "\226\150\188"   -- ▼ U+25BC
+NS.GLYPH_CHEVRON_UP   = "\226\150\178"   -- ▲ U+25B2
+NS.GLYPH_LOCK         = "\226\150\160"   -- ■ U+25A0 (solid = locked)
+NS.GLYPH_UNLOCK       = "\226\150\161"   -- □ U+25A1 (hollow = unlocked)
+
 -- API Cache
 NS.CreateFrame = CreateFrame
 NS.UIParent = UIParent
@@ -91,6 +107,7 @@ NS.defaults = {
     enableTargeting = true,
     enablePetAttack = true,
     enableChannelProtection = true,
+    interceptionType = "Keybind",
 
     -- Class-specific combat options (off-GCD abilities appended after /cast SBA)
     enableDemonSpikes = true,       -- Vengeance DH: /cast Demon Spikes
@@ -105,6 +122,8 @@ NS.defaults = {
     showKeybind = true,
     showCooldown = true,
     rangeColoring = true,
+    outOfRangeSound = false,
+    spellUsability = false,
     keybindFontSize = 12,
     keybindOffsetX = -5,
     keybindOffsetY = -5,
@@ -121,11 +140,15 @@ NS.defaults = {
     priorityKeybindOffsetY = -5,
     priorityKeybindAnchor = "TOPRIGHT",
     priorityDetached = false,
+    priorityLocked = true,
     priorityFreePosition = nil,
+    priorityBindFrame = "BetterSBA_MainButton",
+    priorityMyPoint = "LEFT",
+    priorityTheirPoint = "RIGHT",
     priorityOffsetX = 0,
     priorityOffsetY = 0,
     showActiveGlow = true,
-    configPanelHeight = 600,
+    configPanelHeight = 620,
 
     -- Visibility
     onlyInCombat = false,
@@ -184,6 +207,9 @@ NS.defaults = {
     sectionColorProfiles   = { 0.85, 0.65, 0.30, 1.0 },
     -- (subColor* keys removed — sub-headers now use parent section color)
 
+    -- Theme
+    themePreset = "Default",
+
     -- Config panel font
     configPanelFont = "Friz Quadrata TT",
     configPanelOutline = "",
@@ -192,7 +218,26 @@ NS.defaults = {
     -- Animation
     castAnimation = "DRIFT",
     animateIncoming = false,
+    gcdDuration = 1.9,
     animHideButton = true,
+
+    -- Particle system (per-animation: <animKey>Particles, <animKey>ParticleTiming, etc.)
+    -- POP! has particles ON by default, all others OFF
+    driftParticles = false,  driftParticleTiming = "On Cast",  driftParticleStyle = "Confetti",  driftParticlePalette = "Confetti",
+    pulseParticles = false,  pulseParticleTiming = "On Cast",  pulseParticleStyle = "Confetti",  pulseParticlePalette = "Confetti",
+    vortexParticles = false, vortexParticleTiming = "On Cast",  vortexParticleStyle = "Confetti",  vortexParticlePalette = "Confetti",
+    zoomParticles  = false,  zoomParticleTiming  = "On Cast",  zoomParticleStyle  = "Confetti",  zoomParticlePalette  = "Confetti",
+    slamParticles  = false,  slamParticleTiming  = "On Cast",  slamParticleStyle  = "Confetti",  slamParticlePalette  = "Confetti",
+    popParticles   = true,   popParticleTiming   = "On Cast",  popParticleStyle   = "Confetti",  popParticlePalette   = "Confetti",
+    burstParticles = true,   burstParticleTiming = "On Cast",  burstParticleStyle = "Sparks",    burstParticlePalette = "Gold",
+    driftParticleDelay = 0.3,  pulseParticleDelay = 0.3,  vortexParticleDelay = 0.3,
+    zoomParticleDelay = 0.3,   slamParticleDelay = 0.3,   popParticleDelay = 0.3,
+    burstParticleDelay = 0.3,  fadeParticleDelay = 0.3,   flipParticleDelay = 0.3,
+    riseParticleDelay = 0.3,   scatterParticleDelay = 0.3,
+    fadeParticles  = false,  fadeParticleTiming  = "On Cast",  fadeParticleStyle  = "Confetti",  fadeParticlePalette  = "Confetti",
+    flipParticles  = false,  flipParticleTiming  = "On Cast",  flipParticleStyle  = "Confetti",  flipParticlePalette  = "Confetti",
+    riseParticles  = false,  riseParticleTiming  = "On Cast",  riseParticleStyle  = "Confetti",  riseParticlePalette  = "Confetti",
+    scatterParticles = false, scatterParticleTiming = "On Cast", scatterParticleStyle = "Confetti", scatterParticlePalette = "Confetti",
 
     -- Config panel animation toggles
     cfgAnimTransitions = true,
@@ -208,6 +253,10 @@ NS.defaults = {
     minimapIconSize = 19,
     minimapIconOffsetX = 0,
     minimapIconOffsetY = 0,
+
+    -- GC
+    enableGC = false,
+    gcTargetMB = 0,
 
     -- Debug
     debug = false,
@@ -248,6 +297,60 @@ NS.THEME = {
 }
 
 ----------------------------------------------------------------
+-- Theme presets
+NS.THEME_PRESETS = {
+    Default = {
+        ACCENT = { 0.40, 0.72, 0.85 },
+        ACCENT_DIM = { 0.28, 0.52, 0.62 },
+        ACCENT_BRIGHT = { 0.55, 0.85, 0.95 },
+        TOGGLE_ON = { 0.30, 0.72, 0.50 },
+        NEON_NEXT = { 0.00, 1.00, 0.85 },
+    },
+    Obsidian = {
+        ACCENT = { 0.55, 0.55, 0.60 },
+        ACCENT_DIM = { 0.35, 0.35, 0.40 },
+        ACCENT_BRIGHT = { 0.70, 0.70, 0.75 },
+        TOGGLE_ON = { 0.50, 0.55, 0.60 },
+        NEON_NEXT = { 0.80, 0.85, 0.90 },
+    },
+    Arcane = {
+        ACCENT = { 0.65, 0.40, 0.95 },
+        ACCENT_DIM = { 0.45, 0.28, 0.68 },
+        ACCENT_BRIGHT = { 0.80, 0.55, 1.00 },
+        TOGGLE_ON = { 0.55, 0.35, 0.85 },
+        NEON_NEXT = { 0.70, 0.30, 1.00 },
+    },
+    Fel = {
+        ACCENT = { 0.40, 0.85, 0.30 },
+        ACCENT_DIM = { 0.28, 0.60, 0.22 },
+        ACCENT_BRIGHT = { 0.55, 1.00, 0.40 },
+        TOGGLE_ON = { 0.35, 0.80, 0.25 },
+        NEON_NEXT = { 0.30, 1.00, 0.20 },
+    },
+    Blood = {
+        ACCENT = { 0.85, 0.25, 0.25 },
+        ACCENT_DIM = { 0.60, 0.18, 0.18 },
+        ACCENT_BRIGHT = { 1.00, 0.40, 0.40 },
+        TOGGLE_ON = { 0.80, 0.30, 0.30 },
+        NEON_NEXT = { 1.00, 0.20, 0.20 },
+    },
+    Gold = {
+        ACCENT = { 0.90, 0.75, 0.30 },
+        ACCENT_DIM = { 0.65, 0.52, 0.20 },
+        ACCENT_BRIGHT = { 1.00, 0.88, 0.45 },
+        TOGGLE_ON = { 0.85, 0.70, 0.25 },
+        NEON_NEXT = { 1.00, 0.85, 0.00 },
+    },
+    Frost = {
+        ACCENT = { 0.50, 0.80, 1.00 },
+        ACCENT_DIM = { 0.35, 0.55, 0.72 },
+        ACCENT_BRIGHT = { 0.65, 0.90, 1.00 },
+        TOGGLE_ON = { 0.40, 0.75, 0.90 },
+        NEON_NEXT = { 0.30, 0.70, 1.00 },
+    },
+}
+NS.THEME_PRESET_ORDER = { "Default", "Obsidian", "Arcane", "Fel", "Blood", "Gold", "Frost" }
+
 -- Spell substitution table: maps bad/obsolete spell IDs from the
 -- SBA API to the correct spell IDs.  Checked BEFORE auto-resolution
 -- (FindSpellOverrideByID), so manual entries always win.
@@ -262,13 +365,83 @@ NS.SPELL_SUBSTITUTIONS = {
 }
 
 -- Cast animation types
-NS.CAST_ANIMATIONS = { "NONE", "DRIFT", "PULSE", "SPIN", "ZOOM", "SLAM", "POP!" }
+NS.CAST_ANIMATIONS = { "NONE", "DRIFT", "PULSE", "VORTEX", "ZOOM", "SLAM", "POP!", "BURST", "FADE", "FLIP", "RISE", "SCATTER" }
+
+-- Apply theme preset to the active THEME table
+function NS.ApplyThemePreset(presetName)
+    local preset = NS.THEME_PRESETS[presetName]
+    if not preset then return end
+    local T = NS.THEME
+    for key, color in NS.pairs(preset) do
+        if T[key] then
+            T[key][1] = color[1]
+            T[key][2] = color[2]
+            T[key][3] = color[3]
+            -- Preserve existing alpha
+        end
+    end
+end
+
+-- Animation key normalization: "POP!" → "pop", "DRIFT" → "drift"
+function NS.AnimKeyPrefix(animType)
+    return (animType or ""):gsub("[^%a]", ""):lower()
+end
+
+-- Particle system options
+NS.PARTICLE_STYLES = { "None", "Random", "Confetti", "Lasers", "Sparks", "Squares" }
+NS.PARTICLE_TIMINGS = { "On Cast", "On Animation End", "Both" }
+-- "Specific" is added dynamically by CreateTimingDropdown as an input entry
+
+-- Per-style particle defaults: when user picks a style, timing + palette auto-switch
+NS.PARTICLE_STYLE_DEFAULTS = {
+    None     = { timing = "On Cast",           palette = "Confetti" },
+    Confetti = { timing = "On Cast",           palette = "Confetti" },
+    Lasers   = { timing = "On Cast",           palette = "Neon" },
+    Random   = { timing = "On Cast",           palette = "Confetti" },
+    Sparks   = { timing = "On Animation End",  palette = "Gold" },
+    Squares  = { timing = "Both",              palette = "Magic" },
+}
+
+-- Palette definitions moved to Core/Palettes.lua
+
+----------------------------------------------------------------
+-- AddonCompartment (minimap menu in 12.x+)
+----------------------------------------------------------------
+function BetterSBA_OnAddonCompartmentClick(addonName, buttonName)
+    if buttonName == "RightButton" then
+        NS.Config:Toggle()
+    else
+        NS.Config:Toggle()
+    end
+end
+
+function BetterSBA_OnAddonCompartmentEnter(addonName, menuButtonFrame)
+    GameTooltip:SetOwner(menuButtonFrame, "ANCHOR_LEFT")
+    GameTooltip:SetText("|cFF66B8D9Better|r|cFFFFFFFFSBA|r")
+    GameTooltip:AddLine("Click to open settings", 0.7, 0.7, 0.7)
+    GameTooltip:Show()
+end
+
+function BetterSBA_OnAddonCompartmentLeave()
+    GameTooltip:Hide()
+end
+
+-- Interception type options
+NS.INTERCEPTION_TYPES = { "Keybind", "Click", "Both" }
 
 -- Priority display position options
 NS.PRIORITY_POSITIONS = { "RIGHT", "LEFT", "TOP", "BOTTOM", "TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT" }
 
--- Keybind anchor point options
+-- Anchor point options (shared by keybind anchors and priority binding)
+NS.ANCHOR_POINTS = { "TOPLEFT", "TOP", "TOPRIGHT", "LEFT", "CENTER", "RIGHT", "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT" }
 NS.KEYBIND_ANCHORS = { "TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT", "TOP", "BOTTOM", "LEFT", "RIGHT", "CENTER" }
+
+-- Frame presets for Priority Display binding
+NS.PRIORITY_BIND_FRAMES = {
+    "BetterSBA_MainButton",
+    "UIParent",
+    "BetterSBA_PriorityFrame",
+}
 
 -- Keybind abbreviations
 NS.KEYBIND_SUBS = {

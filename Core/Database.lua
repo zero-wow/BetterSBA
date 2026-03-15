@@ -7,6 +7,9 @@ local GLOBAL_KEYS = {
     profiles = true,
     charProfiles = true,
     minimap = true,
+    palettes = true,
+    palettePaths = true,
+    paletteFavorites = true,
 }
 
 ----------------------------------------------------------------
@@ -52,6 +55,14 @@ local function MigrateProfileSettings(profile)
     profile.subColorLDB = nil
     profile.subColorImportance = nil
 
+    -- Migrate enableClickIntercept boolean to interceptionType string
+    if profile.enableClickIntercept == true then
+        profile.interceptionType = "Both"
+        profile.enableClickIntercept = nil
+    elseif profile.enableClickIntercept == false then
+        profile.enableClickIntercept = nil
+    end
+
     -- Clean up session-only state
     profile._queueLocked = nil
     profile.queueDetached = false     -- legacy key cleanup
@@ -90,6 +101,30 @@ local function MigrateProfileSettings(profile)
             profile[old] = nil
         elseif profile[old] ~= nil then
             profile[old] = nil  -- new key already set, just clean up old
+        end
+    end
+
+    -- Rename particle style "Stars" → "Squares"
+    for key, val in pairs(profile) do
+        if NS.type(key) == "string" and key:find("ParticleStyle$") and val == "Stars" then
+            profile[key] = "Squares"
+        end
+    end
+
+    -- Rename animation "SPIN" → "VORTEX"
+    if profile.castAnimation == "SPIN" then
+        profile.castAnimation = "VORTEX"
+    end
+    local SPIN_TO_VORTEX = {
+        spinParticles = "vortexParticles",
+        spinParticleTiming = "vortexParticleTiming",
+        spinParticleStyle = "vortexParticleStyle",
+        spinParticlePalette = "vortexParticlePalette",
+    }
+    for old, new in pairs(SPIN_TO_VORTEX) do
+        if profile[old] ~= nil then
+            if profile[new] == nil then profile[new] = profile[old] end
+            profile[old] = nil
         end
     end
 end
@@ -149,6 +184,9 @@ function NS:InitializeDatabase()
     root.profiles = root.profiles or {}
     root.charProfiles = root.charProfiles or {}
     root.minimap = root.minimap or { hide = false }
+    root.palettes = root.palettes or {}
+    root.palettePaths = root.palettePaths or {}
+    root.paletteFavorites = root.paletteFavorites or {}
 
     -- Ensure at least one profile exists
     if not next(root.profiles) then
@@ -382,6 +420,157 @@ end
 function NS:HasCharProfile()
     local charKey = NS.GetCharKey()
     return self.dbRoot.charProfiles[charKey] ~= nil
+end
+
+----------------------------------------------------------------
+-- Palette access helpers (palettes live at root level, shared)
+----------------------------------------------------------------
+function NS:GetPalette(name)
+    if not name then return nil end
+    if name == "Random" then
+        local list = NS.BUILTIN_PALETTE_ORDER
+        local pick = list[math.random(#list)]
+        if pick == "Class" then pick = list[1] end
+        return self:GetPalette(pick)
+    end
+    if name == "Class" then
+        local _, classToken = UnitClass("player")
+        local cc = RAID_CLASS_COLORS and classToken and RAID_CLASS_COLORS[classToken]
+        if cc then
+            return {
+                { cc.r, cc.g, cc.b },
+                { math.min(1, cc.r * 1.3), math.min(1, cc.g * 1.3), math.min(1, cc.b * 1.3) },
+                { cc.r * 0.7, cc.g * 0.7, cc.b * 0.7 },
+                { math.min(1, cc.r * 0.5 + 0.5), math.min(1, cc.g * 0.5 + 0.5), math.min(1, cc.b * 0.5 + 0.5) },
+            }
+        end
+    end
+    -- User palettes first, then built-in
+    if self.dbRoot and self.dbRoot.palettes and self.dbRoot.palettes[name] then
+        return self.dbRoot.palettes[name]
+    end
+    return NS.BUILTIN_PALETTES[name]
+end
+
+function NS:GetPaletteList()
+    local list = {}
+    local seen = {}
+    -- Built-in palettes in defined order
+    for _, name in NS.ipairs(NS.BUILTIN_PALETTE_ORDER) do
+        list[#list + 1] = name
+        seen[name] = true
+    end
+    -- User palettes alphabetically
+    if self.dbRoot and self.dbRoot.palettes then
+        local userNames = {}
+        for name in NS.pairs(self.dbRoot.palettes) do
+            if not seen[name] then
+                userNames[#userNames + 1] = name
+            end
+        end
+        table.sort(userNames)
+        for _, name in NS.ipairs(userNames) do
+            list[#list + 1] = name
+        end
+    end
+    return list
+end
+
+function NS:SavePalette(name, colors, path)
+    if not name or name == "" or not colors then return false end
+    if not self.dbRoot then return false end
+    self.dbRoot.palettes[name] = colors
+    if path then
+        self.dbRoot.palettePaths[name] = path
+    end
+    return true
+end
+
+function NS:DeletePalette(name)
+    if not name or NS.BUILTIN_PALETTES[name] then return false end
+    if not self.dbRoot or not self.dbRoot.palettes then return false end
+    self.dbRoot.palettes[name] = nil
+    if self.dbRoot.paletteFavorites then
+        self.dbRoot.paletteFavorites[name] = nil
+    end
+    -- Clean up palette path
+    if self.dbRoot.palettePaths then
+        self.dbRoot.palettePaths[name] = nil
+    end
+    -- Revert any animation using this palette to "Confetti"
+    if self.db then
+        for _, animType in NS.ipairs(NS.CAST_ANIMATIONS) do
+            if animType ~= "NONE" then
+                local key = NS.AnimKeyPrefix(animType) .. "ParticlePalette"
+                if self.db[key] == name then
+                    self.db[key] = "Confetti"
+                end
+            end
+        end
+    end
+    return true
+end
+
+----------------------------------------------------------------
+-- Palette path helpers
+----------------------------------------------------------------
+function NS:GetPalettePath(name)
+    if not name then return nil end
+    if NS.BUILTIN_PALETTE_PATHS[name] then
+        return NS.BUILTIN_PALETTE_PATHS[name]
+    end
+    if self.dbRoot and self.dbRoot.palettePaths then
+        return self.dbRoot.palettePaths[name]
+    end
+    return nil
+end
+
+function NS:SetPalettePath(name, path)
+    if not name or not self.dbRoot then return end
+    self.dbRoot.palettePaths = self.dbRoot.palettePaths or {}
+    if path and path ~= "" then
+        self.dbRoot.palettePaths[name] = path
+    else
+        self.dbRoot.palettePaths[name] = nil
+    end
+end
+
+----------------------------------------------------------------
+-- Palette favorites
+----------------------------------------------------------------
+local BUILTIN_FAVORITES = {
+    Confetti = true, Magic = true, Neon = true, Fire = true,
+    Ice = true, Shadow = true, Rainbow = true, Gold = true, Class = true,
+}
+
+function NS:IsPaletteFavorite(name)
+    if not name then return false end
+    if self.dbRoot and self.dbRoot.paletteFavorites and self.dbRoot.paletteFavorites[name] ~= nil then
+        return self.dbRoot.paletteFavorites[name]
+    end
+    return BUILTIN_FAVORITES[name] or false
+end
+
+function NS:SetPaletteFavorite(name, isFav)
+    if not name or not self.dbRoot then return end
+    self.dbRoot.paletteFavorites = self.dbRoot.paletteFavorites or {}
+    if BUILTIN_FAVORITES[name] then
+        if isFav then
+            self.dbRoot.paletteFavorites[name] = nil
+        else
+            self.dbRoot.paletteFavorites[name] = false
+        end
+    else
+        if isFav then
+            self.dbRoot.paletteFavorites[name] = true
+        else
+            self.dbRoot.paletteFavorites[name] = nil
+        end
+    end
+end
+
+function NS:IsBuiltinPalette(name)
+    return NS.BUILTIN_PALETTES[name] ~= nil or name == "Class"
 end
 
 ----------------------------------------------------------------
