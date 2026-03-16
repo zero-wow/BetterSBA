@@ -1,6 +1,6 @@
 <p align="center">
   <img src="https://img.shields.io/badge/WoW-Midnight_12.x-blue?style=flat-square&logo=battle.net&logoColor=white" />
-  <img src="https://img.shields.io/badge/version-v0006-66B8D9?style=flat-square" />
+  <img src="https://img.shields.io/badge/version-v0008-66B8D9?style=flat-square" />
   <img src="https://img.shields.io/badge/license-MIT-444?style=flat-square" />
 </p>
 
@@ -80,6 +80,8 @@ Shows your SBA rotation pool as icons beside the main button. Configurable icon 
 ### Cast Animations
 5 animation types: **Drift**, **Pulse**, **Spin**, **Zoom**, **Slam**. Two styles &mdash; **Keep** (button stays, clone animates away) or **Recreate** (old icon animates out, new icon fades in). Live preview button in config.
 
+Animated clone keybind text now has its own tuning controls for edge-case setups. The default alignment is intended to be correct for the normal display and common scaling path, but if your Masque skin, font choice, or scale stack still makes the clone hotkey sit slightly off, you can correct it directly in the Animation section with **Clone Keybind X**, **Clone Keybind Y**, **Clone Font**, **Clone Outline**, and **Clone Size**.
+
 ### Tank Off-GCD Abilities
 Auto-detects your tank spec and appends class-specific off-GCD abilities after `/cast SBA`: Shield Block, Ignore Pain (Warrior), Ironfur (Druid), Shield of the Righteous (Paladin), Rune Tap (Death Knight), Purifying Brew (Monk). Each ability has an individual toggle in the Combat Assist section.
 
@@ -136,7 +138,7 @@ The config panel (`/bs`) is organized into 8 sections:
 | Section | What It Controls |
 |---------|-----------------|
 | **Combat Assist** | Auto-target enemies, pet attack, auto-dismount, channel protection, tank off-GCD abilities (per-spec), live macro preview |
-| **Appearance** | Cast animation type &amp; style, per-context font system (global, config panel, keybind, queue label, queue keybind, pause symbol, pause reason) |
+| **Appearance** | Cast animation type &amp; style, animated clone keybind controls, per-context font system (global, config panel, keybind, queue label, queue keybind, pause symbol, pause reason) |
 | **Active Display** | Button size, show/hide keybind text, keybind X/Y offset, show/hide cooldown spiral, range coloring toggle, button background color |
 | **Queue Display** | Show/hide rotation queue, icon size, scale, anchor position (8 options), detach &amp; drag-to-move, X/Y offset, keybind labels with X/Y offset, background &amp; border colors |
 | **Visibility** | Combat-only mode, hide in vehicle, button out-of-combat alpha, queue out-of-combat alpha |
@@ -194,6 +196,41 @@ The addon intercepts your existing SBA keybind using `SetOverrideBindingClick`, 
 Macro lines are configurable and rebuilt dynamically out of combat. Changes made during combat are queued and applied when you leave combat.
 
 **Zero-GC Architecture** &mdash; BetterSBA never calls `collectgarbage()`. All caches use reusable tables and event-driven invalidation to minimize memory churn. Lua's built-in incremental GC handles collection naturally without forced steps that cause microstutters.
+
+---
+
+## Animated Clone Keybind Alignment
+
+The cast animation system uses a virtual animated clone of the Active Display so the outgoing icon and its keybind text can move without touching the secure casting button.
+
+For most setups, the default clone keybind alignment should now be correct without any extra work. If your clone hotkey still looks slightly off, it is usually caused by a skin, font, or scale combination changing the apparent icon bounds during the animation.
+
+If that happens, go to:
+
+- `/bs`
+- `Appearance`
+- `Clone Keybind X`
+- `Clone Keybind Y`
+
+These are **adjustments added on top of your main Active Display keybind offset**, not replacements.
+
+Use them slowly:
+
+- `+X` moves the animated clone keybind **right**
+- `-X` moves it **left**
+- `+Y` moves it **up**
+- `-Y` moves it **down**
+
+The safest way to tune it is 1 pixel at a time while using the animation preview button or a live cast until the clone text visually matches the main display.
+
+If you still see a mismatch, you can also tune:
+
+- `Clone Font`
+- `Clone Outline`
+- `Clone Size`
+- `Masque Skin Animated Clone`
+
+Those controls only affect the virtual animation clone. They do not change the secure SBA button or the main Active Display keybind text.
 
 ---
 
