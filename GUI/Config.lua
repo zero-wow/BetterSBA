@@ -1973,8 +1973,8 @@ function NS.Config:Create()
         "Range: " .. N .. "24" .. R .. " to " .. N .. "80" .. R .. " pixels.",
         "The " .. U .. "Priority Display" .. R .. " repositions to match.",
     }, c)
-    local scaleRow = NS.CreateSlider(c, "Scale", "scale", 0.5, 2.0, 0.05, y, function(val)
-        if NS.mainButton then NS.mainButton:SetScale(val) end
+    local scaleRow = NS.CreateSlider(c, "Scale", "scale", 0.5, 2.0, 0.05, y, function()
+        NS.ApplyButtonSettings()
     end)
     scaleRow:SetSize(halfW3, 32)
     scaleRow:ClearAllPoints()

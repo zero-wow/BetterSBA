@@ -236,7 +236,7 @@ function NS:CreateMainButton()
         scale = math.max(0.5, math.min(2.0, scale))
         scale = tonumber(string.format("%.2f", scale))
         NS.db.scale = scale
-        btn:SetScale(scale)
+        NS.ApplyButtonSettings()
     end)
 
     -- Restore position
