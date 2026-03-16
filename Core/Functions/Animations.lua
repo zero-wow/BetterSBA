@@ -358,12 +358,43 @@ local function PositionKeybindHotkey(hk)
     hk:SetPoint(anchor, parent, anchor, NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5)
 end
 
+local function GetAnimCloneHotkeyFontPath()
+    local db = NS.db or {}
+    return NS.GetFontPath(db.animCloneKeybindFont or db.keybindFont or db.fontFace)
+end
+
+local function GetAnimCloneHotkeyFontOutline()
+    local db = NS.db or {}
+    return NS.GetOutlineFlags(db.animCloneKeybindOutline or db.keybindOutline or db.fontOutline or "OUTLINE")
+end
+
+local function GetAnimCloneHotkeyFontSize()
+    local db = NS.db or {}
+    return db.animCloneKeybindFontSize or db.keybindFontSize or 12
+end
+
+local function ApplyAnimCloneHotkeyFont(hk)
+    if not hk then return end
+    hk:SetFont(GetAnimCloneHotkeyFontPath(), GetAnimCloneHotkeyFontSize(), GetAnimCloneHotkeyFontOutline())
+end
+
+local function GetAnimCloneScaleMultiplier(animType)
+    if animType == "FADE" then
+        return 1
+    end
+    return 1.2
+end
+
 local function PositionAnimCloneHotkey(hk)
     if not hk then return end
     local parent = hk:GetParent()
     local anchor = NS.db.keybindAnchor or "TOPRIGHT"
+    local baseX = NS.db.keybindOffsetX or -5
+    local baseY = NS.db.keybindOffsetY or -5
+    local cloneX = NS.db.animCloneKeybindOffsetX or 0
+    local cloneY = NS.db.animCloneKeybindOffsetY or 0
     hk:ClearAllPoints()
-    hk:SetPoint(anchor, parent, anchor, NS.db.animCloneKeybindOffsetX or -5, NS.db.animCloneKeybindOffsetY or -5)
+    hk:SetPoint(anchor, parent, anchor, baseX + cloneX, baseY + cloneY)
 end
 
 local function LayoutAnimCloneHotkeyFrame(anim)
@@ -422,7 +453,10 @@ local function DebugAnimClone(phase, anim, spellID, sourceBtn)
         "| hotkeyParent:", hkParentType, hkParentName or "nil",
         "| dbAnchor:", NS.db.keybindAnchor or "TOPRIGHT",
         "| dbOffset:", NS.db.keybindOffsetX or -5, NS.db.keybindOffsetY or -5,
-        "| cloneDbOffset:", NS.db.animCloneKeybindOffsetX or -5, NS.db.animCloneKeybindOffsetY or -5)
+        "| cloneDbOffset:", NS.db.animCloneKeybindOffsetX or 0, NS.db.animCloneKeybindOffsetY or 0,
+        "| finalCloneOffset:",
+        (NS.db.keybindOffsetX or -5) + (NS.db.animCloneKeybindOffsetX or 0),
+        (NS.db.keybindOffsetY or -5) + (NS.db.animCloneKeybindOffsetY or 0))
 end
 
 local function ApplyAnimHotkey(anim, spellID)
@@ -430,8 +464,7 @@ local function ApplyAnimHotkey(anim, spellID)
     if not hk then return end
     anim._spellID = spellID
     LayoutAnimCloneHotkeyFrame(anim)
-    hk:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
-        NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+    ApplyAnimCloneHotkeyFont(hk)
     PositionAnimCloneHotkey(hk)
     if NS.db.showKeybind then
         local keyText = spellID and NS.GetKeybindForSpell(spellID)
@@ -448,8 +481,7 @@ function NS.RefreshAnimHotkeys()
     for _, f in NS.ipairs(animPool) do
         if f.hotkey then
             LayoutAnimCloneHotkeyFrame(f)
-            f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
-                NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+            ApplyAnimCloneHotkeyFont(f.hotkey)
             PositionAnimCloneHotkey(f.hotkey)
             if not NS.db.showKeybind then
                 f.hotkey:SetText("")
@@ -637,8 +669,7 @@ local function AcquireAnimFrame()
     local hkFrame = NS.CreateFrame("Frame", nil, f)
     hkFrame:SetFrameLevel(f:GetFrameLevel() + 5)
     f.hotkey = hkFrame:CreateFontString(nil, "OVERLAY")
-    f.hotkey:SetFont(NS.ResolveFontPath("keybindFont"), NS.db.keybindFontSize or 12,
-        NS.ResolveFontOutline("keybindFont", "keybindOutline"))
+    ApplyAnimCloneHotkeyFont(f.hotkey)
     f.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
     f._hkFrame = hkFrame
     LayoutAnimCloneHotkeyFrame(f)
@@ -787,7 +818,7 @@ function NS.PlayCastAnimation(spellID)
     local btnScale = btn:GetScale()
 
     anim:SetSize(size, size)
-    anim:SetScale(btnScale * 1.2)
+    anim:SetScale(btnScale * GetAnimCloneScaleMultiplier(animType))
     anim:ClearAllPoints()
     anim:SetPoint("CENTER", btn, "CENTER")
 

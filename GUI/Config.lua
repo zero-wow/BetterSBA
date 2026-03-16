@@ -666,6 +666,8 @@ function NS.Config:Create()
         cf._contentWidth = contentW
         cf:SetPoint("TOPLEFT", 0, 0)
         cf:Hide()
+        cf._sectionIndex = i
+        cf._subsections = {}
         local dc = SECTIONS[i].dotColor
         cf._sectionColor = dc
         cf._sectionColorBright = { math.min(1, dc[1] * 0.7 + 0.3), math.min(1, dc[2] * 0.7 + 0.3), math.min(1, dc[3] * 0.7 + 0.3), 1 }
@@ -739,12 +741,23 @@ function NS.Config:Create()
         hdr:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yPos)
         hdr:SetTextColor(col[1], col[2], col[3])
         hdr:SetText(text)
+        hdr._sectionIndex = parent._sectionIndex
+        hdr._navY = yPos
+        hdr._baseColor = { col[1], col[2], col[3] }
         local line = parent:CreateTexture(nil, "ARTWORK")
         line:SetHeight(1)
         line:SetColorTexture(col[1], col[2], col[3], 0.4)
         line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
+        hdr._line = line
         subHeaderLines[#subHeaderLines + 1] = line
+        if parent._subsections then
+            parent._subsections[#parent._subsections + 1] = {
+                label = text,
+                y = yPos,
+                header = hdr,
+            }
+        end
         return hdr
     end
 
@@ -1000,20 +1013,23 @@ function NS.Config:Create()
 
     -- Max macro lines: 5 base + up to 2 class abilities (e.g. Prot Warrior has 2)
     local MAX_PREVIEW = 5 + math.max(#activeAbilities, 1)
+    local PREVIEW_FONT_SIZE = 9
+    local PREVIEW_LINE_H = 13
+    local PREVIEW_TOP_PAD = 5
     local previewLineNums = {}
     local previewLines = {}
     for i = 1, MAX_PREVIEW do
         local num = previewPanel:CreateFontString(nil, "OVERLAY")
-        num:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
-        num:SetPoint("TOPRIGHT", previewPanel, "TOPLEFT", GUTTER_W - 4, -6 - (i - 1) * 15)
+        num:SetFont(NS.GetConfigFontPath(), PREVIEW_FONT_SIZE, NS.GetConfigFontOutline())
+        num:SetPoint("TOPRIGHT", previewPanel, "TOPLEFT", GUTTER_W - 4, -PREVIEW_TOP_PAD - (i - 1) * PREVIEW_LINE_H)
         num:SetJustifyH("RIGHT")
         num:SetText(LINENUM_COLOR .. i .. RST)
         num:Hide()
         previewLineNums[i] = num
 
         local fs = previewPanel:CreateFontString(nil, "OVERLAY")
-        fs:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
-        fs:SetPoint("TOPLEFT", previewPanel, "TOPLEFT", GUTTER_W + 6, -6 - (i - 1) * 15)
+        fs:SetFont(NS.GetConfigFontPath(), PREVIEW_FONT_SIZE, NS.GetConfigFontOutline())
+        fs:SetPoint("TOPLEFT", previewPanel, "TOPLEFT", GUTTER_W + 6, -PREVIEW_TOP_PAD - (i - 1) * PREVIEW_LINE_H)
         fs:SetPoint("RIGHT", previewPanel, "RIGHT", -8, 0)
         fs:SetJustifyH("LEFT")
         fs:SetWordWrap(false)
@@ -1090,7 +1106,7 @@ function NS.Config:Create()
         end
 
         -- Resize panel to fit
-        previewPanel:SetHeight(8 + idx * 15)
+        previewPanel:SetHeight(6 + idx * PREVIEW_LINE_H)
     end
 
     local function RefreshAnnotLayout()
@@ -1107,7 +1123,7 @@ function NS.Config:Create()
             annotBtn._lbl:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
         end
         local extra = showAnnotations and ANNOT_DESC_H or 0
-        local totalY = math.abs(previewBaseY) + extra + (8 + MAX_PREVIEW * 15) + 8
+        local totalY = math.abs(previewBaseY) + extra + (6 + MAX_PREVIEW * PREVIEW_LINE_H) + 8
         c._contentH = totalY
         c:SetHeight(totalY)
     end
@@ -1164,7 +1180,7 @@ function NS.Config:Create()
         line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = line
-        CreateDefaultBtn(c, hdr, {"castAnimation", "animateIncoming", "animHideButton", "animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX", "animCloneKeybindOffsetY", "cfgAnimTransitions", "gcdDuration"})
+        CreateDefaultBtn(c, hdr, {"castAnimation", "animateIncoming", "animHideButton", "animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX", "animCloneKeybindOffsetY", "animCloneKeybindFont", "animCloneKeybindOutline", "animCloneKeybindFontSize", "cfgAnimTransitions", "gcdDuration"})
     end
     y = y - 18
 
@@ -1283,30 +1299,63 @@ function NS.Config:Create()
     }, c)
     y = y - 46
 
+    local function RefreshAnimCloneHotkeyStyle()
+        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
+    end
+
     local cloneHalfW = math.floor((contentW - 28 - 6) / 2)
     local cloneKbX = NS.CreateSlider(c, "Clone Keybind X", "animCloneKeybindOffsetX", -20, 20, 1, y, function()
-        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
+        RefreshAnimCloneHotkeyStyle()
     end)
     cloneKbX:SetSize(cloneHalfW, 32)
     NS.AddTooltip(cloneKbX, "Animated Clone Keybind X Offset", {
-        "Horizontal offset of the " .. K .. "keybind" .. R .. " text",
+        "Horizontal adjustment applied to the " .. K .. "keybind" .. R .. " text",
         "on the " .. U .. "animated clone" .. R .. " only.",
         " ",
-        "The " .. U .. "Active Display" .. R .. " keeps using its own X offset.",
+        "This is added on top of the " .. U .. "Active Display" .. R .. " keybind X offset.",
     }, c)
     local cloneKbY = NS.CreateSlider(c, "Clone Keybind Y", "animCloneKeybindOffsetY", -20, 20, 1, y, function()
-        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
+        RefreshAnimCloneHotkeyStyle()
     end)
     cloneKbY:SetSize(cloneHalfW, 32)
     cloneKbY:ClearAllPoints()
     cloneKbY:SetPoint("TOPLEFT", cloneKbX, "TOPRIGHT", 6, 0)
     NS.AddTooltip(cloneKbY, "Animated Clone Keybind Y Offset", {
-        "Vertical offset of the " .. K .. "keybind" .. R .. " text",
+        "Vertical adjustment applied to the " .. K .. "keybind" .. R .. " text",
         "on the " .. U .. "animated clone" .. R .. " only.",
         " ",
-        "The " .. U .. "Active Display" .. R .. " keeps using its own Y offset.",
+        "This is added on top of the " .. U .. "Active Display" .. R .. " keybind Y offset.",
     }, c)
     y = y - 38
+
+    local cloneFontRowW = contentW - 28
+    local cloneFontW = math.floor(cloneFontRowW * 0.46)
+    local cloneOutlineW = math.floor(cloneFontRowW * 0.26)
+    local cloneSizeW = cloneFontRowW - cloneFontW - cloneOutlineW - 12
+
+    local cloneFontRow = NS.CreateFontDropdown(c, "Clone Font", "animCloneKeybindFont", y, RefreshAnimCloneHotkeyStyle, cloneFontW)
+    NS.AddTooltip(cloneFontRow, "Animated Clone Keybind Font", {
+        "Font used by the " .. U .. "animated clone" .. R .. " keybind text.",
+        " ",
+        "This only changes the virtual clone, not the main display.",
+    }, c)
+
+    local cloneOutRow = NS.CreateDropdown(c, "Clone Outline", "animCloneKeybindOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, RefreshAnimCloneHotkeyStyle, cloneOutlineW)
+    cloneOutRow:ClearAllPoints()
+    cloneOutRow:SetPoint("TOPLEFT", cloneFontRow, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(cloneOutRow, "Animated Clone Keybind Outline", {
+        "Outline style for the " .. U .. "animated clone" .. R .. " keybind text.",
+    }, c)
+
+    local cloneSizeRow = NS.CreateSlider(c, "Clone Size", "animCloneKeybindFontSize", 6, 24, 1, y, RefreshAnimCloneHotkeyStyle)
+    cloneSizeRow:SetSize(cloneSizeW, 32)
+    cloneSizeRow:ClearAllPoints()
+    cloneSizeRow:SetPoint("TOPLEFT", cloneOutRow, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(cloneSizeRow, "Animated Clone Keybind Size", {
+        "Font size for the " .. U .. "animated clone" .. R .. " keybind text.",
+    }, c)
+    y = y - 46
 
     local gcdSlider = NS.CreateSlider(c, "GCD Duration", "gcdDuration", 0.5, 3.0, 0.1, y)
     NS.AddTooltip(gcdSlider, "GCD Duration", {
@@ -3726,7 +3775,15 @@ function NS.Config:Create()
         { label = "Animation Style", section = 2 },
         { label = "Pop Animation", section = 2 },
         { label = "Animation Preview", section = 2 },
+        { label = "Incoming Animation", section = 2 },
         { label = "Hide Button During Animation", section = 2 },
+        { label = "Masque Skin Animated Clone", section = 2 },
+        { label = "Reapply Clone Hotkey", section = 2 },
+        { label = "Clone Keybind X", section = 2 },
+        { label = "Clone Keybind Y", section = 2 },
+        { label = "Clone Font", section = 2 },
+        { label = "Clone Outline", section = 2 },
+        { label = "Clone Size", section = 2 },
         { label = "GCD Duration", section = 2 },
         { label = "Scan Line", section = 2 },
         { label = "Orbiting Dots", section = 2 },
@@ -3908,21 +3965,72 @@ function NS.Config:Create()
     searchHighlight:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.25)
     searchHighlight:Hide()
 
-    -- Pulse animation: gentle brightness oscillation so the highlight is obvious
     local highlightPulseTime = 0
+    local highlightedHeader = nil
+    local headerHighlightStart = 0
     local highlightFrame = NS.CreateFrame("Frame")
     highlightFrame:SetScript("OnUpdate", function(self, elapsed)
-        highlightPulseTime = highlightPulseTime + elapsed
-        -- Gentle pulse between 0.15 and 0.35 alpha
-        local alpha = 0.25 + 0.10 * math.sin(highlightPulseTime * 3)
-        searchHighlight:SetAlpha(alpha / 0.25)
+        local running = false
+        if searchHighlight:IsShown() then
+            highlightPulseTime = highlightPulseTime + elapsed
+            local alpha = 0.25 + 0.10 * math.sin(highlightPulseTime * 3)
+            searchHighlight:SetAlpha(alpha / 0.25)
+            running = true
+        end
+
+        if highlightedHeader then
+            local base = highlightedHeader._baseColor
+            local line = highlightedHeader._line
+            local elapsedTime = GetTime() - headerHighlightStart
+            local pct = math.min(1, elapsedTime / 0.85)
+            local brightR = math.min(1, base[1] * 0.55 + 0.45)
+            local brightG = math.min(1, base[2] * 0.55 + 0.45)
+            local brightB = math.min(1, base[3] * 0.55 + 0.45)
+            local mix = 1 - pct
+            highlightedHeader:SetTextColor(
+                base[1] + (brightR - base[1]) * mix,
+                base[2] + (brightG - base[2]) * mix,
+                base[3] + (brightB - base[3]) * mix
+            )
+            if line then
+                local alpha = 0.4 + 0.45 * mix
+                line:SetColorTexture(
+                    base[1] + (brightR - base[1]) * mix,
+                    base[2] + (brightG - base[2]) * mix,
+                    base[3] + (brightB - base[3]) * mix,
+                    alpha
+                )
+            end
+            if pct >= 1 then
+                highlightedHeader:SetTextColor(base[1], base[2], base[3])
+                if line then
+                    line:SetColorTexture(base[1], base[2], base[3], 0.4)
+                end
+                highlightedHeader = nil
+            else
+                running = true
+            end
+        end
+
+        if not running then
+            self:Hide()
+        end
     end)
     highlightFrame:Hide()
 
     local function DismissSearchHighlight()
         searchHighlight:Hide()
-        highlightFrame:Hide()
         highlightPulseTime = 0
+        if highlightedHeader then
+            local base = highlightedHeader._baseColor
+            local line = highlightedHeader._line
+            highlightedHeader:SetTextColor(base[1], base[2], base[3])
+            if line then
+                line:SetColorTexture(base[1], base[2], base[3], 0.4)
+            end
+            highlightedHeader = nil
+        end
+        highlightFrame:Hide()
     end
 
     local function FindWidgetYByLabel(cf, label)
@@ -3959,6 +4067,21 @@ function NS.Config:Create()
         end
     end
 
+    local function ShowSubHeaderHighlight(hdr)
+        if not hdr or not hdr._baseColor then return end
+        if highlightedHeader and highlightedHeader ~= hdr then
+            local prevBase = highlightedHeader._baseColor
+            local prevLine = highlightedHeader._line
+            highlightedHeader:SetTextColor(prevBase[1], prevBase[2], prevBase[3])
+            if prevLine then
+                prevLine:SetColorTexture(prevBase[1], prevBase[2], prevBase[3], 0.4)
+            end
+        end
+        highlightedHeader = hdr
+        headerHighlightStart = GetTime()
+        highlightFrame:Show()
+    end
+
     -- Dismiss highlight when user manually scrolls (mouse wheel)
     local suppressScrollDismiss = false
     f:HookScript("OnMouseWheel", function()
@@ -3972,16 +4095,24 @@ function NS.Config:Create()
     ----------------------------------------------------------------
     local BTN_H = 28
     local BTN_GAP = 2
+    local CHILD_H = 20
+    local CHILD_GAP = 0
     local BTN_TOP = 44
+    local TREE_TEX_ROOT = "Interface\\AddOns\\BetterSBA\\IMG\\"
+    local TREE_TRUNK_TEX = TREE_TEX_ROOT .. "TreeTrunk.tga"
+    local TREE_BRANCH_MID_TEX = TREE_TEX_ROOT .. "TreeBranchMid.tga"
+    local TREE_BRANCH_END_TEX = TREE_TEX_ROOT .. "TreeBranchEnd.tga"
     local sectionButtons = {}
+    local subsectionButtons = {}
+    local sectionTrunks = {}
+    local expandedSection = activeSection
+    local activeSubsection = nil
 
-    -- Sliding accent indicator (2px bar on left edge, slides between sections)
     local indicator = leftPanel:CreateTexture(nil, "OVERLAY")
     indicator:SetWidth(2)
     indicator:SetHeight(BTN_H)
     indicator:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.9)
 
-    -- Fade transition state (reused across section switches)
     local fadingContent = nil
     local fadeStartTime = 0
     local fadeFrame = NS.CreateFrame("Frame")
@@ -4001,43 +4132,237 @@ function NS.Config:Create()
     end)
     fadeFrame:Hide()
 
-    -- Section switching
     local indicatorTargetY = -BTN_TOP
     local indicatorCurrentY = indicatorTargetY
+    local animFrame
+    local RefreshSidebarLayout
+    local SelectSection
 
-    local animFrame  -- forward-declared; created after section buttons
-    local function SelectSection(idx)
-        -- Exit search mode if active
+    local function EnsureSectionTrunk(sectionIndex)
+        if sectionTrunks[sectionIndex] then return sectionTrunks[sectionIndex] end
+        local trunk = leftPanel:CreateTexture(nil, "ARTWORK")
+        trunk:SetColorTexture(1, 1, 1, 1)
+        trunk:SetWidth(2)
+        trunk:Hide()
+        sectionTrunks[sectionIndex] = trunk
+        return trunk
+    end
+
+    local function EnsureSubsectionButton(sectionIndex, childIndex)
+        subsectionButtons[sectionIndex] = subsectionButtons[sectionIndex] or {}
+        if subsectionButtons[sectionIndex][childIndex] then
+            return subsectionButtons[sectionIndex][childIndex]
+        end
+
+        local btn = NS.CreateFrame("Button", nil, leftPanel)
+        local bg = btn:CreateTexture(nil, "BACKGROUND")
+        bg:SetAllPoints()
+        bg:SetColorTexture(0, 0, 0, 0)
+
+        local branch = btn:CreateTexture(nil, "ARTWORK")
+        branch:SetSize(16, 16)
+        branch:SetPoint("LEFT", 10, 0)
+
+        local lbl = btn:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(NS.GetConfigFontPath(), 9, "")
+        lbl:SetPoint("LEFT", branch, "RIGHT", 4, 0)
+        lbl:SetPoint("RIGHT", -8, 0)
+        lbl:SetJustifyH("LEFT")
+
+        btn._bg = bg
+        btn._branch = branch
+        btn._lbl = lbl
+        btn._sectionIndex = sectionIndex
+        btn._childIndex = childIndex
+
+        btn:SetScript("OnClick", function(self)
+            local subs = contentFrames[self._sectionIndex] and contentFrames[self._sectionIndex]._subsections
+            local sub = subs and subs[self._childIndex]
+            if not sub then return end
+            activeSubsection = sub.label
+            SelectSection(self._sectionIndex, true)
+            local cf = contentFrames[self._sectionIndex]
+            local viewH = scrollFrame:GetHeight()
+            local maxScroll = math.max(0, (cf._contentH or 100) - viewH)
+            local desiredScroll = math.max(0, math.min(maxScroll, (-sub.y) - 18))
+            suppressScrollDismiss = true
+            scrollFrame:SetVerticalScroll(desiredScroll)
+            suppressScrollDismiss = false
+            ShowSubHeaderHighlight(sub.header)
+            UpdateScrollbar()
+            RefreshSidebarLayout(true)
+        end)
+        btn:SetScript("OnEnter", function(self)
+            local secColor = SECTIONS[self._sectionIndex].dotColor
+            local subs = contentFrames[self._sectionIndex] and contentFrames[self._sectionIndex]._subsections
+            local sub = subs and subs[self._childIndex]
+            if sub and activeSubsection ~= sub.label then
+                self._lbl:SetTextColor(secColor[1], secColor[2], secColor[3])
+                self._bg:SetColorTexture(secColor[1], secColor[2], secColor[3], 0.12)
+                self._branch:SetVertexColor(secColor[1], secColor[2], secColor[3], 0.95)
+            end
+        end)
+        btn:SetScript("OnLeave", function(self)
+            local secColor = SECTIONS[self._sectionIndex].dotColor
+            local subs = contentFrames[self._sectionIndex] and contentFrames[self._sectionIndex]._subsections
+            local sub = subs and subs[self._childIndex]
+            if sub and activeSubsection ~= sub.label then
+                self._lbl:SetTextColor(secColor[1] * 0.62, secColor[2] * 0.62, secColor[3] * 0.62)
+                self._bg:SetColorTexture(0, 0, 0, 0)
+                self._branch:SetVertexColor(secColor[1], secColor[2], secColor[3], 0.58)
+            end
+        end)
+
+        subsectionButtons[sectionIndex][childIndex] = btn
+        return btn
+    end
+
+    local function ApplySidebarVisuals()
+        local activeRow = sectionButtons[activeSection]
+
+        for i, btn in NS.ipairs(sectionButtons) do
+            local dc = btn._dotColor
+            if i == activeSection then
+                btn._lbl:SetTextColor(dc[1], dc[2], dc[3])
+                btn._bg:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.4)
+            else
+                btn._lbl:SetTextColor(dc[1] * 0.7, dc[2] * 0.7, dc[3] * 0.7)
+                btn._bg:SetColorTexture(0, 0, 0, 0)
+            end
+
+            if btn._arrow then
+                btn._arrow:SetText(expandedSection == i and NS.GLYPH_TRI_DOWN or NS.GLYPH_TRI_RIGHT)
+                if i == activeSection or expandedSection == i then
+                    btn._arrow:SetTextColor(dc[1], dc[2], dc[3], 0.9)
+                else
+                    btn._arrow:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.8)
+                end
+            end
+        end
+
+        for sectionIndex, btnList in NS.pairs(subsectionButtons) do
+            local secColor = SECTIONS[sectionIndex].dotColor
+            local subs = contentFrames[sectionIndex] and contentFrames[sectionIndex]._subsections or {}
+            local visibleCount = 0
+            local firstShown, lastShown
+
+            for childIndex, btn in NS.ipairs(btnList) do
+                local sub = subs[childIndex]
+                local isVisible = sectionIndex == expandedSection and sub ~= nil
+                btn:SetShown(isVisible)
+
+                if isVisible then
+                    visibleCount = visibleCount + 1
+                    btn._lbl:SetText(sub.label)
+                    btn._branch:SetTexture(childIndex == #subs and TREE_BRANCH_END_TEX or TREE_BRANCH_MID_TEX)
+
+                    local isActive = activeSection == sectionIndex and activeSubsection == sub.label
+                    if isActive then
+                        btn._lbl:SetTextColor(secColor[1], secColor[2], secColor[3])
+                        btn._bg:SetColorTexture(secColor[1], secColor[2], secColor[3], 0.14)
+                        btn._branch:SetVertexColor(secColor[1], secColor[2], secColor[3], 0.95)
+                        activeRow = btn
+                    else
+                        btn._lbl:SetTextColor(secColor[1] * 0.62, secColor[2] * 0.62, secColor[3] * 0.62)
+                        btn._bg:SetColorTexture(0, 0, 0, 0)
+                        btn._branch:SetVertexColor(secColor[1], secColor[2], secColor[3], 0.58)
+                    end
+
+                    if not firstShown then
+                        firstShown = btn
+                    end
+                    lastShown = btn
+                end
+            end
+
+            local trunk = EnsureSectionTrunk(sectionIndex)
+            if visibleCount > 1 and firstShown and lastShown then
+                trunk:ClearAllPoints()
+                trunk:SetPoint("TOPLEFT", firstShown, "TOPLEFT", 14, -2)
+                trunk:SetPoint("BOTTOMLEFT", lastShown, "BOTTOMLEFT", 14, 2)
+                trunk:SetVertexColor(secColor[1], secColor[2], secColor[3], 0.58)
+                trunk:Show()
+            else
+                trunk:Hide()
+            end
+        end
+
+        if activeRow then
+            indicator:SetHeight(activeRow._height or BTN_H)
+            indicatorTargetY = activeRow._yOff or -BTN_TOP
+            if animFrame and NS.db.cfgAnimTransitions and math.abs(indicatorCurrentY - indicatorTargetY) > 0.3 then
+                animFrame:Show()
+            else
+                indicatorCurrentY = indicatorTargetY
+                indicator:ClearAllPoints()
+                indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, indicatorCurrentY)
+            end
+        end
+    end
+
+    RefreshSidebarLayout = function(animateIndicator)
+        local yOff = -BTN_TOP
+
+        for i, btn in NS.ipairs(sectionButtons) do
+            btn:ClearAllPoints()
+            btn:SetPoint("TOPLEFT", 2, yOff)
+            btn:SetSize(leftW - 4, BTN_H)
+            btn._yOff = yOff
+            btn._height = BTN_H
+            yOff = yOff - BTN_H - BTN_GAP
+
+            local subs = contentFrames[i] and contentFrames[i]._subsections or {}
+            local btnList = subsectionButtons[i]
+            if i == expandedSection and #subs > 0 then
+                for childIndex, sub in NS.ipairs(subs) do
+                    local childBtn = EnsureSubsectionButton(i, childIndex)
+                    childBtn:ClearAllPoints()
+                    childBtn:SetPoint("TOPLEFT", 2, yOff)
+                    childBtn:SetSize(leftW - 4, CHILD_H)
+                    childBtn._yOff = yOff
+                    childBtn._height = CHILD_H
+                    childBtn._lbl:SetText(sub.label)
+                    childBtn:Show()
+                    yOff = yOff - CHILD_H - CHILD_GAP
+                end
+                if btnList then
+                    for childIndex = #subs + 1, #btnList do
+                        btnList[childIndex]:Hide()
+                    end
+                end
+                yOff = yOff - BTN_GAP
+            elseif btnList then
+                for _, childBtn in NS.ipairs(btnList) do
+                    childBtn:Hide()
+                end
+            end
+        end
+
+        if not animateIndicator then
+            indicatorCurrentY = indicatorTargetY
+        end
+        ApplySidebarVisuals()
+    end
+
+    SelectSection = function(idx, keepSubsection)
         if searchMode then
             searchMode = false
             searchResultsFrame:Hide()
         end
 
-        -- Hide old content
         if contentFrames[activeSection] then
             contentFrames[activeSection]:Hide()
         end
 
-        -- Update button visuals (active label gets full section color)
-        local dc = SECTIONS[idx].dotColor
-        for i, btn in NS.ipairs(sectionButtons) do
-            if i == idx then
-                btn._lbl:SetTextColor(dc[1], dc[2], dc[3])
-                btn._bg:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.4)
-            else
-                local bc = btn._dotColor
-                btn._lbl:SetTextColor(bc[1] * 0.7, bc[2] * 0.7, bc[3] * 0.7)
-                btn._bg:SetColorTexture(0, 0, 0, 0)
-            end
-        end
-
         activeSection = idx
+        expandedSection = idx
+        if not keepSubsection then
+            activeSubsection = nil
+        end
         NS._activeSection = idx
 
-        -- Show new content (with fade if transitions enabled)
         local cf = contentFrames[idx]
         scrollChild:SetHeight(cf._contentH or 100)
-        -- Restore scroll position if rebuilding, otherwise reset to top
         if NS._restoreScroll then
             scrollFrame:SetVerticalScroll(NS._restoreScroll)
             NS._restoreScroll = nil
@@ -4055,39 +4380,23 @@ function NS.Config:Create()
             cf:SetAlpha(1)
         end
 
-        -- Update section title (colored to match section)
+        local dc = SECTIONS[idx].dotColor
         sectionTitle:SetText(SECTIONS[idx].label:upper())
         sectionTitle:SetTextColor(dc[1], dc[2], dc[3])
-
-        -- Set indicator slide target
-        indicatorTargetY = -(idx - 1) * (BTN_H + BTN_GAP) - BTN_TOP
-        if NS.db.cfgAnimTransitions and indicatorCurrentY ~= indicatorTargetY then
-            animFrame:Show()  -- kick the slide animation
-        else
-            -- No animation: snap immediately
-            indicatorCurrentY = indicatorTargetY
-            indicator:ClearAllPoints()
-            indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, indicatorCurrentY)
-        end
-
-        -- Update underline + indicator color to match section
         titleUnderline:SetColorTexture(dc[1], dc[2], dc[3], 0.6)
         indicator:SetColorTexture(dc[1], dc[2], dc[3], 0.9)
 
+        RefreshSidebarLayout(true)
         UpdateScrollbar()
     end
 
-    -- Create section buttons (with importance dot indicator)
     for i, sec in NS.ipairs(SECTIONS) do
         local btn = NS.CreateFrame("Button", nil, leftPanel)
-        btn:SetSize(leftW - 4, BTN_H)
-        btn:SetPoint("TOPLEFT", 2, -(i - 1) * (BTN_H + BTN_GAP) - BTN_TOP)
 
         local bg = btn:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
         bg:SetColorTexture(0, 0, 0, 0)
 
-        -- Importance color dot
         local impDot = btn:CreateTexture(nil, "OVERLAY")
         impDot:SetSize(5, 5)
         impDot:SetPoint("LEFT", 6, 0)
@@ -4097,15 +4406,26 @@ function NS.Config:Create()
         local lbl = btn:CreateFontString(nil, "OVERLAY")
         lbl:SetFont(NS.GetConfigFontPath(), 10, "OUTLINE")
         lbl:SetPoint("LEFT", impDot, "RIGHT", 6, 0)
+        lbl:SetPoint("RIGHT", -18, 0)
+        lbl:SetJustifyH("LEFT")
         lbl:SetTextColor(dc[1] * 0.7, dc[2] * 0.7, dc[3] * 0.7)
         lbl:SetText(sec.label)
+
+        local arrow = btn:CreateFontString(nil, "OVERLAY")
+        arrow:SetFont(NS.NERD_FONT, 9, "")
+        arrow:SetPoint("RIGHT", -6, 0)
+        arrow:SetText(NS.GLYPH_TRI_RIGHT)
+        arrow:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.8)
 
         btn._bg = bg
         btn._lbl = lbl
         btn._impDot = impDot
         btn._dotColor = dc
+        btn._arrow = arrow
 
-        btn:SetScript("OnClick", function() SelectSection(i) end)
+        btn:SetScript("OnClick", function()
+            SelectSection(i)
+        end)
         btn:SetScript("OnEnter", function()
             if i ~= activeSection then
                 lbl:SetTextColor(NS.unpack(T.TEXT))

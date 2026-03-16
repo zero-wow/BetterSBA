@@ -1794,7 +1794,7 @@ function NS.CreatePaletteDropdown(parent, label, dbKey, yOffset, onChange, width
             if not strip._bg then
                 local bg = strip:CreateTexture(nil, "BACKGROUND")
                 bg:SetAllPoints()
-                bg:SetColorTexture(0.18, 0.18, 0.22, 1)
+                bg:SetColorTexture(0.08, 0.08, 0.10, 1)
                 strip._bg = bg
             end
             strip._bg:Show()
@@ -1803,13 +1803,14 @@ function NS.CreatePaletteDropdown(parent, label, dbKey, yOffset, onChange, width
             local stripH = strip:GetHeight()
             local bdr = 1
             local innerW = stripW - bdr * 2
-            local segW = innerW / math.max(1, count)
             for j = 1, 8 do
                 local tex = textures[j]
                 if j <= count then
+                    local left = bdr + math.floor(((j - 1) * innerW) / count + 0.5)
+                    local right = bdr + math.floor((j * innerW) / count + 0.5)
                     tex:ClearAllPoints()
-                    tex:SetSize(math.max(1, segW - bdr), stripH - bdr * 2)
-                    tex:SetPoint("TOPLEFT", strip, "TOPLEFT", bdr + (j - 1) * segW, -bdr)
+                    tex:SetSize(math.max(1, right - left), stripH - bdr * 2)
+                    tex:SetPoint("TOPLEFT", strip, "TOPLEFT", left, -bdr)
                     tex:SetColorTexture(colors[j][1], colors[j][2], colors[j][3], 1)
                     tex:Show()
                 else

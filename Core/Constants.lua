@@ -8,8 +8,8 @@ _G.BetterSBA = NS
 --   version = feature/milestone version (manual, bump via .scripts/version.sh bump)
 --   build   = total commit count (auto)
 NS.VERSION_RELEASE = 1
-NS.VERSION_PATCH   = 7       -- bump this for feature milestones
-NS.VERSION = "R1.13041.31de34a.0007.16"
+NS.VERSION_PATCH   = 8       -- bump this for feature milestones
+NS.VERSION = "R1.13396.45b3173.0008.17"
 NS.ADDON_NAME = ADDON_NAME
 
 -- SBA Spell
@@ -125,11 +125,12 @@ NS.defaults = {
     outOfRangeSound = false,
     spellUsability = false,
     keybindFontSize = 12,
+    animCloneKeybindFontSize = 12,
     keybindOffsetX = -5,
     keybindOffsetY = -5,
     keybindAnchor = "TOPRIGHT",
-    animCloneKeybindOffsetX = -5,
-    animCloneKeybindOffsetY = -5,
+    animCloneKeybindOffsetX = 2,
+    animCloneKeybindOffsetY = 2,
 
     -- Priority Display
     showPriority = true,
@@ -165,6 +166,8 @@ NS.defaults = {
     keybindFont = "Friz Quadrata TT",
     keybindOutline = "OUTLINE",
     keybindFontOverride = false,
+    animCloneKeybindFont = "Friz Quadrata TT",
+    animCloneKeybindOutline = "OUTLINE",
     priorityKeybindFont = "Friz Quadrata TT",
     priorityKeybindOutline = "OUTLINE",
     priorityKeybindFontOverride = false,
