@@ -86,6 +86,10 @@ function NS.ApplyButtonStyle(button, isPriority)
     if soft then
         -- Masque's registered regions are retained for switching back to Classic.
         if regions then
+            -- Hide alone is temporary: SetButtonState("NORMAL") can show a
+            -- still-attached Blizzard frame again after press feedback ends.
+            button:SetNormalTexture(nil)
+            button:SetHighlightTexture(nil)
             button.Border = nil
             for _, key in ipairs({ "Normal", "Highlight", "Flash", "Border" }) do
                 if regions[key] then regions[key]:Hide() end
@@ -95,6 +99,13 @@ function NS.ApplyButtonStyle(button, isPriority)
         icon:SetPoint("TOPLEFT", button, "TOPLEFT", 1.5, -1.5)
         icon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1.5, 1.5)
         icon:SetTexCoord(unpack(NS.ICON_TEXCOORD))
+        if button.pushedTex then
+            button.pushedTex:SetColorTexture(0, 0, 0, 0.35)
+            button.pushedTex:SetVertexColor(1, 1, 1, 1)
+            button.pushedTex:SetAlpha(1)
+            button.pushedTex:ClearAllPoints()
+            button.pushedTex:SetAllPoints(icon)
+        end
         button.bg:ClearAllPoints()
         button.bg:SetAllPoints(icon)
         button.bg:Show()
@@ -122,6 +133,9 @@ function NS.ApplyButtonStyle(button, isPriority)
         chrome.hover:Hide()
         if chrome.keycap then chrome.keycap:Hide() end
         if regions and group then
+            -- Restore native state regions before returning skin ownership.
+            button:SetNormalTexture(regions.Normal)
+            button:SetHighlightTexture(regions.Highlight)
             button.Border = regions.Border
             if not button._masqueRegistered then
                 group:AddButton(button, regions)
