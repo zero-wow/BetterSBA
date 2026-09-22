@@ -43,6 +43,7 @@ local function widget(kind, parent)
     if parent and parent._children then parent._children[#parent._children + 1] = o end
     local mt = {}
     function mt.__index(self, key)
+        if type(key) == "string" and key:sub(1, 1) == "_" then return nil end
         local methods = {
             SetSize = function(s, w, h) s._width, s._height = w or 0, h or 0; s._widthExplicit, s._heightExplicit = true, true end,
             SetWidth = function(s, w) s._width, s._widthExplicit = w or 0, true end,
@@ -62,9 +63,21 @@ local function widget(kind, parent)
             SetScript = function(s, event, fn) s._scripts[event] = fn end,
             HookScript = function(s, event, fn) s._scripts[event] = fn end,
             GetScript = function(s, event) return s._scripts[event] end,
+            GetName = function(s) return rawget(s, "_name") end,
+            SetAttribute = function(s, key, value)
+                local attributes = rawget(s, "_attributes") or {}
+                rawset(s, "_attributes", attributes)
+                attributes[key] = value
+            end,
+            GetAttribute = function(s, key)
+                local attributes = rawget(s, "_attributes")
+                return attributes and attributes[key]
+            end,
+            RegisterForClicks = function(s, ...) s._clicks = {...} end,
             CreateTexture = function(s, name, layer)
                 local child = widget("Texture", s); child._name, child._layer = name, layer; return child
             end,
+            CreateMaskTexture = function(s) return widget("MaskTexture", s) end,
             CreateFontString = function(s, name, layer)
                 local child = widget("FontString", s); child._name, child._layer = name, layer; return child
             end,
@@ -110,9 +123,20 @@ local function widget(kind, parent)
             SetResizeBounds = function(s, ...) s._resizeBounds = {...} end,
             StartMoving = noop, StopMovingOrSizing = noop,
             SetScale = function(s, value) s._scale = value or 1 end,
-            SetNormalTexture = function(s, value) s._normalTexture = value end,
-            SetHighlightTexture = function(s, value) s._highlightTexture = value end,
+            SetNormalTexture = function(s, value)
+                assert(value ~= nil, "SetNormalTexture requires a non-nil texture; use ClearNormalTexture")
+                s._normalTexture = value
+            end,
+            ClearNormalTexture = function(s) s._normalTexture = nil end,
+            GetNormalTexture = function(s) return rawget(s, "_normalTexture") end,
+            SetHighlightTexture = function(s, value)
+                assert(value ~= nil, "SetHighlightTexture requires a non-nil texture; use ClearHighlightTexture")
+                s._highlightTexture = value
+            end,
+            ClearHighlightTexture = function(s) s._highlightTexture = nil end,
+            GetHighlightTexture = function(s) return rawget(s, "_highlightTexture") end,
             SetPushedTexture = function(s, value) s._pushedTexture = value end,
+            GetPushedTexture = function(s) return rawget(s, "_pushedTexture") end,
             Enable = function(s) s._enabled = true end,
             Disable = function(s) s._enabled = false end,
         }

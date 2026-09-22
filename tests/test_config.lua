@@ -266,3 +266,4 @@ if arg and arg[1] and arg[1] ~= "" then
     mock.writeSVG(NS.Config.frame, arg[1])
     print("config mock: wrote estimated-bounds SVG to " .. arg[1])
 end
+return { NS = NS, ui = ui, panel = panel }

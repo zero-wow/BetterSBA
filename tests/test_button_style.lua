@@ -21,10 +21,18 @@ button._masqueRegions={Normal=region(),Border=region(),Highlight=region(),Flash=
 button._masqueRegistered=true
 button._normal = button._masqueRegions.Normal
 button._highlight = button._masqueRegions.Highlight
-function button:SetNormalTexture(texture) self._normal=texture end
+function button:SetNormalTexture(texture)
+    assert(texture~=nil, "SetNormalTexture requires a valid asset on the target client")
+    self._normal=texture
+end
 function button:GetNormalTexture() return self._normal end
-function button:SetHighlightTexture(texture) self._highlight=texture end
+function button:ClearNormalTexture() self._normal=nil end
+function button:SetHighlightTexture(texture)
+    assert(texture~=nil, "SetHighlightTexture requires a valid asset on the target client")
+    self._highlight=texture
+end
 function button:GetHighlightTexture() return self._highlight end
+function button:ClearHighlightTexture() self._highlight=nil end
 function button:SetButtonState(state)
     -- Native button state changes can show a still-attached normal texture,
     -- regardless of an earlier Hide() from the skin application.
@@ -45,10 +53,12 @@ ns.ApplyButtonStyle(button)
 local pool=created
 assert(removes==1 and not button._masqueRegistered)
 assert(button._softChrome.keycap.shown)
-assert(button:GetNormalTexture()==nil, "Soft must detach the native Blizzard normal texture")
-assert(button:GetHighlightTexture()==nil, "Soft must detach the native square highlight")
+assert(button:GetNormalTexture()==nil, "Soft clears the native Blizzard frame through ClearNormalTexture")
+assert(button:GetHighlightTexture()==nil, "Soft clears the native square highlight through ClearHighlightTexture")
 for i=1,30 do button:SetButtonState("PUSHED");button:SetButtonState("NORMAL") end
-assert(not button._masqueRegions.Normal.shown, "Press/release must not revive the classic border")
+assert(not button._masqueRegions.Normal.shown,
+    "Press/release must not revive the detached normal region")
+assert(not button._masqueRegions.Highlight.shown, "The retained Classic highlight stays hidden")
 for i=1,30 do ns.ApplyButtonStyle(button) end
 assert(created==pool and removes==1, "Soft style reuses chrome and masks")
 ns.db.buttonStyle="Classic";ns.ApplyButtonStyle(button)
@@ -61,7 +71,7 @@ ns.db.buttonStyle="Soft";ns.ApplyButtonStyle(button)
 assert(removes==2)
 button:SetButtonState("NORMAL")
 assert(button:GetNormalTexture()==nil and not button._masqueRegions.Normal.shown,
-    "Returning from Classic must detach the normal texture again")
+    "Returning from Classic must clear and hide the normal texture again")
 button.hotkey.text="";ns.UpdateButtonChrome(button)
 assert(not button._softChrome.keycap.shown, "No empty keycap")
 combat=true;local before=created;ns.db.buttonStyle="Classic";ns.ApplyButtonStyle(button)

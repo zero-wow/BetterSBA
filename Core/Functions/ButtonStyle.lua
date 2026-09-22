@@ -86,10 +86,11 @@ function NS.ApplyButtonStyle(button, isPriority)
     if soft then
         -- Masque's registered regions are retained for switching back to Classic.
         if regions then
-            -- Hide alone is temporary: SetButtonState("NORMAL") can show a
-            -- still-attached Blizzard frame again after press feedback ends.
-            button:SetNormalTexture(nil)
-            button:SetHighlightTexture(nil)
+            -- Hide alone lets native press/hover states show these again.
+            -- SimpleButtonAPI has explicit clear methods; its texture setters
+            -- require a non-nil asset. Keep the regions for Classic below.
+            button:ClearNormalTexture()
+            button:ClearHighlightTexture()
             button.Border = nil
             for _, key in ipairs({ "Normal", "Highlight", "Flash", "Border" }) do
                 if regions[key] then regions[key]:Hide() end
@@ -133,7 +134,7 @@ function NS.ApplyButtonStyle(button, isPriority)
         chrome.hover:Hide()
         if chrome.keycap then chrome.keycap:Hide() end
         if regions and group then
-            -- Restore native state regions before returning skin ownership.
+            -- Restore state bindings before Masque applies its chosen skin.
             button:SetNormalTexture(regions.Normal)
             button:SetHighlightTexture(regions.Highlight)
             button.Border = regions.Border
