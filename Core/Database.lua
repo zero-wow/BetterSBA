@@ -29,6 +29,11 @@ end
 -- Migrate legacy per-profile settings (run on the profile table)
 ----------------------------------------------------------------
 local function MigrateProfileSettings(profile)
+    -- Rename the user-approved trinket mode; keep existing saved approvals.
+    if profile.trinketMode == "Verified" then
+        profile.trinketMode = "Approved"
+    end
+
     -- Migrate old alpha-only bg settings to color tables
     if NS.type(profile.buttonBgAlpha) == "number" then
         profile.buttonBgColor = { 0, 0, 0, profile.buttonBgAlpha }

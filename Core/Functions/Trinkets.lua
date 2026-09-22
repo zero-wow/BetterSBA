@@ -43,11 +43,11 @@ local function InspectSlot(slot)
     info.canApprove = true
     local approved = NS.db and NS.db.trinketApproved
     info.approved = approved and approved[itemID] == spellID or false
-    info.eligible = info.approved and NS.db.trinketMode == "Verified"
+    info.eligible = info.approved and NS.db.trinketMode == "Approved"
     if info.eligible then
         info.status, info.reason = "Allowed", "Approved by you; attempts " .. (spellName or "its use effect") .. " after SBA in combat."
     elseif info.approved then
-        info.status, info.reason = "Off", "Approval saved for this item; enable Verified mode to include it."
+        info.status, info.reason = "Off", "Approval saved for this item; enable Approved mode to include it."
     else
         info.status, info.reason = "Manual", "Confirm this item is off the GCD and does not channel before allowing it."
     end

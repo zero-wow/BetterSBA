@@ -78,15 +78,106 @@ local function findTextWidget(frame, wanted)
     end
 end
 
+local sectionLabels = {
+    "Combat Assist", "Appearance", "Active Display", "Priority Display", "Talent Builds",
+    "Visibility", "Importance", "Advanced", "Profiles",
+}
+
+local function navRows(panel)
+    local function findButtonLabel(frame, wanted)
+        if rawget(frame, "_text") == wanted and rawget(rawget(frame, "_parent"), "_kind") == "Button" then
+            return rawget(frame, "_parent")
+        end
+        for _, child in ipairs(frame._children) do
+            local found = findButtonLabel(child, wanted)
+            if found then return found end
+        end
+    end
+    local rows = {}
+    for i, label in ipairs(sectionLabels) do
+        rows[i] = assert(findButtonLabel(panel, label), "missing sidebar button: " .. label)
+    end
+    return rows
+end
+
+local function assertFixedSidebarRows(panel)
+    local rows = navRows(panel)
+    local sidebar = rawget(rows[1], "_parent")
+    local sl, st, sr, sb = mock.rect(sidebar)
+    assert(sr - sl == 200, "sidebar must retain its 200px width")
+    for i, row in ipairs(rows) do
+        assert(rawget(row, "_parent") == sidebar, "all section rows share the sidebar parent")
+        local l, t, r, b = mock.rect(row)
+        assert(row:GetHeight() == 32, "section row height must remain fixed")
+        assert(l >= sl + 8 and r <= sr - 8, "section row must keep the sidebar gutter")
+        assert(t <= st - 52 and b >= sb, "section row must remain in the sidebar")
+        local expectedTop = st - 52 - (i - 1) * 36
+        assert(math.abs(t - expectedTop) < 0.1,
+            ("section row %d moved by an expanded disclosure (got %.1f, expected %.1f)"):format(i, t, expectedTop))
+    end
+end
+
+local function assertActiveSectionInScrollRegion(index)
+    local cf = assert(newestSection(index), "active content frame missing")
+    local scrollChild = rawget(cf, "_parent")
+    local scrollFrame = scrollChild and rawget(scrollChild, "_parent")
+    assert(scrollFrame and rawget(scrollFrame, "_scrollChild") == scrollChild,
+        "each disclosure section must remain parented to the scroll child")
+    assert(scrollChild:GetHeight() == cf._contentH,
+        "active disclosure height must be reserved by the scroll child")
+    local expectedWidth = index == 5 and 872 or 612
+    assert(cf:GetWidth() == expectedWidth and scrollChild:GetWidth() == expectedWidth,
+        "section must use the active scroll-content width")
+    local cl, ct, cr, cb = mock.rect(cf)
+    for _, child in ipairs(cf._children) do
+        local l, t, r, b = mock.rect(child)
+        assert(l >= cl - .1 and r <= cr + .1, "direct disclosure control exceeds content width")
+        assert(t <= ct + .1 and b >= cb - .1, "direct disclosure control escapes scroll content height")
+    end
+end
+
+local function assertJumpMenuBounds(panel)
+    local jump, menu = assert(NS.Config.sectionJump), assert(NS.Config.sectionMenu)
+    if not jump:IsShown() then
+        assert(not menu:IsShown(), "hidden Jump-to control must not leave its menu open")
+        return
+    end
+    local pl, pt, pr, pb = mock.rect(panel)
+    local jl, jt, jr, jb = mock.rect(jump)
+    assert(jl >= pl and jr <= pr and jt <= pt and jb >= pb, "Jump-to button must fit the panel")
+    local click = assert(jump:GetScript("OnClick"), "Jump-to button needs a click handler")
+    click(jump)
+    assert(menu:IsShown(), "Jump-to menu must open")
+    local ml, mt, mr, mb = mock.rect(menu)
+    assert(ml >= pl and mr <= pr and mt <= pt and mb >= pb, "Jump-to popover must fit the panel")
+    local menuScroll = menu._children[1]
+    local menuContent = menuScroll and rawget(menuScroll, "_scrollChild")
+    assert(menuContent, "Jump-to popover requires a scroll-content frame")
+    local cl, ct, cr, cb = mock.rect(menuContent)
+    for _, child in ipairs(menuContent._children) do
+        if child:IsShown() then
+            local l, t, r, b = mock.rect(child)
+            assert(child:GetHeight() == 28 and l >= cl and r <= cr and t <= ct and b >= cb,
+                "Jump-to row must fit its scroll content")
+        end
+    end
+    click(jump)
+    assert(not menu:IsShown(), "Jump-to menu must close")
+end
+
 local panel = assert(NS.Config:Create())
-assert(panel:GetWidth() == 640 and panel:GetHeight() == 480, "normal panel must begin at 640x480")
+assert(panel:GetWidth() == 820 and panel:GetHeight() == 480, "normal panel must begin at 820x480")
+assertJumpMenuBounds(panel)
 for i = 1, 9 do
     NS.Config.SelectSection(i)
     if i == 5 then
-        assert(panel:GetWidth() == 980 and panel:GetHeight() == 480, "Talent Builds must use 980x480")
+        assert(panel:GetWidth() == 1080 and panel:GetHeight() == 480, "Talent Builds must use 1080x480")
     else
-        assert(panel:GetWidth() == 640 and panel:GetHeight() == 480, "non-talent sections must use 640x480")
+        assert(panel:GetWidth() == 820 and panel:GetHeight() == 480, "non-talent sections must use 820x480")
     end
+    assertFixedSidebarRows(panel)
+    assertActiveSectionInScrollRegion(i)
+    assertJumpMenuBounds(panel)
 end
 
 local function walk(frame)
@@ -107,6 +198,19 @@ assert(type(hintsClick) == "function", "macro hint control needs an OnClick hand
 hintsClick(hintsButton)
 assert(newestSection(9):GetHeight() == profilesH, "macro hint disclosure must not alter Profiles height")
 
+-- The mock gives un-sized FontStrings an estimated line box, so this guards
+-- actual vertical/horizontal relationships in the trinket status row instead
+-- of treating every label as a zero-height point.
+local trinketName = assert(findTextWidget(panel, "Trinket 1"), "Trinket name text was not built")
+local trinketRow = rawget(trinketName, "_parent")
+local trinketReason = assert(findTextWidget(trinketRow, "No trinket information available."), "Trinket reason text was not built")
+local trinketState = assert(findTextWidget(trinketRow, "Unavailable"), "Trinket state text was not built")
+local nl, nt, nr, nb = mock.rect(trinketName)
+local rl, rt = mock.rect(trinketReason)
+local sl, st, sr, sb = mock.rect(trinketState)
+assert(rt <= nb - .5, "trinket reason must start beneath the name line")
+assert(sl >= nr + 4 or sb <= nb or st >= nt, "trinket state must not overlap the name")
+
 -- Exercise all cast-feedback disclosure states through real Config construction.
 local appearanceHeights = { Motion = motionAppearanceH }
 for _, feedback in ipairs({"Classic", "Off"}) do
@@ -116,15 +220,15 @@ for _, feedback in ipairs({"Classic", "Off"}) do
     NS._restoreSection = false
     local rebuilt = assert(NS.Config:Create())
     NS.Config.SelectSection(2)
-    assert(rebuilt:GetWidth() == 640 and rebuilt:GetHeight() == 480, feedback .. " appearance layout must remain 640x480")
+    assert(rebuilt:GetWidth() == 820 and rebuilt:GetHeight() == 480, feedback .. " appearance layout must remain 820x480")
     appearanceHeights[feedback] = assert(newestSection(2)):GetHeight()
 end
 assert(appearanceHeights.Classic > appearanceHeights.Off, ("Classic disclosure must reserve its particle/font controls (Classic %.0f, Off %.0f)"):format(appearanceHeights.Classic, appearanceHeights.Off))
 
 -- Direct real Talent panel pass exposes its state for measured source-chip bounds.
 local talentParent = ui.createFrame("Frame", nil, ui.uiParent)
-talentParent:SetSize(792, 560)
-talentParent._contentWidth, talentParent._sectionColor, talentParent._subsections = 792, color(), {}
+talentParent:SetSize(872, 560)
+talentParent._contentWidth, talentParent._sectionColor, talentParent._subsections = 872, color(), {}
 talentParent._sectionColorDim, talentParent._sectionColorBright = color(), color()
 local talentState = assert(NS.BuildTalentBuildsConfigSection(talentParent))
 local sourceChips = {}
@@ -146,7 +250,7 @@ assert(rowCount >= 2, "long source chips must wrap across rows")
 -- scroll-content parent. This includes the two 66px trinket rows.
 local trinketRows = 0
 for _, frame in ipairs(ui.frames) do
-    if frame._width == 424 and frame._height == 66 then
+    if frame._width == 584 and frame._height == 66 then
         local l, _, r = mock.rect(frame)
         local pl, _, pr = mock.rect(frame._parent)
         assert(l >= pl and r <= pr, "trinket row must fit its content width")
@@ -156,3 +260,9 @@ end
 assert(trinketRows >= 2, "expected both trinket rows")
 
 print("config mock: actual Framework/Config/TalentBuildsPanel passed all sections, feedback states, and wrapped-source bounds")
+if arg and arg[1] and arg[1] ~= "" then
+    NS.Config:Show()
+    NS.Config.SelectSection(tonumber(arg[2]) or 1)
+    mock.writeSVG(NS.Config.frame, arg[1])
+    print("config mock: wrote estimated-bounds SVG to " .. arg[1])
+end

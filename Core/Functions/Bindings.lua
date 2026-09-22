@@ -135,7 +135,11 @@ function NS.IsInterceptBlocked()
     if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then
         return true
     end
-    if IsMounted and IsMounted() and not (IsFlying and IsFlying()) then
+    -- A normal ground mount can safely retain the SBA binding when the macro
+    -- is configured to dismount first. Skyriding and replacement bars still
+    -- use their own blocking checks.
+    if IsMounted and IsMounted() and not (IsFlying and IsFlying())
+        and not (NS.db and NS.db.enableDismount) then
         return true
     end
     if HasBonusActionBar and HasBonusActionBar() and not NS.GetFormActionBarBaseSlot() then
@@ -782,6 +786,22 @@ local clickBorder = nil
 local clickPressOverlay = nil
 local CLICK_PRESS_DURATION = 0.09
 
+function NS.GetClickInterceptSlot()
+    if clickOverlay and clickOverlay:IsShown() then
+        return clickOverlay._slot
+    end
+    return nil
+end
+
+local function HideClickInterceptOverlay(clearPoints)
+    if not clickOverlay then return end
+    local wasActive = clickOverlay:IsShown() or clickOverlay._slot ~= nil
+    clickOverlay._slot = nil
+    clickOverlay:Hide()
+    if clearPoints then clickOverlay:ClearAllPoints() end
+    if wasActive then NS.UpdateKeybindStatus() end
+end
+
 local function EnsureClickPressOverlay()
     if clickPressOverlay then return clickPressOverlay end
     local overlay = NS.CreateFrame("Frame", nil, NS.UIParent)
@@ -917,17 +937,14 @@ function NS.UpdateClickIntercept()
     local db = NS.db
     local iType = db and db.interceptionType or "Keybind"
     if not db or not db.enabled or (iType ~= "Click" and iType ~= "Both") then
-        if clickOverlay then
-            clickOverlay:Hide()
-            clickOverlay:ClearAllPoints()
-        end
+        HideClickInterceptOverlay(true)
         HideClickBorder()
         ClearClickPressVisual()
         return
     end
 
     if NS.IsInterceptBlocked and NS.IsInterceptBlocked() then
-        if clickOverlay then clickOverlay:Hide() end
+        HideClickInterceptOverlay()
         HideClickBorder()
         ClearClickPressVisual()
         return
@@ -935,7 +952,7 @@ function NS.UpdateClickIntercept()
 
     local slot = sbaActionSlot or NS.FindSBAActionSlot()
     if not slot then
-        if clickOverlay then clickOverlay:Hide() end
+        HideClickInterceptOverlay()
         HideClickBorder()
         ClearClickPressVisual()
         return
@@ -943,7 +960,7 @@ function NS.UpdateClickIntercept()
 
     local barBtn = FindSBABarButton(slot)
     if not barBtn then
-        if clickOverlay then clickOverlay:Hide() end
+        HideClickInterceptOverlay()
         HideClickBorder()
         ClearClickPressVisual()
         return
@@ -995,12 +1012,15 @@ function NS.UpdateClickIntercept()
         clickOverlay = ov
     end
 
+    local slotChanged = clickOverlay._slot ~= slot
     clickOverlay:SetAttribute("macrotext", NS.BuildMacroText())
     clickOverlay._barBtn = barBtn
+    clickOverlay._slot = slot
     clickOverlay:ClearAllPoints()
     clickOverlay:SetAllPoints(barBtn)
     clickOverlay:SetFrameStrata(barBtn:GetFrameStrata())
     clickOverlay:SetFrameLevel(barBtn:GetFrameLevel() + 5)
     clickOverlay:Show()
     ShowClickBorder(barBtn)
+    if slotChanged then NS.UpdateKeybindStatus() end
 end

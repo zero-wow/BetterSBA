@@ -43,6 +43,7 @@ function NS.InitLDB()
             tip:AddLine(" ")
             local keys = NS._overrideKeys
             local slot = NS._overrideSlot
+            local clickSlot = NS.GetClickInterceptSlot and NS.GetClickInterceptSlot()
             if keys and #keys > 0 then
                 local keyStr = NS.table_concat(keys, ", ")
                 local bar = NS.math_floor((slot - 1) / 12) + 1
@@ -50,6 +51,12 @@ function NS.InitLDB()
                 tip:AddLine("Keybind Intercept:")
                 tip:AddDoubleLine("  Keybind", "|cFF44FF44" .. keyStr .. "|r")
                 tip:AddDoubleLine("  Action Bar", "|cFFFFFFFF" .. bar .. "|r")
+                tip:AddDoubleLine("  Slot", "|cFFFFFFFF" .. btn .. "|r")
+            elseif clickSlot then
+                local bar = NS.math_floor((clickSlot - 1) / 12) + 1
+                local btn = ((clickSlot - 1) % 12) + 1
+                tip:AddLine("Click Intercept:")
+                tip:AddDoubleLine("  Action Bar", "|cFF44FF44" .. bar .. "|r")
                 tip:AddDoubleLine("  Slot", "|cFFFFFFFF" .. btn .. "|r")
             else
                 local reason = NS.GetInterceptBlockReason()
@@ -188,7 +195,8 @@ function NS.GetInterceptBlockReason()
         end
         return "Bonus Bar"
     end
-    if IsMounted and IsMounted() and not (IsFlying and IsFlying()) then
+    if IsMounted and IsMounted() and not (IsFlying and IsFlying())
+        and not (NS.db and NS.db.enableDismount) then
         return "Mounted"
     end
     return nil
@@ -201,6 +209,7 @@ end
 -- Only rebuilds when the underlying state actually changes.
 local ldbCachedKeys = nil     -- last _overrideKeys reference
 local ldbCachedSlot = nil     -- last _overrideSlot
+local ldbCachedClickSlot = nil -- last active click-intercept slot
 local ldbCachedReason = nil   -- last pause reason (nil, "Skyriding", etc.)
 local ldbCachedText = nil     -- last computed text
 
@@ -219,16 +228,18 @@ function NS.UpdateLDBText()
 
     local keys = NS._overrideKeys
     local slot = NS._overrideSlot
+    local clickSlot = NS.GetClickInterceptSlot and NS.GetClickInterceptSlot()
     local reason = NS.GetInterceptBlockReason()
 
     -- Skip rebuild if inputs haven't changed (avoids string garbage)
-    if keys == ldbCachedKeys and slot == ldbCachedSlot
+    if keys == ldbCachedKeys and slot == ldbCachedSlot and clickSlot == ldbCachedClickSlot
        and reason == ldbCachedReason and ldbCachedText then
         dataObj.text = ldbCachedText
         return
     end
     ldbCachedKeys = keys
     ldbCachedSlot = slot
+    ldbCachedClickSlot = clickSlot
     ldbCachedReason = reason
 
     if keys and #keys > 0 then
@@ -236,6 +247,10 @@ function NS.UpdateLDBText()
         local bar = NS.math_floor((slot - 1) / 12) + 1
         local btn = ((slot - 1) % 12) + 1
         ldbCachedText = "Intercepting [KB: " .. keyStr .. "] [BAR: " .. bar .. "] [SLOT: " .. btn .. "]"
+    elseif clickSlot then
+        local bar = NS.math_floor((clickSlot - 1) / 12) + 1
+        local btn = ((clickSlot - 1) % 12) + 1
+        ldbCachedText = "Click routing [BAR: " .. bar .. "] [SLOT: " .. btn .. "]"
     else
         if reason then
             ldbCachedText = "Paused: " .. reason

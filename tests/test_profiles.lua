@@ -4,6 +4,7 @@ local NS = {
         priorityIconSize = 16,
         prioritySpacing = 4,
         showMinimapButton = true,
+        trinketMode = "Off",
     },
     pairs = pairs,
     ipairs = ipairs,
@@ -35,11 +36,13 @@ end
 -- Legacy keys must migrate before defaults fill the replacement keys.
 BetterSBA_DB = {
     queueIconSize = 22,
+    trinketMode = "Verified",
     minimap = { hide = false, x = 10 },
 }
 NS:InitializeDatabase()
 eq(NS.db.priorityIconSize, 22, "legacy queue key migrates")
 eq(NS.db.queueIconSize, nil, "legacy queue key is removed")
+eq(NS.db.trinketMode, "Approved", "legacy trinket mode migrates")
 eq(NS.db.minimap, BetterSBA_DB.minimap, "minimap aliases root after initialize")
 
 -- A newer value wins over an older duplicate during migration.

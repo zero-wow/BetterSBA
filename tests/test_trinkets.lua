@@ -35,7 +35,7 @@ assert(ns.GetTrinketStatus(13).status == "Manual")
 assert(ns.GetTrinketStatus(14).status == "Passive")
 assert(ns.SetTrinketApproved(13, true))
 assert(not ns.GetTrinketStatus(13).eligible, "Off mode stays off")
-ns.db.trinketMode = "Verified"
+ns.db.trinketMode = "Approved"
 ns.RefreshTrinkets()
 assert(ns.GetTrinketStatus(13).eligible)
 equipment[13] = 103

@@ -8,6 +8,33 @@ local BACKDROP_PANEL = {
     edgeSize = 1,
 }
 
+-- Shared field treatment for the config surface.  Individual sections retain
+-- their own accent colour, while the neutral graphite field keeps the page
+-- visually quiet between active controls.
+local BUTTON_ART = "Interface\\AddOns\\BetterSBA\\IMG\\Button\\"
+
+local function GetControlAccent(parent)
+    return parent._sectionColor or T.ACCENT
+end
+
+local function SetFieldChrome(frame, parent)
+    frame:SetBackdrop(BACKDROP_PANEL)
+    frame:SetBackdropColor(0.045, 0.05, 0.065, 0.96)
+    frame:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.8)
+    frame._fieldParent = parent
+end
+
+local function SetFieldHover(frame, hovering)
+    if hovering then
+        local accent = GetControlAccent(frame._fieldParent)
+        frame:SetBackdropColor(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.9)
+        frame:SetBackdropBorderColor(accent[1], accent[2], accent[3], 0.72)
+    else
+        frame:SetBackdropColor(0.045, 0.05, 0.065, 0.96)
+        frame:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.8)
+    end
+end
+
 ----------------------------------------------------------------
 -- Panel
 ----------------------------------------------------------------
@@ -15,8 +42,8 @@ function NS.CreatePanel(name, parent, w, h)
     local f = NS.CreateFrame("Frame", name, parent or NS.UIParent, "BackdropTemplate")
     f:SetSize(w, h)
     f:SetBackdrop(BACKDROP_PANEL)
-    f:SetBackdropColor(NS.unpack(T.BG_DARK))
-    f:SetBackdropBorderColor(T.ACCENT_DIM[1], T.ACCENT_DIM[2], T.ACCENT_DIM[3], 0.65)
+    f:SetBackdropColor(0.025, 0.03, 0.04, 0.985)
+    f:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.9)
     f:SetFrameStrata("DIALOG")
     return f
 end
@@ -26,14 +53,14 @@ end
 ----------------------------------------------------------------
 function NS.CreateSectionHeader(parent, text, yOffset)
     local header = parent:CreateFontString(nil, "OVERLAY")
-    header:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    header:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
     header:SetTextColor(NS.unpack(T.ACCENT))
     header:SetText(text)
     header:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yOffset)
 
     local line = parent:CreateTexture(nil, "ARTWORK")
     line:SetHeight(1)
-    line:SetColorTexture(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.4)
+    line:SetColorTexture(T.ACCENT_DIM[1], T.ACCENT_DIM[2], T.ACCENT_DIM[3], 0.38)
     line:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
     line:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
 
@@ -41,7 +68,7 @@ function NS.CreateSectionHeader(parent, text, yOffset)
 end
 
 ----------------------------------------------------------------
--- Collapsible Section Card (futuristic animated container)
+-- Collapsible section: a compact raised header with a single accent rail.
 ----------------------------------------------------------------
 function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
     local HEADER_H = 26
@@ -50,14 +77,28 @@ function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
     -- Card container
     local card = NS.CreateFrame("Frame", nil, parent, "BackdropTemplate")
     card:SetBackdrop(BACKDROP_PANEL)
-    card:SetBackdropColor(NS.unpack(T.BG_CARD))
-    card:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.5)
+    card:SetBackdropColor(0.05, 0.055, 0.07, 0.92)
+    card:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.72)
 
     -- Header bar (clickable)
     local header = NS.CreateFrame("Button", nil, card)
     header:SetHeight(HEADER_H)
     header:SetPoint("TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", 0, 0)
+
+    local headerBg = header:CreateTexture(nil, "BACKGROUND")
+    headerBg:SetAllPoints()
+    headerBg:SetColorTexture(T.BG_HEADER[1], T.BG_HEADER[2], T.BG_HEADER[3], 0.9)
+
+    local headerHover = header:CreateTexture(nil, "HIGHLIGHT")
+    headerHover:SetAllPoints()
+    headerHover:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.5)
+
+    local rail = header:CreateTexture(nil, "ARTWORK")
+    rail:SetWidth(2)
+    rail:SetPoint("TOPLEFT", 0, -4)
+    rail:SetPoint("BOTTOMLEFT", 0, 4)
+    rail:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.8)
 
     -- Arrow indicator
     local arrow = header:CreateFontString(nil, "OVERLAY")
@@ -68,12 +109,12 @@ function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
 
     -- Title text
     local titleText = header:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+    titleText:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
     titleText:SetPoint("LEFT", arrow, "RIGHT", 6, 0)
     titleText:SetTextColor(NS.unpack(T.ACCENT))
     titleText:SetText(title)
 
-    -- Animated underline (pulses when expanded)
+    -- A static divider keeps the compact header legible without idle motion.
     local underline = header:CreateTexture(nil, "ARTWORK")
     underline:SetHeight(2)
     underline:SetPoint("BOTTOMLEFT", 8, 1)
@@ -162,38 +203,48 @@ function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
 end
 
 ----------------------------------------------------------------
--- Toggle (square checkbox)
+-- Toggle (right-aligned switch)
 ----------------------------------------------------------------
 function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
-    local size = 16
+    local switchW, switchH = 34, 18
     local pw = parent._contentWidth or parent:GetWidth()
     local row = NS.CreateFrame("Button", nil, parent)
     row:SetSize(pw - 28, 22)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yOffset)
 
     local box = NS.CreateFrame("Frame", nil, row, "BackdropTemplate")
-    box:SetSize(size, size)
-    box:SetPoint("LEFT", 0, 0)
-    box:SetBackdrop(BACKDROP_PANEL)
+    box:SetSize(switchW, switchH)
+    box:SetPoint("RIGHT", 0, 0)
+
+    local track = box:CreateTexture(nil, "BACKGROUND")
+    track:SetAllPoints()
+    track:SetTexture(BUTTON_ART .. "Keycap")
+    track:SetVertexColor(0.07, 0.085, 0.105, 0.95)
 
     local fill = box:CreateTexture(nil, "ARTWORK")
-    fill:SetPoint("TOPLEFT", 2, -2)
-    fill:SetPoint("BOTTOMRIGHT", -2, 2)
+    fill:SetTexture(BUTTON_ART .. "Keycap")
+    fill:SetPoint("TOPLEFT", 1, -1)
+    fill:SetPoint("BOTTOMRIGHT", -1, 1)
+
+    local knob = box:CreateTexture(nil, "OVERLAY")
+    knob:SetTexture(BUTTON_ART .. "Keycap")
+    knob:SetSize(12, 12)
 
     local hover = row:CreateTexture(nil, "HIGHLIGHT")
-    hover:SetPoint("TOPLEFT", box, "TOPRIGHT", 5, 0)
-    hover:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
-    hover:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.35)
+    hover:SetAllPoints()
+    hover:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.3)
 
     local lbl = row:CreateFontString(nil, "OVERLAY")
     lbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
-    lbl:SetPoint("LEFT", box, "RIGHT", 8, 0)
+    lbl:SetPoint("LEFT", 0, 0)
+    lbl:SetPoint("RIGHT", box, "LEFT", -10, 0)
     lbl:SetTextColor(NS.unpack(T.TEXT))
     lbl:SetText(label)
 
     row._enabled = true
     row._box = box
     row._fill = fill
+    row._knob = knob
     row._lbl = lbl
 
     local function Refresh()
@@ -202,20 +253,22 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
         if on then
             local sc = parent._sectionColor or T.TOGGLE_ON
             if enabled then
-                box:SetBackdropColor(sc[1], sc[2], sc[3], sc[4] or 1)
-                box:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.6)
-                fill:SetColorTexture(sc[1], sc[2], sc[3], 0.9)
+                track:SetVertexColor(sc[1] * 0.42, sc[2] * 0.42, sc[3] * 0.42, 1)
+                fill:SetVertexColor(sc[1], sc[2], sc[3], 0.68)
+                knob:SetVertexColor(0.92, 0.97, 1, 1)
             else
-                box:SetBackdropColor(T.TOGGLE_OFF[1], T.TOGGLE_OFF[2], T.TOGGLE_OFF[3], 1)
-                box:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.9)
-                fill:SetColorTexture(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.45)
+                track:SetVertexColor(0.09, 0.10, 0.12, 0.8)
+                fill:SetVertexColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.22)
+                knob:SetVertexColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.65)
             end
-            fill:Show()
         else
-            box:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-            box:SetBackdropBorderColor(NS.unpack(T.BORDER))
-            fill:Hide()
+            track:SetVertexColor(0.07, 0.085, 0.105, 0.95)
+            fill:SetVertexColor(0.07, 0.085, 0.105, 0.55)
+            knob:SetVertexColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3], 0.82)
         end
+        knob:ClearAllPoints()
+        knob:SetPoint(on and "RIGHT" or "LEFT", box, on and "RIGHT" or "LEFT", on and -3 or 3, 0)
+        fill:Show()
         if enabled then
             lbl:SetTextColor(NS.unpack(T.TEXT))
         else
@@ -234,6 +287,7 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
         if not row._enabled then return end
         local sc = parent._sectionColorBright or T.ACCENT_BRIGHT
         lbl:SetTextColor(NS.unpack(sc))
+        track:SetVertexColor(sc[1] * 0.55, sc[2] * 0.55, sc[3] * 0.55, 1)
     end)
     row:SetScript("OnLeave", function()
         if row._enabled then
@@ -241,11 +295,14 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
         else
             lbl:SetTextColor(NS.unpack(T.TEXT_MUTED))
         end
+        Refresh()
     end)
 
     function row:SetEnabledState(enabled)
         self._enabled = enabled and true or false
-        self:EnableMouse(self._enabled)
+        -- Keep disabled reasons discoverable through the row's tooltip.
+        -- OnClick already refuses to change the setting while disabled.
+        self:EnableMouse(true)
         Refresh()
     end
 
@@ -255,7 +312,7 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
 end
 
 ----------------------------------------------------------------
--- Slider (flat fill bar, no thumb)
+-- Slider (slender track with a clear value handle)
 ----------------------------------------------------------------
 function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange)
     local pw = parent._contentWidth or parent:GetWidth()
@@ -275,18 +332,21 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
     valText:SetTextColor(NS.unpack(T.TEXT))
 
     local track = NS.CreateFrame("Frame", nil, row, "BackdropTemplate")
-    track:SetHeight(7)
-    track:SetPoint("TOPLEFT", 0, -16)
-    track:SetPoint("TOPRIGHT", 0, -16)
-    track:SetBackdrop(BACKDROP_PANEL)
-    track:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-    track:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    track:SetHeight(6)
+    track:SetPoint("TOPLEFT", 0, -18)
+    track:SetPoint("TOPRIGHT", 0, -18)
+    SetFieldChrome(track, parent)
 
     local fillBar = track:CreateTexture(nil, "ARTWORK")
     fillBar:SetPoint("TOPLEFT", 1, -1)
     fillBar:SetPoint("BOTTOMLEFT", 1, 1)
-    local sc = parent._sectionColor or T.ACCENT
+    local sc = GetControlAccent(parent)
     fillBar:SetColorTexture(sc[1], sc[2], sc[3], 0.8)
+
+    local thumb = track:CreateTexture(nil, "OVERLAY")
+    thumb:SetTexture("Interface\\Buttons\\WHITE8X8")
+    thumb:SetSize(10, 10)
+    thumb:SetColorTexture(sc[1], sc[2], sc[3], 1)
 
     local function SetValue(val)
         val = math.max(min, math.min(max, val))
@@ -301,6 +361,8 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
         local trackWidth = track:GetWidth() - 2
         if trackWidth > 0 then
             fillBar:SetWidth(math.max(1, pct * trackWidth))
+            thumb:ClearAllPoints()
+            thumb:SetPoint("CENTER", track, "LEFT", 1 + pct * trackWidth, 0)
         end
         if step >= 1 then
             valText:SetText(tostring(NS.math_floor(val)))
@@ -331,6 +393,8 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
             SetValue(min + pct * (max - min))
         end
     end)
+    track:SetScript("OnEnter", function(self) SetFieldHover(self, true) end)
+    track:SetScript("OnLeave", function(self) SetFieldHover(self, false) end)
     track:SetScript("OnMouseUp", function(self)
         dragging = false
         self:SetScript("OnUpdate", nil)
@@ -371,20 +435,18 @@ function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, wid
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
     btn:SetSize(W, 22)
     btn:SetPoint("TOPLEFT", 0, -16)
-    btn:SetBackdrop(BACKDROP_PANEL)
-    btn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-    btn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    SetFieldChrome(btn, parent)
 
     local btnText = btn:CreateFontString(nil, "OVERLAY")
     btnText:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
-    btnText:SetPoint("LEFT", 6, 0)
+    btnText:SetPoint("LEFT", 8, 0)
     btnText:SetPoint("RIGHT", -20, 0)
     btnText:SetJustifyH("LEFT")
     btnText:SetTextColor(NS.unpack(parent._sectionColor or T.ACCENT))
 
     local arrow = btn:CreateFontString(nil, "OVERLAY")
     arrow:SetFont(NS.NERD_FONT, 8, NS.GetConfigFontOutline())
-    arrow:SetPoint("RIGHT", -6, 0)
+    arrow:SetPoint("RIGHT", -8, 0)
     arrow:SetTextColor(NS.unpack(T.TEXT_DIM))
     arrow:SetText(NS.GLYPH_CHEVRON_DOWN)
 
@@ -460,11 +522,10 @@ function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, wid
         end
     end)
     btn:SetScript("OnEnter", function(self)
-        local sc = parent._sectionColorDim or T.ACCENT_DIM
-        self:SetBackdropBorderColor(NS.unpack(sc))
+        SetFieldHover(self, true)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+        SetFieldHover(self, false)
     end)
 
     dropdown:SetScript("OnHide", function() arrow:SetText(NS.GLYPH_CHEVRON_DOWN) end)
@@ -503,12 +564,10 @@ function NS.CreateTextBoxDropdown(parent, label, dbKey, presets, yOffset, onChan
     local editBox = NS.CreateFrame("EditBox", nil, row, "BackdropTemplate")
     editBox:SetSize(W, 20)
     editBox:SetPoint("TOPLEFT", 0, -16)
-    editBox:SetBackdrop(BACKDROP_PANEL)
-    editBox:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-    editBox:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    SetFieldChrome(editBox, parent)
     editBox:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
     editBox:SetTextColor(NS.unpack(parent._sectionColor or T.ACCENT))
-    editBox:SetTextInsets(6, 6, 0, 0)
+    editBox:SetTextInsets(8, 8, 0, 0)
     editBox:SetAutoFocus(false)
     editBox:SetMaxLetters(200)
     editBox:SetText(NS.db[dbKey] or "")
@@ -601,11 +660,10 @@ function NS.CreateTextBoxDropdown(parent, label, dbKey, presets, yOffset, onChan
     end)
 
     editBox:SetScript("OnEnter", function(self)
-        local sc = parent._sectionColorDim or T.ACCENT_DIM
-        self:SetBackdropBorderColor(NS.unpack(sc))
+        SetFieldHover(self, true)
     end)
     editBox:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+        SetFieldHover(self, false)
     end)
 
     parent:HookScript("OnHide", function() dropdown:Hide() end)
@@ -634,10 +692,10 @@ function NS.CreateColorSwatch(parent, label, dbKey, yOffset, onChange)
     lbl:SetText(label)
 
     local swatch = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
-    swatch:SetSize(40, 16)
+    swatch:SetSize(46, 18)
     swatch:SetPoint("RIGHT", 0, 0)
     swatch:SetBackdrop(BACKDROP_PANEL)
-    swatch:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    swatch:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.9)
 
     local colorTex = swatch:CreateTexture(nil, "ARTWORK")
     colorTex:SetPoint("TOPLEFT", 2, -2)
@@ -690,7 +748,7 @@ function NS.CreateColorSwatch(parent, label, dbKey, yOffset, onChange)
 
     swatch:SetScript("OnEnter", function(self)
         local sc = parent._sectionColorDim or T.ACCENT_DIM
-        self:SetBackdropBorderColor(NS.unpack(sc))
+        self:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.9)
     end)
     swatch:SetScript("OnLeave", function(self)
         self:SetBackdropBorderColor(NS.unpack(T.BORDER))
@@ -724,18 +782,16 @@ function NS.CreateFontDropdown(parent, label, dbKey, yOffset, onChange, width)
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
     btn:SetSize(W, 20)
     btn:SetPoint("TOPLEFT", 0, -16)
-    btn:SetBackdrop(BACKDROP_PANEL)
-    btn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-    btn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    SetFieldChrome(btn, parent)
 
     local btnText = btn:CreateFontString(nil, "OVERLAY")
-    btnText:SetPoint("LEFT", 6, 0)
+    btnText:SetPoint("LEFT", 8, 0)
     btnText:SetPoint("RIGHT", -20, 0)
     btnText:SetJustifyH("LEFT")
 
     local arrow = btn:CreateFontString(nil, "OVERLAY")
     arrow:SetFont(NS.NERD_FONT, 8, NS.GetConfigFontOutline())
-    arrow:SetPoint("RIGHT", -6, 0)
+    arrow:SetPoint("RIGHT", -8, 0)
     arrow:SetTextColor(NS.unpack(T.TEXT_DIM))
     arrow:SetText(NS.GLYPH_CHEVRON_DOWN)
 
@@ -756,9 +812,8 @@ function NS.CreateFontDropdown(parent, label, dbKey, yOffset, onChange, width)
     local search = NS.CreateFrame("EditBox", nil, dropdown, "BackdropTemplate")
     search:SetSize(W - 8, 20)
     search:SetPoint("TOPLEFT", 4, -4)
-    search:SetBackdrop(BACKDROP_PANEL)
-    search:SetBackdropColor(NS.unpack(T.BG))
-    search:SetBackdropBorderColor(NS.unpack(T.BORDER_ACCENT))
+    SetFieldChrome(search, parent)
+    search:SetBackdropBorderColor(T.BORDER_ACCENT[1], T.BORDER_ACCENT[2], T.BORDER_ACCENT[3], 0.8)
     search:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
     search:SetTextColor(NS.unpack(T.TEXT))
     search:SetTextInsets(6, 6, 0, 0)
@@ -915,11 +970,10 @@ function NS.CreateFontDropdown(parent, label, dbKey, yOffset, onChange, width)
         end
     end)
     btn:SetScript("OnEnter", function(self)
-        local sc = parent._sectionColorDim or T.ACCENT_DIM
-        self:SetBackdropBorderColor(NS.unpack(sc))
+        SetFieldHover(self, true)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+        SetFieldHover(self, false)
     end)
 
     dropdown:SetScript("OnHide", function() arrow:SetText(NS.GLYPH_CHEVRON_DOWN) end)
@@ -1128,20 +1182,18 @@ function NS.CreateNestedDropdown(config)
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
     btn:SetSize(W, 22)
     btn:SetPoint("TOPLEFT", 0, -16)
-    btn:SetBackdrop(BACKDROP_PANEL)
-    btn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-    btn:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    SetFieldChrome(btn, parent)
 
     local btnText = btn:CreateFontString(nil, "OVERLAY")
     btnText:SetFont(NS.GetConfigFontPath(), config.fontSize or 10, NS.GetConfigFontOutline())
-    btnText:SetPoint("LEFT", 6, 0)
+    btnText:SetPoint("LEFT", 8, 0)
     btnText:SetPoint("RIGHT", -20, 0)
     btnText:SetJustifyH("LEFT")
     btnText:SetTextColor(NS.unpack(parent._sectionColor or T.ACCENT))
 
     local arrow = btn:CreateFontString(nil, "OVERLAY")
     arrow:SetFont(NS.NERD_FONT, 8, NS.GetConfigFontOutline())
-    arrow:SetPoint("RIGHT", -6, 0)
+    arrow:SetPoint("RIGHT", -8, 0)
     arrow:SetTextColor(NS.unpack(T.TEXT_DIM))
     arrow:SetText(NS.GLYPH_CHEVRON_DOWN)
 
@@ -1779,10 +1831,10 @@ function NS.CreateNestedDropdown(config)
         end
     end)
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropBorderColor(NS.unpack(parent._sectionColorDim or T.ACCENT_DIM))
+        SetFieldHover(self, true)
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropBorderColor(NS.unpack(T.BORDER))
+        SetFieldHover(self, false)
     end)
 
     dropdown:HookScript("OnHide", function() arrow:SetText(NS.GLYPH_CHEVRON_DOWN) end)

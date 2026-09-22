@@ -165,7 +165,7 @@ NS.defaults = {
 
     -- Class-specific combat options (off-GCD abilities appended after /cast SBA)
     enableDemonSpikes = true,       -- Vengeance DH: /cast Demon Spikes
-    enableConvokeTheSpirits = true, -- Druid: /cast [nochanneling,combat] Convoke the Spirits
+    enableConvokeTheSpirits = false, -- Opt in: starts a channel before SBA, consuming this press.
     enableShieldBlock = true,       -- Prot Warrior: /cast Shield Block
     enableIgnorePain = false,       -- Prot Warrior: /cast Ignore Pain (off by default — drains Rage)
     enableIronfur = true,           -- Guardian Druid: /cast Ironfur

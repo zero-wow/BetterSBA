@@ -22,7 +22,7 @@
 
 BetterSBA wraps the **Single-Button Assistant** (Assisted Combat) into a `SecureActionButton` with `/targetenemy`, `/petattack`, and channel protection baked into one keypress.
 
-Press your keybind &rarr; auto-target nearest enemy &rarr; send pet &rarr; protect channels &rarr; cast. No more tab-targeting before every press.
+Press your keybind &rarr; protect an active channel &rarr; acquire an enemy if needed &rarr; send your pet &rarr; attempt the cast. Target selection uses Blizzard's macro targeting rules.
 
 It also gives you a **rotation queue display** showing your full SBA spell pool with cooldowns, importance borders, and range coloring &mdash; everything the default SBA button doesn't show you.
 
@@ -89,10 +89,12 @@ Shows your SBA rotation pool as icons beside the main button. Configurable icon 
 Animated clone keybind text now has its own tuning controls for edge-case setups. The default alignment is intended to be correct for the normal display and common scaling path, but if your Masque skin, font choice, or scale stack still makes the clone hotkey sit slightly off, you can correct it directly in the Animation section with **Clone Keybind X**, **Clone Keybind Y**, **Clone Font**, **Clone Outline**, and **Clone Size**.
 
 ### Tank Off-GCD Abilities
-Auto-detects your tank spec and appends class-specific off-GCD abilities after `/cast SBA`: Shield Block, Ignore Pain (Warrior), Ironfur (Druid), Shield of the Righteous (Paladin), Rune Tap (Death Knight), Purifying Brew (Monk). Each ability has an individual toggle in the Combat Assist section.
+Detects your tank spec and learned spells, then optionally attempts Demon Spikes, Shield Block, Ignore Pain, Ironfur, Shield of the Righteous, Rune Tap, or Purifying Brew on your keypress in combat. Ironfur precedes SBA; the other tank actions follow it. These attempts do not choose safe damage windows, maintain a desired buff count, or reserve resources. Each has an individual toggle; unavailable spells are disabled and omitted.
+
+Convoke the Spirits is a separate Druid opt-in, **off for new profiles**. It attempts a channel before SBA and can consume that press instead of the assisted attack. Existing preferences are preserved. Channel Protection stops the whole macro while channeling; turning it off also removes the cast-line channel guards.
 
 ### Equipped trinkets
-Combat Assist detects both equipped trinkets and their use effects outside combat. Trinket Use defaults to **Off**. **Verified** includes only the exact item/use-spell pairs you individually allow after checking that they are instant, off the GCD, and do not channel. Passive, uncached, cast-time, and unapproved items stay out of the macro. Detection alone cannot prove those properties for every item.
+Combat Assist detects both equipped trinkets and their use effects outside combat. Trinket Use defaults to **Off**. **Approved** includes only the exact item/use-spell pairs you individually allow after checking that they are instant, off the GCD, and do not channel. Passive, uncached, cast-time, and unapproved items stay out of the macro. Detection alone cannot prove those properties for every item. The old Verified setting migrates to Approved without losing approvals.
 
 Approved items are attempted after SBA, on your normal keypress, against a living hostile target in combat. Changing equipment does not approve a different item. Protected macro changes made during combat wait until combat ends. The macro preview uses the same action list as the secure button.
 
@@ -123,7 +125,7 @@ All tier colors and section theme colors are fully configurable with color picke
 Icon desaturates red when your target is out of range. Instant visual feedback without needing a tooltip.
 
 ### Pause Detection
-Automatically pauses keybind interception during vehicles, skyriding, mounts, and override bars. A visible pause overlay shows the reason with customizable font controls. Resumes automatically when you dismount or leave the vehicle.
+Automatically pauses interception during vehicles, skyriding, and unsupported override bars. Normal ground mounts remain interceptable when Auto-Dismount is enabled; otherwise mounting pauses interception. A visible pause overlay shows the reason.
 
 ### Per-Context Font System
 Independent font family, outline style, and size settings for: global, config panel, keybind text, queue labels, queue keybinds, pause symbol, and pause reason. Each context has an override toggle to inherit from the global font or use its own.
@@ -147,14 +149,17 @@ Independent font family, outline style, and size settings for: global, config pa
 
 ## Configuration
 
-The config panel (`/bs`) is organized into 8 sections:
+The config panel (`/bs`) uses a wider workspace, stable navigation for all nine sections, and a scrollable **Jump to section** menu for subsection shortcuts. Controls use rounded switches, clearer fields, and more spacing. Settings still save automatically, and existing profiles and font overrides are retained.
+
+The panel is organized into nine sections:
 
 | Section | What It Controls |
 |---------|-----------------|
 | **Combat Assist** | Auto-target enemies, pet attack, auto-dismount, channel protection, tank off-GCD abilities (per-spec), live macro preview |
 | **Appearance** | Cast animation type &amp; style, animated clone keybind controls, per-context font system (global, config panel, keybind, queue label, queue keybind, pause symbol, pause reason) |
 | **Active Display** | Button size, show/hide keybind text, keybind X/Y offset, show/hide cooldown spiral, range coloring toggle, button background color |
-| **Queue Display** | Show/hide rotation queue, icon size, scale, anchor position (8 options), detach &amp; drag-to-move, X/Y offset, keybind labels with X/Y offset, background &amp; border colors |
+| **Priority Display** | Show/hide the spell pool, icon size, scale, anchor position, detach &amp; drag-to-move, offsets, keybind labels, background &amp; border colors |
+| **Talent Builds** | Browse and filter builds, manage personal imports, and apply talent loadouts |
 | **Visibility** | Combat-only mode, hide in vehicle, button out-of-combat alpha, queue out-of-combat alpha |
 | **Importance** | Enable/disable importance borders, cooldown tier colors (auto-attack, filler, short, long, major), section theme colors for each config panel tab |
 | **Advanced** | Modifier scaling (Shift/Ctrl/Alt size multiplier), lock button position, debug mode, minimap button toggle, LDB status text, live performance stats (memory, update rate, managed frames, keybind status, active profile, session uptime, health) |
