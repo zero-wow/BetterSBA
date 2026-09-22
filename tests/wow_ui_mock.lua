@@ -50,6 +50,7 @@ local function widget(kind, parent)
             SetHeight = function(s, h) s._height, s._heightExplicit = h or 0, true end,
             GetWidth = function(s) return s._width end,
             GetHeight = function(s) return s._height end,
+            GetParent = function(s) return rawget(s, "_parent") end,
             SetPoint = function(s, ...) s._points[#s._points + 1] = {...} end,
             ClearAllPoints = function(s) s._points, s._allPoints = {}, nil end,
             SetAllPoints = function(s, target) s._allPoints = target or s._parent end,
@@ -123,6 +124,11 @@ local function widget(kind, parent)
             SetResizeBounds = function(s, ...) s._resizeBounds = {...} end,
             StartMoving = noop, StopMovingOrSizing = noop,
             SetScale = function(s, value) s._scale = value or 1 end,
+            GetScale = function(s) return rawget(s, "_scale") or 1 end,
+            GetEffectiveScale = function(s)
+                local parent = rawget(s, "_parent")
+                return (rawget(s, "_scale") or 1) * (parent and parent:GetEffectiveScale() or 1)
+            end,
             SetNormalTexture = function(s, value)
                 assert(value ~= nil, "SetNormalTexture requires a non-nil texture; use ClearNormalTexture")
                 s._normalTexture = value
@@ -160,6 +166,7 @@ function M.install()
     _G.GetTime = function() return 1 end
     _G.C_Timer = { After = function() end }
     _G.GetCursorPosition = function() return 0, 0 end
+    _G.GetPhysicalScreenSize = function() return 1920, 1080 end
     _G.InCombatLockdown = function() return false end
     _G.IsShiftKeyDown = function() return false end
     _G.IsControlKeyDown = function() return false end
@@ -169,6 +176,39 @@ function M.install()
     end
     _G.wipe = function(t) for k in pairs(t) do t[k] = nil end return t end
     _G.GameTooltip = { SetOwner = noop, SetText = noop, AddLine = noop, Show = noop, Hide = noop }
+    _G.PixelUtil = {
+        GetPixelToUIUnitFactor = function() return 768 / select(2, GetPhysicalScreenSize()) end,
+        GetNearestPixelSize = function(uiUnits, layoutScale, minPixels)
+            if uiUnits == 0 and (not minPixels or minPixels == 0) then return 0 end
+            local unit = PixelUtil.GetPixelToUIUnitFactor()
+            local pixels = math.floor((uiUnits * layoutScale) / unit + (uiUnits < 0 and -0.5 or 0.5))
+            if minPixels then
+                pixels = uiUnits < 0 and math.min(pixels, -minPixels) or math.max(pixels, minPixels)
+            end
+            return pixels * unit / layoutScale
+        end,
+        SetWidth = function(region, value, minPixels)
+            region:SetWidth(PixelUtil.GetNearestPixelSize(value, region:GetEffectiveScale(), minPixels))
+        end,
+        SetHeight = function(region, value, minPixels)
+            region:SetHeight(PixelUtil.GetNearestPixelSize(value, region:GetEffectiveScale(), minPixels))
+        end,
+        SetSize = function(region, width, height, minWidthPixels, minHeightPixels)
+            PixelUtil.SetWidth(region, width, minWidthPixels)
+            PixelUtil.SetHeight(region, height, minHeightPixels)
+        end,
+        SetPoint = function(region, point, relativeTo, relativePoint, x, y, minX, minY)
+            -- Frame:SetPoint accepts a nil relative target (UIParent/default
+            -- parent). Normalize it here so a hidden decorative line with no
+            -- explicit header remains harmless to bounds tests.
+            if relativeTo == nil then
+                relativeTo, relativePoint = rawget(region, "_parent") or UIParent, point
+            end
+            region:SetPoint(point, relativeTo, relativePoint,
+                PixelUtil.GetNearestPixelSize(x or 0, region:GetEffectiveScale(), minX),
+                PixelUtil.GetNearestPixelSize(y or 0, region:GetEffectiveScale(), minY))
+        end,
+    }
     return { createFrame = createFrame, uiParent = uiParent, frames = frames }
 end
 
@@ -288,7 +328,7 @@ function M.writeSVG(root, path)
                 local color, alpha = cssColor(rawget(node, "_textColor"), {0.9, 0.9, 0.9, 1})
                 local tx = rawget(node, "_justifyH") == "RIGHT" and x + w or (rawget(node, "_justifyH") == "CENTER" and x + w / 2 or x)
                 local anchor = rawget(node, "_justifyH") == "RIGHT" and "end" or (rawget(node, "_justifyH") == "CENTER" and "middle" or "start")
-                lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(tx, y + (font.size or 10), font.size or 10, color, alpha, anchor, escape(visibleText(text)))
+                lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(tx, y + (font.size or 10), font.size or 10, color, alpha, anchor, escape(visibleText(text)))
             end
         end
         for _, child in ipairs(rawget(node, "_children") or {}) do visit(child) end

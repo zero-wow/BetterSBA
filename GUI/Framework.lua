@@ -17,21 +17,51 @@ local function GetControlAccent(parent)
     return parent._sectionColor or T.ACCENT
 end
 
+-- Three static slices keep rounded fields crisp at any width. Reuse the
+-- existing keycap art; no animation, mask updates, or per-frame work is needed.
+local function CreateFieldSurface(frame, inset, capWidth, sublevel)
+    local left = frame:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+    left:SetTexture(BUTTON_ART .. "Keycap")
+    left:SetTexCoord(0, 0.5, 0, 1)
+    left:SetPoint("TOPLEFT", inset, -inset)
+    left:SetPoint("BOTTOMLEFT", inset, inset)
+    left:SetWidth(capWidth)
+    local right = frame:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+    right:SetTexture(BUTTON_ART .. "Keycap")
+    right:SetTexCoord(0.5, 1, 0, 1)
+    right:SetPoint("TOPRIGHT", -inset, -inset)
+    right:SetPoint("BOTTOMRIGHT", -inset, inset)
+    right:SetWidth(capWidth)
+    local middle = frame:CreateTexture(nil, "BACKGROUND", nil, sublevel)
+    middle:SetPoint("TOPLEFT", left, "TOPRIGHT", 0, 0)
+    middle:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", 0, 0)
+    return function(r, g, b, a)
+        left:SetVertexColor(r, g, b, a)
+        right:SetVertexColor(r, g, b, a)
+        middle:SetColorTexture(r, g, b, a)
+    end
+end
+
 local function SetFieldChrome(frame, parent)
     frame:SetBackdrop(BACKDROP_PANEL)
-    frame:SetBackdropColor(0.045, 0.05, 0.065, 0.96)
-    frame:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.8)
+    frame:SetBackdropColor(0, 0, 0, 0)
+    frame:SetBackdropBorderColor(0, 0, 0, 0)
+    local cap = frame:GetHeight() <= 6 and 2 or 6
+    frame._fieldBorder = CreateFieldSurface(frame, 0, cap, -2)
+    frame._fieldFill = CreateFieldSurface(frame, 1, math.max(1, cap - 1), -1)
+    frame._fieldBorder(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.6)
+    frame._fieldFill(0.065, 0.075, 0.095, 1)
     frame._fieldParent = parent
 end
 
 local function SetFieldHover(frame, hovering)
     if hovering then
         local accent = GetControlAccent(frame._fieldParent)
-        frame:SetBackdropColor(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.9)
-        frame:SetBackdropBorderColor(accent[1], accent[2], accent[3], 0.72)
+        frame._fieldFill(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 1)
+        frame._fieldBorder(accent[1], accent[2], accent[3], 0.65)
     else
-        frame:SetBackdropColor(0.045, 0.05, 0.065, 0.96)
-        frame:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.8)
+        frame._fieldFill(0.065, 0.075, 0.095, 1)
+        frame._fieldBorder(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.6)
     end
 end
 
@@ -206,7 +236,7 @@ end
 -- Toggle (right-aligned switch)
 ----------------------------------------------------------------
 function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
-    local switchW, switchH = 34, 18
+    local switchW, switchH = 30, 16
     local pw = parent._contentWidth or parent:GetWidth()
     local row = NS.CreateFrame("Button", nil, parent)
     row:SetSize(pw - 28, 22)
@@ -228,7 +258,7 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
 
     local knob = box:CreateTexture(nil, "OVERLAY")
     knob:SetTexture(BUTTON_ART .. "Keycap")
-    knob:SetSize(12, 12)
+    knob:SetSize(10, 10)
 
     local hover = row:CreateTexture(nil, "HIGHLIGHT")
     hover:SetAllPoints()
@@ -238,6 +268,9 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
     lbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
     lbl:SetPoint("LEFT", 0, 0)
     lbl:SetPoint("RIGHT", box, "LEFT", -10, 0)
+    lbl:SetJustifyH("LEFT")
+    lbl:SetWordWrap(false)
+    lbl:SetMaxLines(1)
     lbl:SetTextColor(NS.unpack(T.TEXT))
     lbl:SetText(label)
 
@@ -344,9 +377,9 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
     fillBar:SetColorTexture(sc[1], sc[2], sc[3], 0.8)
 
     local thumb = track:CreateTexture(nil, "OVERLAY")
-    thumb:SetTexture("Interface\\Buttons\\WHITE8X8")
+    thumb:SetTexture(BUTTON_ART .. "Keycap")
     thumb:SetSize(10, 10)
-    thumb:SetColorTexture(sc[1], sc[2], sc[3], 1)
+    thumb:SetVertexColor(0.9, 0.95, 1, 1)
 
     local function SetValue(val)
         val = math.max(min, math.min(max, val))
@@ -419,22 +452,32 @@ end
 function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, width)
     local W = width or ((parent._contentWidth or parent:GetWidth()) - 28)
     local ROW_H = 20
+    local inline = W >= 300
+    local fieldW = inline and math.floor(W * 0.5) or W
 
     local row = NS.CreateFrame("Frame", nil, parent)
-    row:SetSize(W, 38)
+    row:SetSize(W, inline and 30 or 38)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yOffset)
 
-    -- Label
+    -- Full-width settings use a label/value row; narrow paired fields stack.
     local lbl = row:CreateFontString(nil, "OVERLAY")
     lbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
-    lbl:SetPoint("TOPLEFT", 0, 0)
-    lbl:SetTextColor(NS.unpack(T.TEXT_DIM))
+    lbl:SetTextColor(NS.unpack(T.TEXT))
     lbl:SetText(label)
+    lbl:SetJustifyH("LEFT")
 
-    -- Button showing current value
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
-    btn:SetSize(W, 22)
-    btn:SetPoint("TOPLEFT", 0, -16)
+    btn:SetSize(fieldW, 22)
+    if inline then
+        btn:SetPoint("RIGHT", 0, 0)
+        lbl:SetPoint("LEFT", 0, 0)
+        lbl:SetPoint("RIGHT", btn, "LEFT", -12, 0)
+        lbl:SetWordWrap(true)
+        lbl:SetMaxLines(2)
+    else
+        lbl:SetPoint("TOPLEFT", 0, 0)
+        btn:SetPoint("TOPLEFT", 0, -16)
+    end
     SetFieldChrome(btn, parent)
 
     local btnText = btn:CreateFontString(nil, "OVERLAY")
@@ -452,13 +495,14 @@ function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, wid
 
     -- Dropdown panel (parented to UIParent to avoid scroll frame clipping)
     local dropdown = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
-    dropdown:SetWidth(W)
+    dropdown:SetWidth(btn:GetWidth())
     dropdown:SetHeight(#options * ROW_H + 4)
     dropdown:SetBackdrop(BACKDROP_PANEL)
     dropdown:SetBackdropColor(NS.unpack(T.BG_DARK))
     dropdown:SetBackdropBorderColor(NS.unpack(T.BORDER))
     dropdown:SetFrameStrata("TOOLTIP")
     dropdown:SetFrameLevel(100)
+    dropdown:SetClampedToScreen(true)
     dropdown:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -2)
     dropdown:Hide()
     dropdown:EnableMouse(true)
@@ -510,12 +554,30 @@ function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, wid
             dropdown:Hide()
             arrow:SetText(NS.GLYPH_CHEVRON_DOWN)
         else
-            local popupW = W
+            -- The popup lives on UIParent so it can escape a scroll frame.
+            -- Mirror the trigger's effective scale and reduce only oversized
+            -- menus, preserving legible field-sized menus at normal scales.
+            local popupW = fieldW
             for _, entry in NS.ipairs(entries) do
                 local tw = entry.text:GetStringWidth()
                 if tw then popupW = math.max(popupW, tw + 20) end
             end
             dropdown:SetWidth(popupW)
+
+            local uiScale = NS.UIParent:GetEffectiveScale()
+            local triggerScale = btn:GetEffectiveScale()
+            local popupScale = (uiScale and uiScale > 0) and (triggerScale / uiScale) or 1
+            local uiW, uiH = NS.UIParent:GetWidth(), NS.UIParent:GetHeight()
+            local popupH = dropdown:GetHeight()
+            -- Reserve a small physical gutter; SetClampedToScreen handles
+            -- the remaining edge placement when the trigger is near it.
+            if uiW and uiW > 32 and popupW > 0 then
+                popupScale = math.min(popupScale, (uiW - 32) / popupW)
+            end
+            if uiH and uiH > 32 and popupH > 0 then
+                popupScale = math.min(popupScale, (uiH - 32) / popupH)
+            end
+            dropdown:SetScale(math.max(0.01, popupScale))
             Refresh()
             dropdown:Show()
             arrow:SetText(NS.GLYPH_CHEVRON_UP)
@@ -535,6 +597,7 @@ function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, wid
     row.Refresh = Refresh
     row.btn = btn
     row.lbl = lbl
+    row.dropdown = dropdown
     return row
 end
 
@@ -1163,25 +1226,38 @@ function NS.CreateNestedDropdown(config)
     local MAX_H = 320
     local PREVIEW_W = config.previewWidth or 0
     local MAX_STRIP_COLORS = 8
+    -- OptionsDropdown opts into this compact full-width layout. Keep the
+    -- generic nested/palette callers unchanged unless they request it.
+    local inlineFields = config.inlineFields and W >= 300
+    local fieldW = inlineFields and math.floor(W * 0.5) or W
+    local popupW = config.fitToUIParent and fieldW or math.max(W, 200)
 
     -- Forward declaration
     local Refresh
 
     -- Trigger button (same style as regular dropdown)
     local row = NS.CreateFrame("Frame", nil, parent)
-    row:SetSize(W, 38)
+    row:SetSize(W, inlineFields and 30 or 38)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, config.yOffset)
 
     local lbl = row:CreateFontString(nil, "OVERLAY")
-    lbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
-    lbl:SetPoint("TOPLEFT", 0, 0)
-    lbl:SetTextColor(NS.unpack(T.TEXT_DIM))
     lbl:SetFont(NS.GetConfigFontPath(), config.fontSize or 10, NS.GetConfigFontOutline())
+    lbl:SetTextColor(NS.unpack(inlineFields and T.TEXT or T.TEXT_DIM))
     lbl:SetText(config.label)
+    lbl:SetJustifyH("LEFT")
 
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
-    btn:SetSize(W, 22)
-    btn:SetPoint("TOPLEFT", 0, -16)
+    btn:SetSize(fieldW, 22)
+    if inlineFields then
+        btn:SetPoint("RIGHT", 0, 0)
+        lbl:SetPoint("LEFT", 0, 0)
+        lbl:SetPoint("RIGHT", btn, "LEFT", -12, 0)
+        lbl:SetWordWrap(true)
+        lbl:SetMaxLines(2)
+    else
+        lbl:SetPoint("TOPLEFT", 0, 0)
+        btn:SetPoint("TOPLEFT", 0, -16)
+    end
     SetFieldChrome(btn, parent)
 
     local btnText = btn:CreateFontString(nil, "OVERLAY")
@@ -1199,12 +1275,13 @@ function NS.CreateNestedDropdown(config)
 
     -- Popup panel
     local dropdown = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
-    dropdown:SetWidth(math.max(W, 200))
+    dropdown:SetWidth(popupW)
     dropdown:SetBackdrop(BACKDROP_PANEL)
     dropdown:SetBackdropColor(NS.unpack(T.BG_DARK))
     dropdown:SetBackdropBorderColor(NS.unpack(T.BORDER))
     dropdown:SetFrameStrata("TOOLTIP")
     dropdown:SetFrameLevel(100)
+    if config.fitToUIParent then dropdown:SetClampedToScreen(true) end
     dropdown:SetPoint("TOPLEFT", btn, "BOTTOMLEFT", 0, -2)
     dropdown:Hide()
     dropdown:EnableMouse(true)
@@ -1214,12 +1291,12 @@ function NS.CreateNestedDropdown(config)
     scrollFrame:SetPoint("TOPLEFT", 2, -2)
     scrollFrame:SetPoint("BOTTOMRIGHT", -2, 2)
     local scrollChild = NS.CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(math.max(W, 200) - 4)
+    scrollChild:SetWidth(popupW - 4)
     scrollFrame:SetScrollChild(scrollChild)
 
     -- Flyout submenu system: main dropdown shows folders only,
     -- hovering a folder opens a submenu panel to the right
-    local POPUP_W = math.max(W, 200)
+    local POPUP_W = popupW
     local hideGen = 0
     local function CancelHide() hideGen = hideGen + 1 end
 
@@ -1819,6 +1896,22 @@ function NS.CreateNestedDropdown(config)
         btnText:SetText(val)
     end
 
+    local function FitPopupToUIParent()
+        if not config.fitToUIParent then return end
+        local uiScale = NS.UIParent:GetEffectiveScale()
+        local triggerScale = btn:GetEffectiveScale()
+        local appliedScale = (uiScale and uiScale > 0) and (triggerScale / uiScale) or 1
+        local uiW, uiH = NS.UIParent:GetWidth(), NS.UIParent:GetHeight()
+        local popupH = dropdown:GetHeight()
+        if uiW and uiW > 32 and popupW > 0 then
+            appliedScale = math.min(appliedScale, (uiW - 32) / popupW)
+        end
+        if uiH and uiH > 32 and popupH > 0 then
+            appliedScale = math.min(appliedScale, (uiH - 32) / popupH)
+        end
+        dropdown:SetScale(math.max(0.01, appliedScale))
+    end
+
     btn:SetScript("OnClick", function()
         if dropdown:IsShown() then
             dropdown:Hide()
@@ -1826,6 +1919,7 @@ function NS.CreateNestedDropdown(config)
         else
             Refresh()
             RenderMainDropdown()
+            FitPopupToUIParent()
             dropdown:Show()
             arrow:SetText(NS.GLYPH_CHEVRON_UP)
         end
@@ -1847,6 +1941,7 @@ function NS.CreateNestedDropdown(config)
     row.Refresh = Refresh
     row.btn = btn
     row.lbl = lbl
+    row.dropdown = dropdown
     return row
 end
 
@@ -1935,6 +2030,8 @@ function NS.CreateOptionsDropdown(parent, label, dbKey, options, yOffset, onChan
         onChange = onChange,
         width = width,
         previewWidth = 0,
+        inlineFields = true,
+        fitToUIParent = true,
         items = entries,
         getItems = function() return {} end,
     })

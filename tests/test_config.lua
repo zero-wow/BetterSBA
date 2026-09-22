@@ -9,12 +9,15 @@ local colors = {
 }
 local function color() return {.3,.6,.9,1} end
 local defaults = {
-    configPanelBaseHeight=480, configPanelHeight=480, configPanelScale=1, cfgAnimTransitions=false,
+    configPanelBaseHeight=480, configPanelHeight=620, configPanelScale=1, cfgAnimTransitions=false,
     sectionColorCombat=color(), sectionColorAppearance=color(), sectionColorActive=color(), sectionColorPriority=color(),
     sectionColorTalentBuilds=color(), sectionColorVisibility=color(), sectionColorImportance=color(), sectionColorAdvanced=color(), sectionColorProfiles=color(),
 }
 setmetatable(defaults, { __index = function() return false end })
 local db = {}; for k, v in pairs(defaults) do db[k] = v end
+-- A prior user-resized 413px panel exceeds the new 400px safety floor and
+-- must be honored rather than reset to the default compact height.
+db.configPanelBaseHeight, db.configPanelHeight = 413, 413
 db.castFeedback, db.castAnimation, db.buttonStyle = "Motion", "Off", "Soft"
 db.talentBuildShowBuiltIn, db.talentBuildShowUser, db.talentBuildUseDefaultSort = true, true, true
 db.talentBuildSearchText, db.talentBuildSourceFilter = "", "All"
@@ -78,42 +81,42 @@ local function findTextWidget(frame, wanted)
     end
 end
 
-local sectionLabels = {
-    "Combat Assist", "Appearance", "Active Display", "Priority Display", "Talent Builds",
-    "Visibility", "Importance", "Advanced", "Profiles",
+local tabLabels = {
+    "Combat", "Style", "Button", "Priority", "Talents",
+    "Visibility", "Colors", "Advanced", "Profiles",
 }
 
-local function navRows(panel)
-    local function findButtonLabel(frame, wanted)
-        if rawget(frame, "_text") == wanted and rawget(rawget(frame, "_parent"), "_kind") == "Button" then
-            return rawget(frame, "_parent")
-        end
-        for _, child in ipairs(frame._children) do
-            local found = findButtonLabel(child, wanted)
-            if found then return found end
-        end
-    end
-    local rows = {}
-    for i, label in ipairs(sectionLabels) do
-        rows[i] = assert(findButtonLabel(panel, label), "missing sidebar button: " .. label)
-    end
-    return rows
-end
+local function assertTopTabs(panel)
+    local tabBar = assert(NS.Config.tabBar, "top tab bar must be exposed")
+    local buttons = assert(NS.Config.sectionButtons, "section tabs must be exposed")
+    assert(#buttons == 9, "exactly nine top-level section tabs are required")
+    assert(tabBar:GetHeight() == 34, "top navigation strip must retain a 34px hit target")
 
-local function assertFixedSidebarRows(panel)
-    local rows = navRows(panel)
-    local sidebar = rawget(rows[1], "_parent")
-    local sl, st, sr, sb = mock.rect(sidebar)
-    assert(sr - sl == 200, "sidebar must retain its 200px width")
-    for i, row in ipairs(rows) do
-        assert(rawget(row, "_parent") == sidebar, "all section rows share the sidebar parent")
-        local l, t, r, b = mock.rect(row)
-        assert(row:GetHeight() == 32, "section row height must remain fixed")
-        assert(l >= sl + 8 and r <= sr - 8, "section row must keep the sidebar gutter")
-        assert(t <= st - 52 and b >= sb, "section row must remain in the sidebar")
-        local expectedTop = st - 52 - (i - 1) * 36
-        assert(math.abs(t - expectedTop) < 0.1,
-            ("section row %d moved by an expanded disclosure (got %.1f, expected %.1f)"):format(i, t, expectedTop))
+    local pl, pt, pr = mock.rect(panel)
+    local bl, bt, br, bb = mock.rect(tabBar)
+    assert(math.abs(bl - pl) < .1 and math.abs(br - pr) < .1,
+        "tab bar must span the panel width")
+    assert(math.abs(bt - (pt - 40)) < .1 and math.abs(bb - (bt - 34)) < .1,
+        "tab bar must sit directly below the 40px toolbar")
+
+    local tabW = (panel:GetWidth() - 24) / 9
+    local previousRight
+    for i, button in ipairs(buttons) do
+        assert(rawget(button, "_parent") == tabBar, "all tabs must share the horizontal tab bar")
+        local l, t, r, b = mock.rect(button)
+        local expectedLeft = pl + 12 + (i - 1) * tabW
+        assert(math.abs(l - expectedLeft) < .1 and math.abs((r - l) - tabW) < .1,
+            ("tab %d must use an equal horizontal slot"):format(i))
+        assert(math.abs(t - bt) < .1 and math.abs(b - bb) < .1,
+            "tab must remain within the 34px navigation strip")
+        if previousRight then
+            assert(l >= previousRight - .1, "adjacent tabs must not overlap")
+        end
+        previousRight = r
+        local label = assert(rawget(button, "_lbl"), "tab requires a visible label")
+        local ll, _, lr = mock.rect(label)
+        assert(rawget(label, "_text") == tabLabels[i], "tab label changed unexpectedly")
+        assert(ll >= l + 4 and lr <= r - 4, "tab label must retain horizontal gutters")
     end
 end
 
@@ -125,7 +128,7 @@ local function assertActiveSectionInScrollRegion(index)
         "each disclosure section must remain parented to the scroll child")
     assert(scrollChild:GetHeight() == cf._contentH,
         "active disclosure height must be reserved by the scroll child")
-    local expectedWidth = index == 5 and 872 or 612
+    local expectedWidth = index == 5 and 972 or 632
     assert(cf:GetWidth() == expectedWidth and scrollChild:GetWidth() == expectedWidth,
         "section must use the active scroll-content width")
     local cl, ct, cr, cb = mock.rect(cf)
@@ -166,16 +169,28 @@ local function assertJumpMenuBounds(panel)
 end
 
 local panel = assert(NS.Config:Create())
-assert(panel:GetWidth() == 820 and panel:GetHeight() == 480, "normal panel must begin at 820x480")
+assert(panel:GetWidth() == 640 and panel:GetHeight() == 413, "saved 413px normal height must be honored above the 400px minimum")
+-- A roomy parent preserves a user's deliberate 150% panel preference; a
+-- smaller parent applies only a transient fit cap and leaves that preference.
+db.configPanelScale = 1.5
+NS.Config:ApplyScale()
+assert(math.abs(panel:GetScale() - 1.5) < .001, "roomy UI must retain 150% panel scale")
+ui.uiParent:SetSize(800, 500)
+NS.Config:ApplyScale()
+local cappedScale = math.min(1.5, (800 - 48) / 640, (500 - 48) / 413)
+assert(math.abs(panel:GetScale() - cappedScale) < .001, "small UI must apply a transient screen-fit cap")
+assert(db.configPanelScale == 1.5, "screen-fit cap must not overwrite the saved panel preference")
+ui.uiParent:SetSize(1920, 1080)
+NS.Config:ApplyScale()
 assertJumpMenuBounds(panel)
 for i = 1, 9 do
     NS.Config.SelectSection(i)
     if i == 5 then
-        assert(panel:GetWidth() == 1080 and panel:GetHeight() == 480, "Talent Builds must use 1080x480")
+        assert(panel:GetWidth() == 980 and panel:GetHeight() == 413, "Talent Builds must retain the saved 413px height")
     else
-        assert(panel:GetWidth() == 820 and panel:GetHeight() == 480, "non-talent sections must use 820x480")
+        assert(panel:GetWidth() == 640 and panel:GetHeight() == 413, "non-talent sections must retain the saved 413px height")
     end
-    assertFixedSidebarRows(panel)
+    assertTopTabs(panel)
     assertActiveSectionInScrollRegion(i)
     assertJumpMenuBounds(panel)
 end
@@ -185,6 +200,19 @@ local function walk(frame)
     for _, child in ipairs(frame._children) do walk(child) end
 end
 walk(panel)
+
+-- Searching from the wider Talent page must reflow the navigation as well as
+-- the content. The old tab positions would otherwise escape the 640px panel.
+NS.Config.SelectSection(5)
+local searchPlaceholder = assert(findTextWidget(panel, "Find a setting..."))
+local searchBox = rawget(searchPlaceholder, "_parent")
+local searchChanged = assert(searchBox:GetScript("OnTextChanged"))
+searchBox:SetText("Font"); searchChanged(searchBox)
+assert(panel:GetWidth() == 640, "search uses the normal window width")
+assertTopTabs(panel)
+searchBox:SetText(""); searchChanged(searchBox)
+assert(panel:GetWidth() == 980, "clearing search restores the active Talent page")
+assertTopTabs(panel)
 local motionAppearance = assert(newestSection(2))
 local motionAppearanceH = motionAppearance:GetHeight()
 
@@ -220,15 +248,15 @@ for _, feedback in ipairs({"Classic", "Off"}) do
     NS._restoreSection = false
     local rebuilt = assert(NS.Config:Create())
     NS.Config.SelectSection(2)
-    assert(rebuilt:GetWidth() == 820 and rebuilt:GetHeight() == 480, feedback .. " appearance layout must remain 820x480")
+    assert(rebuilt:GetWidth() == 640 and rebuilt:GetHeight() == 413, feedback .. " appearance layout must retain 413px height")
     appearanceHeights[feedback] = assert(newestSection(2)):GetHeight()
 end
 assert(appearanceHeights.Classic > appearanceHeights.Off, ("Classic disclosure must reserve its particle/font controls (Classic %.0f, Off %.0f)"):format(appearanceHeights.Classic, appearanceHeights.Off))
 
 -- Direct real Talent panel pass exposes its state for measured source-chip bounds.
 local talentParent = ui.createFrame("Frame", nil, ui.uiParent)
-talentParent:SetSize(872, 560)
-talentParent._contentWidth, talentParent._sectionColor, talentParent._subsections = 872, color(), {}
+talentParent:SetSize(972, 560)
+talentParent._contentWidth, talentParent._sectionColor, talentParent._subsections = 972, color(), {}
 talentParent._sectionColorDim, talentParent._sectionColorBright = color(), color()
 local talentState = assert(NS.BuildTalentBuildsConfigSection(talentParent))
 local sourceChips = {}
@@ -250,7 +278,8 @@ assert(rowCount >= 2, "long source chips must wrap across rows")
 -- scroll-content parent. This includes the two 66px trinket rows.
 local trinketRows = 0
 for _, frame in ipairs(ui.frames) do
-    if frame._width == 584 and frame._height == 66 then
+    if rawget(frame, "_trinketSlot") then
+        assert(frame._width == 295 and frame._height == 66, "equipment slots share the full-width page")
         local l, _, r = mock.rect(frame)
         local pl, _, pr = mock.rect(frame._parent)
         assert(l >= pl and r <= pr, "trinket row must fit its content width")
@@ -259,10 +288,46 @@ for _, frame in ipairs(ui.frames) do
 end
 assert(trinketRows >= 2, "expected both trinket rows")
 
+-- Heights below the compact safety floor are raised only to that floor; the
+-- earlier 413px assertion proves higher saved values remain untouched.
+db.configPanelBaseHeight, db.configPanelHeight = 399, 399
+NS.Config.frame = nil
+NS._restoreSection = false
+local minHeightPanel = assert(NS.Config:Create())
+assert(minHeightPanel:GetWidth() == 640 and minHeightPanel:GetHeight() == 400,
+    "compact config must enforce its 400px minimum height")
+
 print("config mock: actual Framework/Config/TalentBuildsPanel passed all sections, feedback states, and wrapped-source bounds")
 if arg and arg[1] and arg[1] ~= "" then
-    NS.Config:Show()
+    -- The artifact is a readable inspection view, independent of the
+    -- preceding DPI-fit assertions. Populate representative approved trinket
+    -- and macro data only for this one-process export.
+    db.configPanelScale = 1
+    db.trinketMode = "Approved"
+    NS.GetTrinketStatus = function(slot)
+        return {
+            name = slot == 13 and "Astral Talisman" or "Stormbound Compass",
+            status = "Approved",
+            reason = "Instant use is available for BetterSBA.",
+            canApprove = true,
+            eligible = true,
+        }
+    end
+    NS.GetMacroActions = function()
+        return {
+            { text = "/cast [nochanneling] Sequence Break", hint = "Primary spell" },
+            { text = "/use [combat] 13", hint = "Approved trinket" },
+        }
+    end
+    -- Rebuild only for the export so local preview rows consume the
+    -- representative data above; ordinary assertions retain their own state.
+    NS.Config.frame = nil
+    NS._restoreSection = false
+    local exportFrame = assert(NS.Config:Create())
+    exportFrame:Show()
     NS.Config.SelectSection(tonumber(arg[2]) or 1)
+    if NS.RefreshTrinketConfig then NS.RefreshTrinketConfig() end
+    NS.Config:ApplyScale()
     mock.writeSVG(NS.Config.frame, arg[1])
     print("config mock: wrote estimated-bounds SVG to " .. arg[1])
 end

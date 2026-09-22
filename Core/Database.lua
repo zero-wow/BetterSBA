@@ -29,6 +29,13 @@ end
 -- Migrate legacy per-profile settings (run on the profile table)
 ----------------------------------------------------------------
 local function MigrateProfileSettings(profile)
+    -- The compact config uses neutral panel zoom on first adoption. Later
+    -- adjustments are deliberate and survive reloads and profile switches.
+    if profile.configPanelLayoutVersion == nil then
+        profile.configPanelScale = 1
+        profile.configPanelLayoutVersion = 1
+    end
+
     -- Rename the user-approved trinket mode; keep existing saved approvals.
     if profile.trinketMode == "Verified" then
         profile.trinketMode = "Approved"

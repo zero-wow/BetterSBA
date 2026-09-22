@@ -3,6 +3,21 @@ local ADDON_NAME, NS = ...
 local T = NS.THEME
 NS.Config = {}
 
+-- Dimensions and screen bounds share UIParent's coordinate space. Its scale
+-- already includes WoW's UI scaling; do not apply an OS DPI multiplier again.
+function NS.Config:ApplyScale()
+    local frame = self.frame
+    if not frame then return end
+    local preferred = math.max(0.5, math.min(2, tonumber(NS.db.configPanelScale) or 1))
+    local width, height = frame:GetWidth(), frame:GetHeight()
+    local availableW = math.max(1, NS.UIParent:GetWidth() - 48)
+    local availableH = math.max(1, NS.UIParent:GetHeight() - 48)
+    local applied = math.min(preferred, availableW / width, availableH / height)
+    frame:SetScale(applied)
+    if self.zoomLabel then self.zoomLabel:SetText(string.format("%.0f%%", applied * 100)) end
+    if self._refreshPixelLines then self._refreshPixelLines() end
+end
+
 local function GetContextSignature()
     local specIndex = GetSpecialization and GetSpecialization() or 0
     local signature = tostring(specIndex)
@@ -239,11 +254,11 @@ end
 function NS.Config:Create()
     self._contextSignature = GetContextSignature()
     self._contextRefreshPending = false
-    local panelW = 820
-    local talentPanelW = 1080
-    local leftW = 200
+    local panelW = 640
+    local talentPanelW = 980
+    local leftW = 0
     local rightW = panelW - leftW
-    local defaultBasePanelH = (NS.defaults and NS.defaults.configPanelBaseHeight) or 560
+    local defaultBasePanelH = (NS.defaults and NS.defaults.configPanelBaseHeight) or 480
     local defaultTalentPanelH = (NS.defaults and NS.defaults.configPanelHeight) or 620
     if NS.db.configPanelBaseHeight == nil then
         NS.db.configPanelBaseHeight = defaultBasePanelH
@@ -255,14 +270,15 @@ function NS.Config:Create()
         NS.db.configPanelBaseHeight = defaultBasePanelH
     end
     local function GetBasePanelHeight()
-        return math.max(480, math.min(900, NS.db.configPanelBaseHeight or defaultBasePanelH))
+        return math.max(400, math.min(900, NS.db.configPanelBaseHeight or defaultBasePanelH))
     end
     local function GetTalentPanelHeight()
-        return math.max(480, math.min(900, NS.db.configPanelHeight or defaultTalentPanelH))
+        return math.max(400, math.min(900, NS.db.configPanelHeight or defaultTalentPanelH))
     end
-    local titleH = 64
-    local statusH = 28
-    local sectionHeaderH = 90
+    local titleH = 40
+    local navH = 34
+    local statusH = 24
+    local sectionHeaderH = 48
     local scrollBarW = 6
     local scrollContentW = rightW - scrollBarW - 2
     local talentScrollContentW = (talentPanelW - leftW) - scrollBarW - 2
@@ -295,32 +311,26 @@ function NS.Config:Create()
     titleBar:SetBackdropBorderColor(0, 0, 0, 0)
 
     local titleText = titleBar:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont(NS.GetConfigFontPath(), 22, "")
-    titleText:SetPoint("TOPLEFT", 20, -12)
+    titleText:SetFont(NS.GetConfigFontPath(), 15, "")
+    titleText:SetPoint("LEFT", 14, 0)
     titleText:SetTextColor(NS.unpack(T.ACCENT))
     titleText:SetText("BetterSBA")
 
     local ver = titleBar:CreateFontString(nil, "OVERLAY")
     ver:SetFont(NS.GetConfigFontPath(), 9, "")
-    ver:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 1, -5)
+    ver:SetPoint("LEFT", titleText, "RIGHT", 10, 0)
     ver:SetTextColor(NS.unpack(T.TEXT_MUTED))
-    ver:SetText("SETTINGS   /   " .. NS.VERSION)
+    ver:SetText("Settings")
 
     local profileSummary = titleBar:CreateFontString(nil, "OVERLAY")
-    profileSummary:SetFont(NS.GetConfigFontPath(), 11, "")
-    profileSummary:SetPoint("TOPRIGHT", -50, -17)
-    profileSummary:SetWidth(280)
+    profileSummary:SetFont(NS.GetConfigFontPath(), 10, "")
+    profileSummary:SetPoint("RIGHT", -42, 0)
+    profileSummary:SetWidth(152)
     profileSummary:SetWordWrap(false)
     profileSummary:SetMaxLines(1)
     profileSummary:SetJustifyH("RIGHT")
     profileSummary:SetTextColor(NS.unpack(T.TEXT_DIM))
-    profileSummary:SetText("PROFILE   " .. NS:GetActiveProfileName())
-
-    local saveNote = titleBar:CreateFontString(nil, "OVERLAY")
-    saveNote:SetFont(NS.GetConfigFontPath(), 10, "")
-    saveNote:SetPoint("TOPRIGHT", profileSummary, "BOTTOMRIGHT", 0, -7)
-    saveNote:SetTextColor(NS.unpack(T.TEXT_MUTED))
-    saveNote:SetText("Changes save automatically")
+    profileSummary:SetText("Profile: " .. NS:GetActiveProfileName())
 
     NS.CreateCloseButton(f)
 
@@ -329,7 +339,8 @@ function NS.Config:Create()
     ----------------------------------------------------------------
     local titleHitbox = NS.CreateFrame("Button", nil, titleBar)
     titleHitbox:SetPoint("TOPLEFT", 14, -6)
-    titleHitbox:SetSize(280, titleH - 12)
+    titleHitbox:SetSize(154, titleH - 12)
+    NS.AddTooltip(titleHitbox, "BetterSBA " .. NS.VERSION, { "Settings save automatically.", "Click to view the project URL." })
 
     local urlPopup = nil
     local urlAutoCloseTicker = nil
@@ -476,8 +487,22 @@ function NS.Config:Create()
     local statusText = statusBar:CreateFontString(nil, "OVERLAY")
     statusText:SetFont(NS.GetConfigFontPath(), 10, "")
     statusText:SetPoint("LEFT", statusIcon, "RIGHT", 5, 0)
-    statusText:SetPoint("RIGHT", -6, 0)
+    statusText:SetPoint("RIGHT", -82, 0)
     statusText:SetJustifyH("LEFT")
+
+    local zoomButton = NS.CreateFrame("Button", nil, statusBar)
+    zoomButton:SetSize(60, statusH - 4)
+    zoomButton:SetPoint("RIGHT", -12, 0)
+    local zoomLabel = zoomButton:CreateFontString(nil, "OVERLAY")
+    zoomLabel:SetFont(NS.GetConfigFontPath(), 10, "")
+    zoomLabel:SetPoint("RIGHT")
+    zoomLabel:SetTextColor(NS.unpack(T.TEXT_DIM))
+    self.zoomLabel = zoomLabel
+    zoomButton:SetScript("OnClick", function()
+        NS.db.configPanelScale = 1
+        self:ApplyScale()
+    end)
+    NS.AddTooltip(zoomButton, "Panel zoom", { "Click to reset to 100%.", "Ctrl + mouse wheel adjusts zoom when Modifier Scaling is enabled." })
 
     local statusOverrideToken = 0
     local statusOverrideActive = false
@@ -586,52 +611,44 @@ function NS.Config:Create()
     end)
 
     ----------------------------------------------------------------
-    -- Left panel (navigation sidebar)
+    -- A horizontal navigation strip leaves the page's full width for settings.
     ----------------------------------------------------------------
-    local leftPanel = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
-    leftPanel:SetWidth(leftW)
-    leftPanel:SetPoint("TOPLEFT", 0, -titleH)
-    leftPanel:SetPoint("BOTTOMLEFT", 0, statusH)
-    leftPanel:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    leftPanel:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.97)
-    leftPanel:SetBackdropBorderColor(0, 0, 0, 0)
+    local contentOrigin = NS.CreateFrame("Frame", nil, f)
+    contentOrigin:SetSize(0, 0)
+    contentOrigin:SetPoint("TOPLEFT", 0, -titleH - navH)
+    local tabBar = NS.CreateFrame("Frame", nil, f)
+    tabBar:SetHeight(navH)
+    tabBar:SetPoint("TOPLEFT", 0, -titleH)
+    tabBar:SetPoint("TOPRIGHT", 0, -titleH)
+    local tabBackground = tabBar:CreateTexture(nil, "BACKGROUND")
+    tabBackground:SetAllPoints()
+    tabBackground:SetColorTexture(T.BG_HEADER[1], T.BG_HEADER[2], T.BG_HEADER[3], 0.65)
+    self.tabBar = tabBar
 
-    -- Vertical divider between panels
     local divider = f:CreateTexture(nil, "OVERLAY")
-    divider:SetWidth(1)
-    divider:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 0, 0)
-    divider:SetPoint("BOTTOMLEFT", leftPanel, "BOTTOMRIGHT", 0, 0)
+    divider:SetHeight(1)
+    divider:SetPoint("BOTTOMLEFT", tabBar, "BOTTOMLEFT", 12, 0)
+    divider:SetPoint("BOTTOMRIGHT", tabBar, "BOTTOMRIGHT", -12, 0)
     divider:SetColorTexture(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.4)
 
     ----------------------------------------------------------------
     -- Right panel: section title + underline
     ----------------------------------------------------------------
     local sectionTitle = f:CreateFontString(nil, "OVERLAY")
-    sectionTitle:SetFont(NS.GetConfigFontPath(), 24, "")
-    sectionTitle:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 22, -18)
-    sectionTitle:SetPoint("RIGHT", f, "RIGHT", -170, 0)
+    sectionTitle:SetFont(NS.GetConfigFontPath(), 16, "")
+    sectionTitle:SetPoint("TOPLEFT", contentOrigin, "TOPRIGHT", 14, -10)
+    sectionTitle:SetPoint("RIGHT", f, "RIGHT", -138, 0)
     sectionTitle:SetJustifyH("LEFT")
     sectionTitle:SetTextColor(NS.unpack(T.TEXT))
 
-    local sectionDescription = f:CreateFontString(nil, "OVERLAY")
-    sectionDescription:SetFont(NS.GetConfigFontPath(), 11, "")
-    sectionDescription:SetPoint("TOPLEFT", sectionTitle, "BOTTOMLEFT", 0, -8)
-    sectionDescription:SetPoint("RIGHT", f, "RIGHT", -24, 0)
-    sectionDescription:SetJustifyH("LEFT")
-    sectionDescription:SetTextColor(NS.unpack(T.TEXT_DIM))
-
     local sectionJump = NS.CreateFrame("Button", nil, f, "BackdropTemplate")
-    sectionJump:SetSize(122, 28)
-    sectionJump:SetPoint("TOPRIGHT", -22, -titleH - 17)
+    sectionJump:SetSize(112, 24)
+    sectionJump:SetPoint("TOPRIGHT", -14, -titleH - navH - 9)
     sectionJump:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8", edgeFile="Interface\\Buttons\\WHITE8X8", edgeSize=1})
     sectionJump:SetBackdropColor(NS.unpack(T.BG_HEADER))
     sectionJump:SetBackdropBorderColor(NS.unpack(T.BORDER))
     local jumpLabel = sectionJump:CreateFontString(nil, "OVERLAY")
-    jumpLabel:SetFont(NS.GetConfigFontPath(), 11, "")
+    jumpLabel:SetFont(NS.GetConfigFontPath(), 10, "")
     jumpLabel:SetPoint("CENTER")
     jumpLabel:SetText("Jump to section")
     jumpLabel:SetTextColor(NS.unpack(T.TEXT_DIM))
@@ -658,7 +675,7 @@ function NS.Config:Create()
         sectionMenuScroll:SetVerticalScroll(math.max(0, math.min(maxScroll, sectionMenuScroll:GetVerticalScroll() - delta * 52)))
     end)
     sectionJump:SetScript("OnClick", function()
-        sectionMenu:SetHeight(math.min(sectionMenuContent:GetHeight() + 12, f:GetHeight() - titleH - statusH - 63))
+        sectionMenu:SetHeight(math.min(sectionMenuContent:GetHeight() + 12, f:GetHeight() - titleH - navH - statusH - 63))
         sectionMenuScroll:SetVerticalScroll(0)
         sectionMenu:SetShown(not sectionMenu:IsShown())
     end)
@@ -667,15 +684,15 @@ function NS.Config:Create()
 
     local titleUnderline = f:CreateTexture(nil, "ARTWORK")
     titleUnderline:SetHeight(1)
-    titleUnderline:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 22, -sectionHeaderH + 9)
-    titleUnderline:SetPoint("RIGHT", f, "RIGHT", -22, 0)
+    titleUnderline:SetPoint("TOPLEFT", contentOrigin, "TOPRIGHT", 14, -sectionHeaderH + 9)
+    titleUnderline:SetPoint("RIGHT", f, "RIGHT", -14, 0)
     titleUnderline:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.6)
 
     ----------------------------------------------------------------
     -- Right panel: scroll frame
     ----------------------------------------------------------------
     local scrollFrame = NS.CreateFrame("ScrollFrame", nil, f)
-    scrollFrame:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 0, -sectionHeaderH)
+    scrollFrame:SetPoint("TOPLEFT", contentOrigin, "TOPRIGHT", 0, -sectionHeaderH)
     scrollFrame:SetPoint("BOTTOMRIGHT", -scrollBarW - 2, statusH)
 
     local scrollChild = NS.CreateFrame("Frame", nil, scrollFrame)
@@ -686,7 +703,7 @@ function NS.Config:Create()
     -- Scrollbar track
     local scrollTrack = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
     scrollTrack:SetWidth(scrollBarW)
-    scrollTrack:SetPoint("TOPRIGHT", -4, -titleH - sectionHeaderH)
+    scrollTrack:SetPoint("TOPRIGHT", -4, -titleH - navH - sectionHeaderH)
     scrollTrack:SetPoint("BOTTOMRIGHT", 0, statusH)
     scrollTrack:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
     scrollTrack:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.5)
@@ -770,7 +787,7 @@ function NS.Config:Create()
             scale = math.max(0.5, math.min(2.0, scale))
             scale = tonumber(string.format("%.2f", scale))
             NS.db.configPanelScale = scale
-            f:SetScale(scale)
+            NS.Config:ApplyScale()
             return
         end
         local scroll = scrollFrame:GetVerticalScroll()
@@ -788,7 +805,7 @@ function NS.Config:Create()
     -- Resize grip
     ----------------------------------------------------------------
     f:SetResizable(true)
-    f:SetResizeBounds(panelW, 480, panelW, 900)
+    f:SetResizeBounds(panelW, 400, panelW, 900)
 
     local grip = NS.CreateFrame("Button", nil, f)
     grip:SetSize(16, 16)
@@ -809,6 +826,7 @@ function NS.Config:Create()
             NS.db.configPanelBaseHeight = f:GetHeight()
         end
         UpdateScrollbar()
+        NS.Config:ApplyScale()
     end)
 
     ----------------------------------------------------------------
@@ -826,18 +844,6 @@ function NS.Config:Create()
         { id = "ADVANCED",       label = "Advanced",        dotColor = db.sectionColorAdvanced,   dbKey = "sectionColorAdvanced" },
         { id = "PROFILES",       label = "Profiles",        dotColor = db.sectionColorProfiles,   dbKey = "sectionColorProfiles" },
     }
-    local SECTION_DESCRIPTIONS = {
-        "Choose what happens when you press your combat button.",
-        "Tune motion, effects, and typography to your taste.",
-        "Shape the button you use for every encounter.",
-        "Arrange your spell pool and cooldown display.",
-        "Browse builds and manage your talent loadouts.",
-        "Decide when your combat display appears.",
-        "Use color to make spell priorities easy to read.",
-        "Adjust behavior, integrations, and diagnostics.",
-        "Keep settings for your characters and playstyles.",
-    }
-
     local function IsTalentBuildSectionIndex(idx)
         return idx and SECTIONS[idx] and SECTIONS[idx].id == "TALENT_BUILDS"
     end
@@ -850,8 +856,9 @@ function NS.Config:Create()
 
         f:SetWidth(targetW)
         f:SetHeight(targetH)
-        f:SetResizeBounds(targetW, 480, targetW, 900)
+        f:SetResizeBounds(targetW, 400, targetW, 900)
         scrollChild:SetWidth(targetContentW)
+        NS.Config:ApplyScale()
     end
 
     -- Content frames (one per section, parented to scrollChild)
@@ -957,10 +964,10 @@ function NS.Config:Create()
             btn:SetPoint("TOP", parent, "TOP", 0, -2)
         end
         local lbl = btn:CreateFontString(nil, "OVERLAY")
-        lbl:SetFont(NS.GetConfigFontPath(), 7, "OUTLINE")
+        lbl:SetFont(NS.GetConfigFontPath(), 9, "")
         lbl:SetPoint("CENTER")
         lbl:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
-        lbl:SetText("DEFAULT")
+        lbl:SetText("Reset")
         btn:SetScript("OnClick", function()
             for i = 1, #keys do
                 local def = NS.defaults[keys[i]]
@@ -1002,6 +1009,7 @@ function NS.Config:Create()
         line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", parent, "RIGHT", -14, 0)
         hdr._line = line
+        line._header = hdr
         subHeaderLines[#subHeaderLines + 1] = line
         if parent._subsections then
             parent._subsections[#parent._subsections + 1] = {
@@ -1212,15 +1220,19 @@ function NS.Config:Create()
     y = y - 46
 
     local trinketRows = {}
+    local trinketRowW = (contentW - 42) / 2
     for slot = 1, 2 do
         local row = NS.CreateFrame("Frame", nil, c)
-        row:SetSize(contentW - 28, 66)
-        row:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        row:SetSize(trinketRowW, 66)
+        row:SetPoint("TOPLEFT", c, "TOPLEFT", 14 + (slot - 1) * (trinketRowW + 14), y)
+        row._trinketSlot = slot
         local name = row:CreateFontString(nil, "OVERLAY")
         name:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
         name:SetPoint("TOPLEFT", 0, 0)
         name:SetPoint("RIGHT", row, "RIGHT", -78, 0)
         name:SetJustifyH("LEFT")
+        name:SetWordWrap(false)
+        name:SetMaxLines(1)
         local state = row:CreateFontString(nil, "OVERLAY")
         state:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
         state:SetPoint("TOPRIGHT", 0, 0)
@@ -1257,8 +1269,8 @@ function NS.Config:Create()
             name = name, state = state, reason = reason,
             allow = allow, allowFill = allowFill, allowLabel = allowLabel,
         }
-        y = y - 70
     end
+    y = y - 70
 
     function NS.RefreshTrinketConfig()
         for slot = 1, 2 do
@@ -1314,15 +1326,6 @@ function NS.Config:Create()
         CreateDefaultBtn(c, intHdr, {"interceptionType"})
     end
     y = y - 18
-
-    local intNote = c:CreateFontString(nil, "OVERLAY")
-    intNote:SetFont(NS.GetConfigFontPath(), 7, NS.GetConfigFontOutline())
-    intNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
-    intNote:SetPoint("RIGHT", c, "RIGHT", -14, 0)
-    intNote:SetJustifyH("LEFT")
-    intNote:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
-    intNote:SetText("Controls how BetterSBA intercepts the SBA action. Keybind redirects your hotkey. Click adds an invisible overlay on the bar button. Both activates both methods.")
-    y = y - 20
 
     local intRow = NS.CreateDropdown(c, "Method", "interceptionType", NS.INTERCEPTION_TYPES, y, function(val)
         NS.OverrideSBAKeybind()
@@ -4541,19 +4544,18 @@ function NS.Config:Create()
     end)
 
     ----------------------------------------------------------------
-    -- Left panel: section buttons + indicator
+    -- Top navigation and its active-page underline
     ----------------------------------------------------------------
-    local BTN_H = 32
-    local BTN_GAP = 4
+    local BTN_H = navH
     local CHILD_H = 28
-    local BTN_TOP = 52
     local sectionButtons = {}
+    self.sectionButtons = sectionButtons
     local subsectionButtons = {}
     local activeSubsection = nil
 
-    local indicator = leftPanel:CreateTexture(nil, "OVERLAY")
-    indicator:SetWidth(2)
-    indicator:SetHeight(BTN_H)
+    local indicator = tabBar:CreateTexture(nil, "OVERLAY")
+    indicator:SetWidth(50)
+    indicator:SetHeight(2)
     indicator:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.9)
 
     local fadingContent = nil
@@ -4575,10 +4577,10 @@ function NS.Config:Create()
     end)
     fadeFrame:Hide()
 
-    local indicatorTargetY = -BTN_TOP
-    local indicatorCurrentY = indicatorTargetY
+    local indicatorTargetX = 18
+    local indicatorCurrentX = indicatorTargetX
     local animFrame
-    local RefreshSidebarLayout
+    local RefreshNavigationLayout
     local SelectSection
 
     local function EnsureSubsectionButton(sectionIndex, childIndex)
@@ -4626,7 +4628,7 @@ function NS.Config:Create()
                 scrollChild:SetHeight(cf._contentH or 100)
                 scrollFrame:SetVerticalScroll(0)
                 UpdateScrollbar()
-                RefreshSidebarLayout(true)
+                RefreshNavigationLayout(true)
                 return
             end
             local cf = contentFrames[self._sectionIndex]
@@ -4638,7 +4640,7 @@ function NS.Config:Create()
             suppressScrollDismiss = false
             ShowSubHeaderHighlight(sub.header)
             UpdateScrollbar()
-            RefreshSidebarLayout(true)
+            RefreshNavigationLayout(true)
         end)
         btn:SetScript("OnEnter", function(self)
             local secColor = SECTIONS[self._sectionIndex].dotColor
@@ -4665,14 +4667,12 @@ function NS.Config:Create()
         return btn
     end
 
-    local function ApplySidebarVisuals()
+    local function ApplyNavigationVisuals()
         for i, btn in NS.ipairs(sectionButtons) do
             local dc = btn._dotColor
             local active = i == activeSection
             btn._lbl:SetTextColor(NS.unpack(active and T.TEXT or T.TEXT_DIM))
             btn._bg:SetColorTexture(dc[1], dc[2], dc[3], active and 0.12 or 0)
-            btn._arrow:SetShown(active)
-            btn._arrow:SetTextColor(dc[1], dc[2], dc[3], 0.9)
         end
         for sectionIndex, btnList in NS.pairs(subsectionButtons) do
             local subs = contentFrames[sectionIndex]._subsections or {}
@@ -4686,26 +4686,26 @@ function NS.Config:Create()
         end
         local activeRow = sectionButtons[activeSection]
         if activeRow then
-            indicator:SetHeight(BTN_H - 12)
-            indicatorTargetY = activeRow._yOff - 6
-            if animFrame and NS.db.cfgAnimTransitions and math.abs(indicatorCurrentY - indicatorTargetY) > 0.3 then
+            indicator:SetWidth(activeRow:GetWidth() - 12)
+            indicatorTargetX = activeRow._xOff + 6
+            if animFrame and NS.db.cfgAnimTransitions and math.abs(indicatorCurrentX - indicatorTargetX) > 0.3 then
                 animFrame:Show()
             else
-                indicatorCurrentY = indicatorTargetY
+                indicatorCurrentX = indicatorTargetX
                 indicator:ClearAllPoints()
-                indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 8, indicatorCurrentY)
+                indicator:SetPoint("BOTTOMLEFT", tabBar, "BOTTOMLEFT", indicatorCurrentX, 0)
             end
         end
     end
 
-    RefreshSidebarLayout = function(animateIndicator)
-        local yOff = -BTN_TOP
+    RefreshNavigationLayout = function(animateIndicator)
+        local tabW = (f:GetWidth() - 24) / #SECTIONS
         for i, btn in NS.ipairs(sectionButtons) do
+            local xOff = 12 + (i - 1) * tabW
             btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", 8, yOff)
-            btn:SetSize(leftW - 16, BTN_H)
-            btn._yOff, btn._height = yOff, BTN_H
-            yOff = yOff - BTN_H - BTN_GAP
+            btn:SetPoint("TOPLEFT", xOff, 0)
+            btn:SetSize(tabW, BTN_H)
+            btn._xOff, btn._height = xOff, BTN_H
         end
         local subs = contentFrames[activeSection]._subsections or {}
         for childIndex, sub in NS.ipairs(subs) do
@@ -4716,11 +4716,11 @@ function NS.Config:Create()
             childBtn._lbl:SetText(sub.label)
         end
         sectionMenuContent:SetHeight(math.max(CHILD_H, #subs * CHILD_H))
-        sectionMenu:SetHeight(math.min(#subs * CHILD_H + 12, f:GetHeight() - titleH - statusH - 63))
+        sectionMenu:SetHeight(math.min(#subs * CHILD_H + 12, f:GetHeight() - titleH - navH - statusH - 63))
         sectionMenuScroll:SetVerticalScroll(0)
         sectionJump:SetShown(#subs > 0)
-        if not animateIndicator then indicatorCurrentY = indicatorTargetY end
-        ApplySidebarVisuals()
+        if not animateIndicator then indicatorCurrentX = indicatorTargetX end
+        ApplyNavigationVisuals()
     end
     SelectSection = function(idx, keepSubsection)
         sectionMenu:Hide()
@@ -4791,46 +4791,37 @@ function NS.Config:Create()
         local dc = SECTIONS[idx].dotColor
         sectionTitle:SetText(SECTIONS[idx].label)
         sectionTitle:SetTextColor(NS.unpack(T.TEXT))
-        sectionDescription:SetText(SECTION_DESCRIPTIONS[idx])
         titleUnderline:SetColorTexture(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.35)
         indicator:SetColorTexture(dc[1], dc[2], dc[3], 0.9)
 
-        RefreshSidebarLayout(true)
+        RefreshNavigationLayout(true)
         UpdateScrollbar()
     end
 
+    local TAB_LABELS = { "Combat", "Style", "Button", "Priority", "Talents", "Visibility", "Colors", "Advanced", "Profiles" }
     for i, sec in NS.ipairs(SECTIONS) do
-        local btn = NS.CreateFrame("Button", nil, leftPanel)
+        local btn = NS.CreateFrame("Button", nil, tabBar)
 
         local bg = btn:CreateTexture(nil, "BACKGROUND")
         bg:SetAllPoints()
         bg:SetColorTexture(0, 0, 0, 0)
 
-        local impDot = btn:CreateTexture(nil, "OVERLAY")
-        impDot:SetSize(4, 4)
-        impDot:SetPoint("LEFT", 12, 0)
         local dc = sec.dotColor
-        impDot:SetColorTexture(dc[1], dc[2], dc[3], 0.9)
 
         local lbl = btn:CreateFontString(nil, "OVERLAY")
-        lbl:SetFont(NS.GetConfigFontPath(), 12, "")
-        lbl:SetPoint("LEFT", impDot, "RIGHT", 10, 0)
-        lbl:SetPoint("RIGHT", -18, 0)
-        lbl:SetJustifyH("LEFT")
+        lbl:SetFont(NS.GetConfigFontPath(), 10, "")
+        lbl:SetPoint("LEFT", 4, 0)
+        lbl:SetPoint("RIGHT", -4, 0)
+        lbl:SetJustifyH("CENTER")
+        lbl:SetWordWrap(false)
+        lbl:SetMaxLines(1)
         lbl:SetTextColor(dc[1] * 0.7, dc[2] * 0.7, dc[3] * 0.7)
-        lbl:SetText(sec.label)
-
-        local arrow = btn:CreateFontString(nil, "OVERLAY")
-        arrow:SetFont(NS.NERD_FONT, 9, "")
-        arrow:SetPoint("RIGHT", -6, 0)
-        arrow:SetText(NS.GLYPH_TRI_RIGHT)
-        arrow:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.8)
+        lbl:SetText(TAB_LABELS[i])
 
         btn._bg = bg
         btn._lbl = lbl
-        btn._impDot = impDot
         btn._dotColor = dc
-        btn._arrow = arrow
+        NS.AddTooltip(btn, sec.label, {})
 
         btn:SetScript("OnClick", function()
             SelectSection(i)
@@ -4852,11 +4843,11 @@ function NS.Config:Create()
     end
 
     ----------------------------------------------------------------
-    -- Search box (top of left panel)
+    -- Search lives in the toolbar, independent of the selected page.
     ----------------------------------------------------------------
-    local searchBox = NS.CreateFrame("EditBox", nil, leftPanel, "BackdropTemplate")
-    searchBox:SetSize(leftW - 24, 30)
-    searchBox:SetPoint("TOPLEFT", 12, -12)
+    local searchBox = NS.CreateFrame("EditBox", nil, titleBar, "BackdropTemplate")
+    searchBox:SetSize(180, 24)
+    searchBox:SetPoint("LEFT", 182, 0)
     searchBox:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
         edgeFile = "Interface\\Buttons\\WHITE8X8",
@@ -4874,7 +4865,7 @@ function NS.Config:Create()
     searchPlaceholder:SetFont(NS.GetConfigFontPath(), 11, "")
     searchPlaceholder:SetPoint("LEFT", 6, 0)
     searchPlaceholder:SetTextColor(NS.unpack(T.TEXT_MUTED))
-    searchPlaceholder:SetText("Search settings...")
+    searchPlaceholder:SetText("Find a setting...")
 
     local function DoSearch(query)
         query = query:lower()
@@ -4884,11 +4875,11 @@ function NS.Config:Create()
                 searchMode = false
                 searchResultsFrame:Hide()
                 ApplySectionWindowSize(activeSection)
+                RefreshNavigationLayout(false)
                 contentFrames[activeSection]:Show()
                 local sec = SECTIONS[activeSection]
                 sectionTitle:SetText(sec.label)
                 sectionTitle:SetTextColor(NS.unpack(T.TEXT))
-                sectionDescription:SetText(SECTION_DESCRIPTIONS[activeSection])
                 sectionJump:SetShown(#(contentFrames[activeSection]._subsections or {}) > 0)
                 scrollChild:SetHeight(contentFrames[activeSection]._contentH or 100)
                 scrollFrame:SetVerticalScroll(0)
@@ -4904,10 +4895,10 @@ function NS.Config:Create()
         end
 
         ApplySectionWindowSize(nil)
+        RefreshNavigationLayout(false)
 
         sectionTitle:SetText("Search settings")
         sectionTitle:SetTextColor(NS.unpack(T.TEXT))
-        sectionDescription:SetText("Select a result to jump straight to its control.")
         sectionMenu:Hide()
         sectionJump:Hide()
 
@@ -5117,7 +5108,7 @@ function NS.Config:Create()
         fadingContent = nil
         fadeFrame:Hide()
         animFrame:Hide()
-        indicatorCurrentY = indicatorTargetY
+        indicatorCurrentX = indicatorTargetX
     end)
 
     ----------------------------------------------------------------
@@ -5126,15 +5117,15 @@ function NS.Config:Create()
     ----------------------------------------------------------------
     animFrame = NS.CreateFrame("Frame", nil, f)
     animFrame:SetScript("OnUpdate", function(self, elapsed)
-        local diff = indicatorTargetY - indicatorCurrentY
+        local diff = indicatorTargetX - indicatorCurrentX
         if math.abs(diff) > 0.3 then
-            indicatorCurrentY = indicatorCurrentY + diff * math.min(1, elapsed * 14)
+            indicatorCurrentX = indicatorCurrentX + diff * math.min(1, elapsed * 14)
         else
-            indicatorCurrentY = indicatorTargetY
+            indicatorCurrentX = indicatorTargetX
             self:Hide()  -- done sliding, stop running
         end
         indicator:ClearAllPoints()
-        indicator:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 8, indicatorCurrentY)
+        indicator:SetPoint("BOTTOMLEFT", tabBar, "BOTTOMLEFT", indicatorCurrentX, 0)
     end)
     animFrame:Hide()  -- start hidden, only shown when indicator needs to move
 
@@ -5143,13 +5134,39 @@ function NS.Config:Create()
     ----------------------------------------------------------------
     SelectSection(NS._restoreSection or 1)
     NS._restoreSection = nil
-    f:SetScale(NS.db.configPanelScale or 1.0)
-
     -- Expose SelectSection and scrollFrame for external use (screenshots, etc.)
     self.SelectSection = SelectSection
     self.scrollFrame = scrollFrame
 
     self.frame = f
+    self._refreshPixelLines = function()
+        if not PixelUtil then return end
+        PixelUtil.SetHeight(divider, 1, 1)
+        PixelUtil.SetPoint(divider, "BOTTOMLEFT", tabBar, "BOTTOMLEFT", 12, 0)
+        PixelUtil.SetPoint(divider, "BOTTOMRIGHT", tabBar, "BOTTOMRIGHT", -12, 0)
+        PixelUtil.SetHeight(indicator, 2, 1)
+        PixelUtil.SetHeight(titleUnderline, 1, 1)
+        PixelUtil.SetPoint(titleUnderline, "TOPLEFT", contentOrigin, "TOPRIGHT", 14, -sectionHeaderH + 9)
+        PixelUtil.SetPoint(titleUnderline, "RIGHT", f, "RIGHT", -14, 0)
+        for _, line in ipairs(subHeaderLines) do
+            PixelUtil.SetHeight(line, 1, 1)
+            PixelUtil.SetPoint(line, "TOPLEFT", line._header, "BOTTOMLEFT", 0, -3)
+            PixelUtil.SetPoint(line, "RIGHT", line:GetParent(), "RIGHT", -14, 0)
+        end
+    end
+    f:HookScript("OnShow", function()
+        f:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        f:RegisterEvent("UI_SCALE_CHANGED")
+        self:ApplyScale()
+    end)
+    f:HookScript("OnHide", function()
+        f:UnregisterEvent("DISPLAY_SIZE_CHANGED")
+        f:UnregisterEvent("UI_SCALE_CHANGED")
+    end)
+    f:SetScript("OnEvent", function()
+        if f:IsShown() then self:ApplyScale() end
+    end)
+    self:ApplyScale()
     return f
 end
 

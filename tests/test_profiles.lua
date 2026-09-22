@@ -5,6 +5,7 @@ local NS = {
         prioritySpacing = 4,
         showMinimapButton = true,
         trinketMode = "Off",
+        configPanelScale = 1,
     },
     pairs = pairs,
     ipairs = ipairs,
@@ -70,5 +71,22 @@ NS:SwitchProfile("Other")
 eq(NS.db.minimap, BetterSBA_DB.minimap, "minimap aliases root after switch")
 NS:ResetProfile()
 eq(NS.db.minimap, BetterSBA_DB.minimap, "minimap aliases root after reset")
+
+-- The compact config adopts neutral zoom once for existing profiles. A later
+-- manual zoom is intentional and must survive normal initialization.
+BetterSBA_DB = {
+    _version = 1,
+    activeProfile = "Default",
+    profiles = { Default = { configPanelScale = 1.5 } },
+    charProfiles = {},
+    minimap = { hide = false },
+}
+NS:InitializeDatabase()
+eq(NS.db.configPanelLayoutVersion, 1, "compact config migration is recorded")
+eq(NS.db.configPanelScale, 1, "first compact-layout migration resets legacy panel zoom")
+NS.db.configPanelScale = 1.35
+NS:InitializeDatabase()
+eq(NS.db.configPanelLayoutVersion, 1, "migration marker is stable on reload")
+eq(NS.db.configPanelScale, 1.35, "manual panel zoom survives later initialization")
 
 print("test_profiles.lua: ok")

@@ -222,7 +222,7 @@ NS.defaults = {
     priorityOffsetX = 0,
     priorityOffsetY = 0,
     showActiveGlow = true,
-    configPanelBaseHeight = 560,
+    configPanelBaseHeight = 480,
     configPanelHeight = 620,
 
     -- Visibility
@@ -352,6 +352,7 @@ NS.defaults = {
     -- Modifier scaling
     modifierScaling = true,
     configPanelScale = 1.0,
+    configPanelLayoutVersion = 1,
     priorityScale = 1.0,
 }
 

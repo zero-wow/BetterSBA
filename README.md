@@ -149,7 +149,9 @@ Independent font family, outline style, and size settings for: global, config pa
 
 ## Configuration
 
-The config panel (`/bs`) uses a wider workspace, stable navigation for all nine sections, and a scrollable **Jump to section** menu for subsection shortcuts. Controls use rounded switches, clearer fields, and more spacing. Settings still save automatically, and existing profiles and font overrides are retained.
+The config panel (`/bs`) uses a compact toolbar with search, nine horizontal tabs, and full-width settings pages. Label/value rows, rounded fields and switches, and paired trinket slots replace the old sidebar layout. **Jump to section** opens subsection shortcuts; the footer shows panel zoom and resets it to 100% when clicked.
+
+The new layout resets the old panel zoom once to 100%. Later zoom adjustments are saved. Screen-fit scaling and pixel-aligned rules adapt to WoW's UI scale and available screen space. Gameplay settings, profiles, and font overrides are retained.
 
 The panel is organized into nine sections:
 
