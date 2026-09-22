@@ -9,43 +9,19 @@ local priorityIcons = {}
 ----------------------------------------------------------------
 local sortBuffer = {}  -- reusable table (no GC pressure)
 
--- Sanitize potentially tainted (secret) numbers into clean Lua numbers.
--- WoW's C_Spell cooldown API returns "secret number" values in combat
--- that cannot be compared with Lua operators.  Converting through
--- tostring -> tonumber produces a clean, non-tainted copy.
-local function CleanNumber(val)
-    if val == nil then return 0 end
-    local ok, s = pcall(tostring, val)
-    if not ok then return 0 end
-    return tonumber(s) or 0
-end
-
--- Get cooldown remaining (seconds). Returns 0 if ready, not seeded, or on error.
-local function GetCDRemaining(spellID)
-    if not NS.IsVirtualCDReady() then return 0 end  -- graceful degrade: no CD data yet
-    local cdInfo = NS.GetCooldownCached(spellID)
-    if not cdInfo then return 0 end
-    local st = CleanNumber(cdInfo.startTime)
-    local dur = CleanNumber(cdInfo.duration)
-    if dur <= 1.5 then return 0 end  -- GCD or no CD
-    local now = GetTime()
-    local rem = (st + dur) - now
-    return rem > 0 and rem or 0
-end
-
 -- Get base cooldown duration for importance sorting
 local function GetBaseCooldown(spellID)
-    local baseCD = NS.GetBaseCooldownCached and NS.GetBaseCooldownCached(spellID)
-    if baseCD then return CleanNumber(baseCD) end
-    local cdInfo = NS.GetCooldownCached(spellID)
-    if not cdInfo then return 0 end
-    return CleanNumber(cdInfo.duration)
+    return NS.GetSpellBaseCooldown and NS.GetSpellBaseCooldown(spellID) or 0
+end
+
+local function IsLongCooldown(cdInfo)
+    return NS.IsCooldownLong and NS.IsCooldownLong(cdInfo) == true
 end
 
 -- Sort rotation spells by priority.
 -- Pre-computes all sort keys in one O(N) pass so the comparator
 -- does zero API calls, zero CleanNumber/tostring, zero closures.
-local sortKeys = {}  -- reusable: sortKeys[spellID] = { rem, ready, base, isNext }
+local sortKeys = {}  -- reusable: sortKeys[spellID] = { base, isNext }
 
 local function SortByPriority(spells, nextSpellID)
     -- Fill sort buffer (reuse table to avoid GC)
@@ -59,9 +35,7 @@ local function SortByPriority(spells, nextSpellID)
         local sid = sortBuffer[i]
         local k = sortKeys[sid]
         if not k then k = {}; sortKeys[sid] = k end
-        k.rem = GetCDRemaining(sid)
-        k.ready = (k.rem == 0)
-        k.base = k.ready and GetBaseCooldown(sid) or 0
+        k.base = GetBaseCooldown(sid)
         k.isNext = (sid == nextSpellID)
     end
 
@@ -69,15 +43,9 @@ local function SortByPriority(spells, nextSpellID)
         local ka, kb = sortKeys[a], sortKeys[b]
         -- Next-cast spell always first
         if ka.isNext ~= kb.isNext then return ka.isNext end
-        -- Ready spells before on-CD spells
-        if ka.ready ~= kb.ready then return ka.ready end
-        if ka.ready and kb.ready then
-            -- Both ready: higher base CD = more important = first
-            if ka.base ~= kb.base then return ka.base > kb.base end
-        else
-            -- Both on CD: soonest available first
-            if ka.rem ~= kb.rem then return ka.rem < kb.rem end
-        end
+        -- The remaining cooldown may be secret. Use stable base importance for
+        -- non-next entries instead of making a local readiness prediction.
+        if ka.base ~= kb.base then return ka.base > kb.base end
         -- Tiebreaker: spell ID (prevents flickering from unstable sort)
         return a < b
     end)
@@ -223,6 +191,11 @@ function NS:CreatePriorityDisplay()
             icon.tex:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
         end
 
+        icon.pushedTex = icon:CreateTexture(nil, "ARTWORK", nil, 1)
+        icon.pushedTex:SetColorTexture(0, 0, 0, 0.35)
+        icon.pushedTex:SetAllPoints(icon.tex)
+        icon:SetPushedTexture(icon.pushedTex)
+
         icon.cd = NS.CreateFrame("Cooldown", nil, icon, "CooldownFrameTemplate")
         icon.cd:SetAllPoints(icon.tex)
         icon.cd:SetDrawEdge(false)
@@ -247,11 +220,6 @@ function NS:CreatePriorityDisplay()
             normalTex:SetPoint("CENTER")
             icon:SetNormalTexture(normalTex)
 
-            local pushedTex = icon:CreateTexture()
-            pushedTex:SetColorTexture(0, 0, 0, 0.5)
-            pushedTex:SetAllPoints(icon.tex)
-            icon:SetPushedTexture(pushedTex)
-
             local hlTex = icon:CreateTexture()
             hlTex:SetColorTexture(1, 1, 1, 0.15)
             hlTex:SetAllPoints(icon.tex)
@@ -268,15 +236,19 @@ function NS:CreatePriorityDisplay()
             borderTex:Hide()
             icon.Border = borderTex
 
-            NS.masquePriorityGroup:AddButton(icon, {
+            icon._masqueRegions = {
                 Icon = icon.tex,
                 Cooldown = icon.cd,
                 Normal = normalTex,
-                Pushed = pushedTex,
+                Pushed = icon.pushedTex,
                 Highlight = hlTex,
                 Flash = flashTex,
                 Border = borderTex,
-            })
+            }
+            if not NS.UsesSoftButtonStyle() then
+                NS.masquePriorityGroup:AddButton(icon, icon._masqueRegions)
+                icon._masqueRegistered = true
+            end
 
             -- Masque handles appearance — hide our textures
             if icon.borderTex then icon.borderTex:Hide() end
@@ -285,6 +257,7 @@ function NS:CreatePriorityDisplay()
     end
 
     NS._priorityIcons = priorityIcons
+    for _, icon in NS.ipairs(priorityIcons) do NS.ApplyButtonStyle(icon, true) end
 
     -- Detach overlay ("DRAG TO MOVE" indicator, right-click to commit)
     local overlay = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -390,27 +363,16 @@ function NS.LayoutPriority()
     if db.priorityFreePosition then
         local pos = db.priorityFreePosition
         f:SetPoint(pos.point, NS.UIParent, pos.relPoint, pos.x, pos.y)
-        f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
     elseif db.priorityDetached then
         local bindName = db.priorityBindFrame or "BetterSBA_MainButton"
         local bindFrame = _G[bindName] or btn
         local myPt = db.priorityMyPoint or "LEFT"
         local theirPt = db.priorityTheirPoint or "RIGHT"
         f:SetPoint(myPt, bindFrame, theirPt, pox, poy)
-        f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
     else
         local pos = db.priorityPosition
         local anchor = PRIORITY_ANCHORS[pos] or PRIORITY_ANCHORS.RIGHT
         f:SetPoint(anchor.from, btn, anchor.to, anchor.ox + pox, anchor.oy + poy)
-
-        local labelAboveFrame = (pos == "TOP" or pos == "BOTTOM"
-            or pos == "TOPRIGHT" or pos == "TOPLEFT"
-            or pos == "BOTTOMRIGHT" or pos == "BOTTOMLEFT")
-        if labelAboveFrame then
-            f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
-        else
-            f.label:SetPoint("BOTTOM", priorityIcons[1], "TOP", lx, 2 + ly)
-        end
     end
 
     -- Layout icons in a horizontal row
@@ -424,6 +386,7 @@ function NS.LayoutPriority()
 
     local count = math.min(MAX_PRIORITY_ICONS, #priorityIcons)
     f:SetSize(count * (iconSize + spacing) - spacing + 6, iconSize + 6)
+    f.label:SetPoint("BOTTOM", f, "TOP", lx, 2 + ly)
 
 end
 
@@ -457,6 +420,7 @@ function NS.ApplyPriorityFonts()
                 NS.db.priorityKeybindOffsetY or -5)
         end
     end
+    NS.LayoutPriority()
 end
 
 ----------------------------------------------------------------
@@ -467,6 +431,11 @@ function NS.UpdatePriorityDisplay()
     if not f then return end
 
     if not NS.db.showPriority then
+        if NS.ClearButtonPressVisual then
+            for i = 1, MAX_PRIORITY_ICONS do
+                NS.ClearButtonPressVisual(priorityIcons[i])
+            end
+        end
         f:Hide()
         HideAllGlows()
         return
@@ -476,6 +445,11 @@ function NS.UpdatePriorityDisplay()
     local rotationSpells = NS.CollectRotationSpells()
 
     if not rotationSpells or #rotationSpells == 0 then
+        if NS.ClearButtonPressVisual then
+            for i = 1, MAX_PRIORITY_ICONS do
+                NS.ClearButtonPressVisual(priorityIcons[i])
+            end
+        end
         f:Hide()
         HideAllGlows()
         return
@@ -495,10 +469,12 @@ function NS.UpdatePriorityDisplay()
     for i = 1, MAX_PRIORITY_ICONS do
         local icon = priorityIcons[i]
         local spellID = sorted[i]
-        -- Reset per-tick glow color (avoids table allocation)
         icon._wantGlow = false
 
         if spellID and spellID ~= 0 then
+            if icon._pressSpellID and icon._pressSpellID ~= spellID and NS.ClearButtonPressVisual then
+                NS.ClearButtonPressVisual(icon)
+            end
             icon.spellID = spellID
             visibleCount = visibleCount + 1
 
@@ -520,11 +496,7 @@ function NS.UpdatePriorityDisplay()
                 local impKey = NS.GetSpellImportanceKey(spellID)
                 if impKey == "LONG_CD" or impKey == "MAJOR_CD" then
                     local cdInfo = NS.GetCooldownCached(spellID)
-                    local isReady = true
-                    if cdInfo then
-                        local ok, isLong = pcall(NS._durGT, cdInfo, 1.5)
-                        if ok and isLong then isReady = false end
-                    end
+                    local isReady = not IsLongCooldown(cdInfo)
                     if isReady then
                         local brightColor = NS.GetSpellBorderColorBright(spellID)
                             or NS.SPELL_IMPORTANCE_BRIGHT[impKey]
@@ -577,15 +549,10 @@ function NS.UpdatePriorityDisplay()
             icon.tex:SetVertexColor(isNext and 1 or 0.7, isNext and 1 or 0.7, isNext and 1 or 0.7)
 
             -- Cooldown (uses per-tick cache to avoid API table garbage)
-            -- pcall guards comparison — cdInfo fields may be tainted secret numbers
-            local cdInfo = NS.GetCooldownCached(spellID)
-            if cdInfo then
-                local ok, isLong = pcall(NS._durGT, cdInfo, 1.5)
-                if ok and isLong then
-                    icon.cd:SetCooldown(cdInfo.startTime, cdInfo.duration)
-                else
-                    icon.cd:Clear()
-                end
+            if NS.SetSpellCooldownVisual then
+                NS.SetSpellCooldownVisual(icon.cd, spellID)
+            else
+                icon.cd:Clear()
             end
 
             -- Keybind text
@@ -596,9 +563,13 @@ function NS.UpdatePriorityDisplay()
             else
                 icon.hotkey:Hide()
             end
+            if NS.UpdateButtonChrome then NS.UpdateButtonChrome(icon) end
 
             icon:Show()
         else
+            if NS.ClearButtonPressVisual then
+                NS.ClearButtonPressVisual(icon)
+            end
             icon:Hide()
         end
     end

@@ -9,12 +9,51 @@ local ADDON_NAME, NS = ...
 -- per-call closure garbage.
 ----------------------------------------------------------------
 local function _durGT(cdInfo, threshold)
-    return (cdInfo.duration or 0) > threshold
+    return cdInfo.duration > threshold
 end
 local function _durLE(cdInfo, threshold)
-    return (cdInfo.duration or 0) <= threshold
+    return cdInfo.duration <= threshold
 end
 NS._durGT = _durGT
+
+-- Secret cooldown values must remain opaque to Lua. These helpers only return
+-- a result when Blizzard permits the comparison; nil means unknown, never 0.
+function NS.IsCooldownLong(cdInfo, threshold)
+    if not cdInfo then return nil end
+    local ok, result = pcall(_durGT, cdInfo, threshold or 1.5)
+    if not ok then return nil end
+    return result
+end
+
+function NS.IsCooldownShortOrReady(cdInfo, threshold)
+    if not cdInfo then return nil end
+    local ok, result = pcall(_durLE, cdInfo, threshold or 1.5)
+    if not ok then return nil end
+    return result
+end
+
+-- CooldownFrame natively accepts the duration object returned by C_Spell.
+-- Passing that object through preserves secret values without coercion.
+function NS.SetSpellCooldownVisual(cooldown, spellID)
+    if not cooldown then return false end
+    local duration = spellID and NS.GetCooldownDurationCached and NS.GetCooldownDurationCached(spellID)
+    if cooldown.SetCooldownFromDurationObject then
+        if duration then
+            local ok = pcall(cooldown.SetCooldownFromDurationObject, cooldown, duration)
+            if ok then return true end
+        end
+        cooldown:Clear()
+        return false
+    end
+    -- Retail provides SetCooldownFromDurationObject. This fallback is for an
+    -- older widget only and never feeds a SpellCooldownInfo into the native API.
+    local cdInfo = spellID and NS.GetCooldownCached(spellID)
+    if not cdInfo then cooldown:Clear(); return false end
+    local ok = pcall(cooldown.SetCooldown, cooldown, cdInfo.startTime, cdInfo.duration)
+    if ok then return true end
+    cooldown:Clear()
+    return false
+end
 
 ----------------------------------------------------------------
 -- Spell importance classification (base cooldown cache)
@@ -22,6 +61,16 @@ NS._durGT = _durGT
 local baseCDCache = {}
 local baseCDCacheCount = 0
 local MAX_CD_CACHE = 200  -- cap to prevent unbounded growth
+
+local function _baseCooldownSeconds(ms)
+    if ms >= 0 then return ms / 1000 end
+end
+
+local function GetBaseCooldownSeconds(ms)
+    local ok, seconds = pcall(_baseCooldownSeconds, ms)
+    if ok then return seconds end
+    return nil
+end
 
 function NS.ClearBaseCDCache()
     baseCDCache = {}
@@ -42,9 +91,8 @@ function NS.GetSpellBaseCooldown(spellID)
     if NS.C_Spell and NS.C_Spell.GetSpellBaseCooldown then
         local ok, ms = NS.pcall(NS.C_Spell.GetSpellBaseCooldown, spellID)
         if ok and ms then
-            ms = tonumber(ms) or 0
-            if ms > 0 then
-                local sec = ms / 1000
+            local sec = GetBaseCooldownSeconds(ms)
+            if sec then
                 baseCDCache[spellID] = sec
                 baseCDCacheCount = baseCDCacheCount + 1
                 return sec
@@ -56,9 +104,8 @@ function NS.GetSpellBaseCooldown(spellID)
     if GetSpellBaseCooldown then
         local ok, baseCDms = NS.pcall(GetSpellBaseCooldown, spellID)
         if ok and baseCDms then
-            baseCDms = tonumber(baseCDms) or 0
-            if baseCDms > 0 then
-                local sec = baseCDms / 1000
+            local sec = GetBaseCooldownSeconds(baseCDms)
+            if sec then
                 baseCDCache[spellID] = sec
                 baseCDCacheCount = baseCDCacheCount + 1
                 return sec
@@ -66,22 +113,7 @@ function NS.GetSpellBaseCooldown(spellID)
         end
     end
 
-    -- Fallback: observe current cooldown duration
-    if NS.C_Spell and NS.C_Spell.GetSpellCooldown then
-        local cdInfo = NS.GetCooldownCached(spellID)
-        if cdInfo then
-            -- pcall guards against tainted "secret number" comparisons
-            local ok, isLong = pcall(_durGT, cdInfo, 1.5)
-            if ok and isLong then
-                local dur = tonumber(cdInfo.duration) or 0
-                baseCDCache[spellID] = dur
-                baseCDCacheCount = baseCDCacheCount + 1
-                return dur
-            end
-        end
-    end
-
-    -- Don't cache zero â€” retry next time
+    -- No valid API result â€” retry next time. A valid zero is cached above.
     return 0
 end
 
@@ -184,32 +216,7 @@ function NS.GetDisplaySpell()
 
     NS._fallbackTexture = nil
 
-    -- Check if recommended is on a real cooldown (uses per-tick cache
-    -- to avoid creating a new API table on every call).
-    -- pcall guards all comparisons â€” cdInfo fields may be tainted
-    -- "secret numbers" in WoW's secure execution context.
-    local cdInfo = NS.GetCooldownCached(recommended)
-    if cdInfo then
-        local ok, isLongCD = pcall(_durGT, cdInfo, 1.5)
-        if ok and isLongCD then
-            -- Recommended is on CD, look for a ready rotation spell
-            local rotationSpells = NS.CollectRotationSpells()
-            for idx = 1, #rotationSpells do
-                local sid = rotationSpells[idx]
-                if sid and sid ~= 0 and sid ~= recommended then
-                    local cdInfo2 = NS.GetCooldownCached(sid)
-                    if cdInfo2 then
-                        local ok2, isReady = pcall(_durLE, cdInfo2, 1.5)
-                        if ok2 and isReady then
-                            return sid
-                        end
-                    end
-                end
-            end
-            -- Nothing ready â†’ auto-attack
-            return NS.AUTO_ATTACK_SPELL_ID
-        end
-    end
-
+    -- Blizzard's next-spell authority already accounts for charges, cooldown
+    -- resets, and resource rules. Do not replace it with local prediction.
     return recommended
 end

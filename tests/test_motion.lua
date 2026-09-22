@@ -1,0 +1,59 @@
+unpack = unpack or table.unpack
+local made, all, combat = 0, {}, false
+local function object(parent, kind)
+    local o={parent=parent, kind=kind, alpha=1, scripts={}, shown=true, children={}}
+    if parent then parent.children[#parent.children+1]=o end
+    setmetatable(o,{__index=function(_, k)
+        if k=="CreateTexture" or k=="CreateMaskTexture" or k=="CreateAnimationGroup" or k=="CreateAnimation" then
+            return function(self) return object(self,k) end
+        end
+        return function() end
+    end})
+    function o:Show() self.shown=true end
+    function o:Hide() self.shown=false end
+    function o:IsVisible() return self.shown end
+    function o:GetAlpha() return self.alpha end
+    function o:SetAlpha(a) self.alpha=a end
+    function o:GetWidth() return 48 end
+    function o:GetFrameLevel() return 5 end
+    function o:GetFrameStrata() return "MEDIUM" end
+    function o:SetScript(k,v) self.scripts[k]=v end
+    function o:Play() self.playing=true end
+    function o:Stop() self.playing=false end
+    function o:GetTexture() return 123 end
+    function o:GetTexCoord() return 0.07,0.93,0.07,0.93 end
+    return o
+end
+local ns={
+    db={enabled=true,buttonStyle="Soft",motionPreset="Pulse"},
+    mainButton=object(), UIParent=object(), unpack=unpack,
+    UsesSoftButtonStyle=function() return true end,
+    CreateFrame=function(_,_,p) made=made+1; local f=object(p,"Frame"); all[#all+1]=f; return f end,
+}
+ns.mainButton.icon=object()
+InCombatLockdown=function() return combat end
+assert(loadfile("Core/Functions/Motion.lua"))("BetterSBA",ns)
+combat=true
+assert(not ns.PlayMotionFeedback(1), "First combat call cannot initialize geometry")
+assert(made==0)
+combat=false
+assert(ns.InitializeMotionFeedback())
+assert(made==4, "One host and three pooled layers")
+for _, preset in ipairs({"Pulse","Echo","Sweep"}) do
+    ns.db.motionPreset=preset
+    for i=1,100 do assert(ns.PlayMotionFeedback(1)) end
+end
+assert(made==4, "Repeated casts never allocate more frames")
+ns.db.motionReduced=true
+ns.PlayMotionFeedback(1)
+local playing=0
+for _, f in ipairs(all) do if type(f.ag)=="table" and f.ag.playing then playing=playing+1 end end
+assert(playing==1, "Reduced motion uses one layer")
+ns.ResetMotionFeedback()
+for _, f in ipairs(all) do if type(f.ag)=="table" then assert(not f.ag.playing and not f.shown) end end
+ns.db.enabled=false
+assert(not ns.PlayMotionFeedback(1))
+ns.db.enabled=true
+ns.mainButton.alpha=0
+assert(not ns.PlayMotionFeedback(1))
+print("PASS: bounded motion pool, preset reuse, reduced motion, cancellation, visibility")

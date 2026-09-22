@@ -8,17 +8,23 @@ local registeredEvents = {
     "PLAYER_REGEN_DISABLED",
     "SPELLS_CHANGED",
     "ACTIONBAR_SLOT_CHANGED",
+    "ACTIONBAR_PAGE_CHANGED",
     "UPDATE_BINDINGS",
     "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_TARGET_CHANGED",
     "UNIT_AURA",
     "SPELL_UPDATE_COOLDOWN",
+    "SPELL_UPDATE_CHARGES",
     "PLAYER_ENTERING_WORLD",
     "UNIT_SPELLCAST_SUCCEEDED",
     "UPDATE_BONUS_ACTIONBAR",
     "UPDATE_OVERRIDE_ACTIONBAR",
     "UPDATE_VEHICLE_ACTIONBAR",
+    "UPDATE_SHAPESHIFT_FORM",
+    "UPDATE_SHAPESHIFT_FORMS",
     "PLAYER_MOUNT_DISPLAY_CHANGED",
+    "PLAYER_EQUIPMENT_CHANGED",
+    "ITEM_DATA_LOAD_RESULT",
 }
 
 for _, event in NS.ipairs(registeredEvents) do
@@ -66,6 +72,8 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_LOGIN" then
         NS.ScanKeybinds()
+        if NS.RefreshTrinkets then NS.RefreshTrinkets() end
+        if NS.InitializeMotionFeedback then NS.InitializeMotionFeedback() end
         NS.C_Timer_After(1, NS.ScanKeybinds)
         -- Seed virtual cooldown system (must be out of combat)
         NS.C_Timer_After(1.5, function()
@@ -74,6 +82,14 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_REGEN_ENABLED" then
         -- Left combat: apply pending changes
+        if NS._pendingKeybindScan then
+            NS._pendingKeybindScan = nil
+            NS.ScanKeybinds()
+        end
+        if NS._pendingTrinketRefresh then
+            NS._pendingTrinketRefresh = nil
+            if NS.RefreshTrinkets then NS.RefreshTrinkets() end
+        end
         if NS._pendingMacroRebuild then
             NS.RebuildMacroText()
         end
@@ -93,6 +109,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             NS._pendingAnimCloneDebugBinding = nil
             NS.ApplyAnimCloneDebugBinding()
         end
+        if NS._pendingMissingKeybindScan and NS.ScanMissingKeybinds then
+            NS._pendingMissingKeybindScan = nil
+            NS.ScanMissingKeybinds()
+        end
         -- Seed virtual cooldowns if deferred from combat load
         NS.CheckPendingVirtualCD()
         NS.UpdateNow()
@@ -102,9 +122,11 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         NS.UpdateNow()
 
     elseif event == "SPELLS_CHANGED" or event == "ACTIONBAR_SLOT_CHANGED"
+        or event == "ACTIONBAR_PAGE_CHANGED"
         or event == "UPDATE_BINDINGS" or event == "PLAYER_SPECIALIZATION_CHANGED"
         or event == "UPDATE_BONUS_ACTIONBAR" or event == "UPDATE_OVERRIDE_ACTIONBAR"
-        or event == "UPDATE_VEHICLE_ACTIONBAR" then
+        or event == "UPDATE_VEHICLE_ACTIONBAR" or event == "UPDATE_SHAPESHIFT_FORM"
+        or event == "UPDATE_SHAPESHIFT_FORMS" then
         if event == "PLAYER_SPECIALIZATION_CHANGED" then
             NS.ClearBaseCDCache()
             NS.ResetVirtualCooldowns()
@@ -119,18 +141,23 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             NS.InvalidateResolveCache()
             NS.InvalidateTextureCache()
             NS.InvalidateCooldownCache()
+            NS.RebuildMacroText()
         end
-        if event == "ACTIONBAR_SLOT_CHANGED" or event == "UPDATE_BONUS_ACTIONBAR"
-            or event == "UPDATE_OVERRIDE_ACTIONBAR" or event == "UPDATE_VEHICLE_ACTIONBAR" then
+        if event == "ACTIONBAR_SLOT_CHANGED" or event == "ACTIONBAR_PAGE_CHANGED"
+            or event == "UPDATE_BONUS_ACTIONBAR"
+            or event == "UPDATE_OVERRIDE_ACTIONBAR" or event == "UPDATE_VEHICLE_ACTIONBAR"
+            or event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_FORMS" then
             NS.ClearSBASlotCache()
         end
         NS.ScanKeybinds()
         NS.UpdateNow()
         -- Delayed re-scan for bar transitions (API state may lag behind events).
-        -- Includes ACTIONBAR_SLOT_CHANGED for skyriding/mount dismount recovery.
+        -- Includes action-bar page and slot changes for bar transition recovery.
         -- Debounced so rapid-fire events don't spawn dozens of timers.
         if event == "UPDATE_BONUS_ACTIONBAR" or event == "UPDATE_OVERRIDE_ACTIONBAR"
-            or event == "UPDATE_VEHICLE_ACTIONBAR" or event == "ACTIONBAR_SLOT_CHANGED" then
+            or event == "UPDATE_VEHICLE_ACTIONBAR" or event == "ACTIONBAR_SLOT_CHANGED"
+            or event == "ACTIONBAR_PAGE_CHANGED"
+            or event == "UPDATE_SHAPESHIFT_FORM" or event == "UPDATE_SHAPESHIFT_FORMS" then
             if not NS._pendingDelayedRescan then
                 NS._pendingDelayedRescan = true
                 NS.C_Timer_After(0.5, function()
@@ -140,6 +167,20 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                     NS.UpdateNow()
                 end)
             end
+        end
+
+    elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "ITEM_DATA_LOAD_RESULT" then
+        local id = ...
+        if event == "PLAYER_EQUIPMENT_CHANGED" and id ~= 13 and id ~= 14 then return end
+        if event == "ITEM_DATA_LOAD_RESULT" then
+            local top = NS.GetTrinketStatus and NS.GetTrinketStatus(13)
+            local bottom = NS.GetTrinketStatus and NS.GetTrinketStatus(14)
+            if not ((top and top.itemID == id) or (bottom and bottom.itemID == id)) then return end
+        end
+        if NS.InCombatLockdown() then
+            NS._pendingTrinketRefresh = true
+        elseif NS.RefreshTrinkets then
+            NS.RefreshTrinkets()
         end
 
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
@@ -162,12 +203,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             NS.UpdateNow()
         end)
 
-    elseif event == "PLAYER_TARGET_CHANGED" or event == "SPELL_UPDATE_COOLDOWN"
+    elseif event == "PLAYER_TARGET_CHANGED" or event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES"
         or event == "UNIT_AURA" or event == "ASSISTED_COMBAT_ACTION_SPELL_CAST" then
-        if event == "SPELL_UPDATE_COOLDOWN" then
+        if event == "UNIT_AURA" then
+            local unit = ...
+            if unit ~= "player" and unit ~= "target" then return end
+        end
+        if event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" then
             NS.InvalidateCooldownCache()
         end
-        NS.UpdateNow()
+        NS.QueueDisplayUpdate()
 
     elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
         local unit, _, spellID = ...
@@ -235,8 +280,21 @@ function NS:RegisterSlashCommands()
             print("|cFF66B8D9BetterSBA|r: Position unlocked - drag to move")
         elseif msg == "toggle" then
             NS.db.enabled = not NS.db.enabled
+            if NS.db.enabled then NS.StartTicker() else NS.StopTicker() end
+            if not NS.db.enabled then
+                if NS.ResetMotionFeedback then NS.ResetMotionFeedback() end
+                if NS.ResetAnimClonePool then NS.ResetAnimClonePool() end
+            end
+            if NS.RefreshSBAInterception then
+                NS.RefreshSBAInterception()
+            else
+                NS.ScanKeybinds()
+            end
             NS.UpdateNow()
-            print("|cFF66B8D9BetterSBA|r: " .. (NS.db.enabled and "Enabled" or "Disabled"))
+            if NS.UpdateLDBText then NS.UpdateLDBText() end
+            local state = NS.db.enabled and "Enabled" or "Disabled"
+            if NS.InCombatLockdown() then state = state .. " (input change pending until combat ends)" end
+            print("|cFF66B8D9BetterSBA|r: " .. state)
         elseif msg == "debug" then
             NS.db.debug = not NS.db.debug
             if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end

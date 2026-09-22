@@ -1,6 +1,7 @@
 local ADDON_NAME, NS = ...
 
 local PARTICLE_POOL = {}          -- recycled frame pool
+local MAX_PARTICLES = 96          -- hard bound even during rapid cast/preview bursts
 
 local function AcquireParticle()
     for _, p in NS.ipairs(PARTICLE_POOL) do
@@ -9,7 +10,7 @@ local function AcquireParticle()
             return p
         end
     end
-
+    if #PARTICLE_POOL >= MAX_PARTICLES then return nil end
     local f = NS.CreateFrame("Frame", nil, NS.UIParent)
     f:SetFrameStrata("TOOLTIP")
     f:SetFrameLevel(300)
@@ -29,6 +30,15 @@ local function AcquireParticle()
     f._inUse = true
     PARTICLE_POOL[#PARTICLE_POOL + 1] = f
     return f
+end
+
+function NS.ResetParticlePool()
+    for _, p in NS.ipairs(PARTICLE_POOL) do
+        if p._ag then p._ag:Stop() end
+        p:Hide()
+        p:ClearAllPoints()
+        p._inUse = false
+    end
 end
 
 -- Style configs: count, duration, distance, per-particle setup
@@ -126,6 +136,7 @@ function NS.FireParticleBurst(btn, styleName, paletteName, gcdScale)
 
     for i = 1, count do
         local p = AcquireParticle()
+        if not p then break end
 
         local angle = math.random() * 2 * math.pi
         local dist = maxDist * (0.5 + 0.5 * math.random())

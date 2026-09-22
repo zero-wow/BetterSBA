@@ -4,6 +4,131 @@ local T = NS.THEME
 local ticker
 local wasOnSpecialBar = false
 local lastRescanTime = nil
+local PRESS_DURATION = 0.09
+
+local function ClearButtonPressVisual(button)
+    if not button then return end
+    button._pressUntil = nil
+    button._pressHeld = nil
+    button._pressStartedAt = nil
+    button._pressSpellID = nil
+    button:SetButtonState("NORMAL")
+    if button._pressVisualActive then
+        button._pressVisualActive = nil
+        button:SetScript("OnUpdate", nil)
+    end
+end
+
+local function PressVisualOnUpdate(self)
+    if self._pressHeld then return end
+    local untilTime = self._pressUntil
+    if not untilTime or GetTime() >= untilTime then
+        ClearButtonPressVisual(self)
+    end
+end
+
+local function StartButtonPressVisual(button, spellID, held)
+    if not button then return end
+    button._pressSpellID = spellID or button.spellID
+    if held then
+        button._pressHeld = true
+        button._pressStartedAt = GetTime()
+        button._pressUntil = nil
+    else
+        button._pressHeld = nil
+        button._pressStartedAt = nil
+        button._pressUntil = GetTime() + PRESS_DURATION
+    end
+    button:SetButtonState("PUSHED", true)
+    if held then
+        if button._pressVisualActive then
+            button:SetScript("OnUpdate", nil)
+        else
+            button._pressVisualActive = true
+        end
+    elseif not button._pressVisualActive then
+        button._pressVisualActive = true
+        button:SetScript("OnUpdate", PressVisualOnUpdate)
+    elseif not button._pressHeld then
+        button:SetScript("OnUpdate", PressVisualOnUpdate)
+    end
+end
+
+local function ReleaseButtonPressVisual(button)
+    if not button then return end
+    if not button._pressHeld then
+        ClearButtonPressVisual(button)
+        return
+    end
+    local startedAt = button._pressStartedAt or GetTime()
+    local elapsed = GetTime() - startedAt
+    local remaining = PRESS_DURATION - elapsed
+    button._pressHeld = nil
+    button._pressStartedAt = nil
+    if remaining > 0 then
+        button._pressUntil = GetTime() + remaining
+        button:SetButtonState("PUSHED", true)
+        button._pressVisualActive = true
+        button:SetScript("OnUpdate", PressVisualOnUpdate)
+    else
+        ClearButtonPressVisual(button)
+    end
+end
+
+function NS.ClearButtonPressVisual(button)
+    ClearButtonPressVisual(button)
+end
+
+function NS.StartButtonPressVisual(button, spellID, held)
+    StartButtonPressVisual(button, spellID, held)
+end
+
+function NS.PlayRecommendationPressVisual(spellID, held)
+    local btn = NS.mainButton
+    if btn then
+        StartButtonPressVisual(btn, spellID, held)
+    end
+    if not spellID then return end
+    local icons = NS._priorityIcons
+    if not icons then return end
+    for i = 1, #icons do
+        local icon = icons[i]
+        if icon and icon:IsShown() then
+            if icon.spellID == spellID then
+                StartButtonPressVisual(icon, spellID, held)
+                break
+            end
+        end
+    end
+end
+
+function NS.ClearRecommendationPressVisual()
+    if NS.mainButton then
+        ClearButtonPressVisual(NS.mainButton)
+    end
+    local icons = NS._priorityIcons
+    if not icons then return end
+    for i = 1, #icons do
+        local icon = icons[i]
+        if icon and icon._pressVisualActive then
+            ClearButtonPressVisual(icon)
+        end
+    end
+end
+
+function NS.ReleaseRecommendationPressVisual()
+    if NS.mainButton then
+        ReleaseButtonPressVisual(NS.mainButton)
+    end
+    local icons = NS._priorityIcons
+    if not icons then return end
+    for i = 1, #icons do
+        local icon = icons[i]
+        if icon and icon._pressVisualActive then
+            ReleaseButtonPressVisual(icon)
+        end
+    end
+end
 
 ----------------------------------------------------------------
 -- Create the main button (display + secure overlay)
@@ -44,6 +169,11 @@ function NS:CreateMainButton()
         btn.icon:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
     end
 
+    btn.pushedTex = btn:CreateTexture(nil, "ARTWORK", nil, 1)
+    btn.pushedTex:SetColorTexture(0, 0, 0, 0.35)
+    btn.pushedTex:SetAllPoints(btn.icon)
+    btn:SetPushedTexture(btn.pushedTex)
+
     -- Cooldown
     btn.cooldown = NS.CreateFrame("Cooldown", nil, btn, "CooldownFrameTemplate")
     btn.cooldown:SetAllPoints(btn.icon)
@@ -67,6 +197,7 @@ function NS:CreateMainButton()
 
     -- Dark background behind the "II" text
     local pauseBg = pauseGroup:CreateTexture(nil, "ARTWORK", nil, 1)
+    pauseGroup.background = pauseBg
     pauseBg:SetColorTexture(0, 0, 0, 0.7)
     local bgSize = math.max(18, math.floor(size * 0.45))
     pauseBg:SetSize(bgSize, bgSize)
@@ -148,6 +279,7 @@ function NS:CreateMainButton()
 
     -- Tooltip
     secure:SetScript("OnEnter", function()
+        if NS.SetButtonHover then NS.SetButtonHover(btn, true) end
         GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
         if btn.spellID then
             GameTooltip:SetSpellByID(btn.spellID)
@@ -160,7 +292,26 @@ function NS:CreateMainButton()
         GameTooltip:Show()
     end)
     secure:SetScript("OnLeave", function()
+        if NS.SetButtonHover then NS.SetButtonHover(btn, false) end
         GameTooltip:Hide()
+    end)
+
+    secure:SetScript("OnMouseDown", function()
+        if NS.PlayRecommendationPressVisual then
+            NS.PlayRecommendationPressVisual(btn.spellID, true)
+        end
+        if NS.StartInterceptBarPressVisual then
+            NS.StartInterceptBarPressVisual(true)
+        end
+    end)
+
+    secure:SetScript("OnMouseUp", function()
+        if NS.ReleaseRecommendationPressVisual then
+            NS.ReleaseRecommendationPressVisual()
+        end
+        if NS.ReleaseInterceptBarPressVisual then
+            NS.ReleaseInterceptBarPressVisual()
+        end
     end)
 
     -- Debug: PreClick fires BEFORE the macro executes
@@ -261,11 +412,6 @@ function NS:CreateMainButton()
         btn:SetNormalTexture(normalTex)
 
         -- Pushed texture (pressed state)
-        local pushedTex = btn:CreateTexture()
-        pushedTex:SetColorTexture(0, 0, 0, 0.5)
-        pushedTex:SetAllPoints(btn.icon)
-        btn:SetPushedTexture(pushedTex)
-
         -- Highlight texture (mouseover state)
         local hlTex = btn:CreateTexture()
         hlTex:SetColorTexture(1, 1, 1, 0.15)
@@ -285,22 +431,28 @@ function NS:CreateMainButton()
         borderTex:Hide()
         btn.Border = borderTex
 
-        NS.masqueMainGroup:AddButton(btn, {
+        btn._masqueRegions = {
             Icon = btn.icon,
             Cooldown = btn.cooldown,
             Normal = normalTex,
-            Pushed = pushedTex,
+            Pushed = btn.pushedTex,
             Highlight = hlTex,
             Flash = flashTex,
             Border = borderTex,
             HotKey = btn.hotkey,
-        })
+        }
+        if not NS.UsesSoftButtonStyle() then
+            NS.masqueMainGroup:AddButton(btn, btn._masqueRegions)
+            btn._masqueRegistered = true
+        end
 
         -- Masque handles appearance — hide our textures so they don't darken
         if btn.borderTex then btn.borderTex:Hide() end
         if btn.bg then btn.bg:Hide() end
     end
 
+    NS.ApplyButtonStyle(btn)
+    if NS.InitializeMotionFeedback then NS.InitializeMotionFeedback() end
     return btn
 end
 
@@ -309,11 +461,13 @@ end
 ----------------------------------------------------------------
 local function UpdateButton(btn, spellID)
     if not spellID then
+        ClearButtonPressVisual(btn)
         -- Check for action bar fallback texture
         if NS._fallbackTexture then
             btn.spellID = nil
             btn.icon:SetTexture(NS._fallbackTexture)
             btn.hotkey:SetText("")
+            NS.UpdateButtonChrome(btn)
             btn.cooldown:Clear()
             btn.icon:SetVertexColor(1, 1, 1)
             btn.icon:SetDesaturated(false)
@@ -323,6 +477,7 @@ local function UpdateButton(btn, spellID)
         btn.icon:SetTexture(nil)
         btn.hotkey:SetText("")
         btn.cooldown:Clear()
+        NS.UpdateButtonChrome(btn)
         return
     end
 
@@ -342,19 +497,12 @@ local function UpdateButton(btn, spellID)
     else
         btn.hotkey:Hide()
     end
+    if NS.UpdateButtonChrome then NS.UpdateButtonChrome(btn) end
 
-    -- Cooldown (uses per-tick cache to avoid API table garbage)
-    -- pcall guards comparison — cdInfo fields may be tainted secret numbers
-    if NS.db.showCooldown then
-        local cdInfo = NS.GetCooldownCached(spellID)
-        if cdInfo then
-            local ok, isLong = pcall(NS._durGT, cdInfo, 1.5)
-            if ok and isLong then
-                btn.cooldown:SetCooldown(cdInfo.startTime, cdInfo.duration)
-            else
-                btn.cooldown:Clear()
-            end
-        end
+    if NS.db.showCooldown and NS.SetSpellCooldownVisual then
+        NS.SetSpellCooldownVisual(btn.cooldown, spellID)
+    else
+        btn.cooldown:Clear()
     end
 
     -- Importance border color
@@ -387,7 +535,7 @@ local function UpdateButton(btn, spellID)
     local usabilityDimmed = false
     if NS.db.spellUsability and C_Spell and C_Spell.IsSpellUsable then
         local isUsable = C_Spell.IsSpellUsable(spellID)
-        if not isUsable then
+        if not (issecretvalue and issecretvalue(isUsable)) and isUsable == false then
             btn.icon:SetVertexColor(0.4, 0.4, 0.4)
             btn.icon:SetDesaturated(true)
             usabilityDimmed = true
@@ -398,7 +546,7 @@ local function UpdateButton(btn, spellID)
     if not usabilityDimmed then
         if NS.db.rangeColoring and NS.C_Spell and NS.C_Spell.IsSpellInRange then
             local inRange = NS.C_Spell.IsSpellInRange(spellID, "target")
-            if inRange == false then
+            if not (issecretvalue and issecretvalue(inRange)) and inRange == false then
                 btn.icon:SetVertexColor(T.OUT_OF_RANGE[1], T.OUT_OF_RANGE[2], T.OUT_OF_RANGE[3])
                 btn.icon:SetDesaturated(true)
                 -- Out-of-range sound cue (throttled to avoid spam)
@@ -433,13 +581,22 @@ local function UpdateVisibility()
 
     -- Secure button must ALWAYS be shown for override keybind clicks to work
     -- (it's visually invisible — all template textures are stripped)
-    if secure and not inCombat then secure:Show() end
+    if secure and not inCombat then
+        secure:Show()
+        local enabled = db.enabled == true
+        if secure._inputEnabled ~= enabled then
+            secure._inputEnabled = enabled
+            secure:SetAttribute("type", enabled and "macro" or nil)
+            secure:EnableMouse(enabled)
+        end
+    end
 
     -- Display button inherits protection from the secure button's anchor.
     -- During combat: NEVER call Show()/Hide() — use alpha only.
     -- Out of combat: Show() so the frame is visible, then use alpha.
 
     if not db.enabled then
+        if NS.ResetMotionFeedback then NS.ResetMotionFeedback() end
         if inCombat then
             btn:SetAlpha(0)
         else
@@ -449,6 +606,7 @@ local function UpdateVisibility()
     end
 
     if db.hideInVehicle and UnitInVehicle("player") then
+        if NS.ResetMotionFeedback then NS.ResetMotionFeedback() end
         if inCombat then
             btn:SetAlpha(0)
         else
@@ -458,6 +616,7 @@ local function UpdateVisibility()
     end
 
     if db.onlyInCombat and not inCombat then
+        if NS.ResetMotionFeedback then NS.ResetMotionFeedback() end
         -- Ensure frame is shown (so alpha works when combat starts)
         btn:Show()
         btn:SetAlpha(0)
@@ -476,20 +635,33 @@ end
 ----------------------------------------------------------------
 -- Main update tick
 ----------------------------------------------------------------
+local displayUpdateQueued = false
+local function FlushDisplayUpdate()
+    displayUpdateQueued = false
+    NS.UpdateNow()
+end
+
+function NS.QueueDisplayUpdate()
+    if displayUpdateQueued or not NS.db or not NS.db.enabled then return end
+    displayUpdateQueued = true
+    NS.C_Timer_After(0, FlushDisplayUpdate)
+end
+
 function NS.UpdateNow()
     local btn = NS.mainButton
     if not btn then return end
+    if not NS.db.enabled then
+        UpdateVisibility()
+        if NS.UpdateLDBText then NS.UpdateLDBText() end
+        return
+    end
 
     -- Advance the per-frame cache generation so CollectNextSpell/CollectRotationSpells
     -- return cached results within this tick but refresh on the next one
     NS.BeginUpdate()
 
     -- Detect special bar / mounted → normal transition and re-establish keybind override
-    local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
-        or (HasOverrideActionBar and HasOverrideActionBar())
-        or (HasVehicleActionBar and HasVehicleActionBar())
-        or (IsPossessBarVisible and IsPossessBarVisible())
-        or (IsMounted and IsMounted())
+    local onSpecialBar = NS.IsInterceptBlocked and NS.IsInterceptBlocked()
     if wasOnSpecialBar and not onSpecialBar then
         wasOnSpecialBar = false
         if not NS.InCombatLockdown() then
@@ -525,7 +697,8 @@ function NS.UpdateNow()
     -- Self-healing: periodically verify keybind override is actually working.
     -- Catches stale state from skyriding/mount transitions where WoW clears
     -- our overrides but _overrideKeys still has the old keys.
-    if not onSpecialBar and not NS.InCombatLockdown() then
+    if NS.db.enabled and (NS.db.interceptionType or "Keybind") ~= "Click"
+        and not onSpecialBar and not NS.InCombatLockdown() then
         local needsRescan = false
         if not NS._overrideKeys or #NS._overrideKeys == 0 then
             needsRescan = true
@@ -588,7 +761,7 @@ end
 -- Start / stop ticker
 ----------------------------------------------------------------
 function NS.StartTicker()
-    if ticker then return end
+    if ticker or not NS.db or not NS.db.enabled then return end
     local rate = NS.db.updateRate or 0.1
     if rate < 0.05 then rate = 0.05 end
     ticker = NS.C_Timer_NewTicker(rate, NS.UpdateNow)
@@ -642,4 +815,6 @@ function NS.ApplyButtonSettings()
         btn.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
     end
     if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
+    if NS.ApplyAllButtonStyles then NS.ApplyAllButtonStyles() end
+    if NS.InitializeMotionFeedback then NS.InitializeMotionFeedback() end
 end

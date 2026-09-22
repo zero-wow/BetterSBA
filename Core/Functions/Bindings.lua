@@ -2,55 +2,6 @@ local ADDON_NAME, NS = ...
 
 local sbaActionSlot = nil
 
-function NS.FindSBAActionSlot()
-    -- Use dedicated API if available (11.1.7+)
-    if NS.C_ActionBar and NS.C_ActionBar.FindAssistedCombatActionButtons then
-        local ok, slots = NS.pcall(NS.C_ActionBar.FindAssistedCombatActionButtons)
-        if ok and slots and slots[1] then
-            NS.DebugPrint("SBA slot via FindAssistedCombatActionButtons:", slots[1])
-            sbaActionSlot = slots[1]
-            return slots[1]
-        end
-    end
-    -- Manual scan: match by spell ID
-    local sbaName = NS.GetSBASpellName()
-    for i = 1, 180 do
-        local actionType, id = NS.GetActionInfo(i)
-        if actionType == "spell" and id == NS.SBA_SPELL_ID then
-            NS.DebugPrint("SBA slot via ID match:", i)
-            sbaActionSlot = i
-            return i
-        end
-        -- Also check by spell name (ID may differ between patches)
-        if actionType == "spell" and id and NS.C_Spell and NS.C_Spell.GetSpellName then
-            local name = NS.C_Spell.GetSpellName(id)
-            if name and name == sbaName then
-                NS.DebugPrint("SBA slot via name match:", i, "(ID:", id, ")")
-                sbaActionSlot = i
-                return i
-            end
-        end
-    end
-    -- Check if SBA might be stored as a different action type
-    for i = 1, 180 do
-        if HasAction(i) then
-            local actionType, id = NS.GetActionInfo(i)
-            if actionType and actionType ~= "spell" and id then
-                local tex = GetActionTexture(i)
-                local sbaIcon = NS.C_Spell and NS.C_Spell.GetSpellTexture and NS.C_Spell.GetSpellTexture(NS.SBA_SPELL_ID)
-                if tex and sbaIcon and tex == sbaIcon then
-                    NS.DebugPrint("SBA slot via icon match:", i, "type:", actionType, "id:", id)
-                    sbaActionSlot = i
-                    return i
-                end
-            end
-        end
-    end
-    NS.DebugPrint("|cFFFF4444SBA slot NOT FOUND|r on any action bar")
-    sbaActionSlot = nil
-    return nil
-end
-
 function NS.ClearSBASlotCache()
     sbaActionSlot = nil
 end
@@ -61,6 +12,8 @@ end
 
 
 local keybindCache = {}
+local missingKeybindScanQueued = false
+local missingKeybindRequested = {}
 
 function NS.FormatKeybind(key)
     if not key then return nil end
@@ -81,7 +34,335 @@ local BINDING_BARS = {
     "MULTIACTIONBAR7BUTTON",
 }
 
+local function GetBonusBarBaseSlot()
+    local offset = GetBonusBarOffset and GetBonusBarOffset() or 0
+    if offset <= 0 then return nil end
+    return (offset + 5) * 12
+end
+
+local function GetTempShapeshiftBaseSlot()
+    local index = GetTempShapeshiftBarIndex and GetTempShapeshiftBarIndex()
+    if not index or index <= 0 then return nil end
+    return (index - 1) * 12
+end
+
+local function HasActiveClassForm()
+    if not GetNumShapeshiftForms or GetNumShapeshiftForms() <= 0 then
+        return false
+    end
+    if GetShapeshiftForm and (GetShapeshiftForm() or 0) > 0 then
+        return true
+    end
+    local formID = GetShapeshiftFormID and GetShapeshiftFormID()
+    return formID ~= nil and formID > 0
+end
+
+function NS.IsFlightTravelFormActive()
+    if not NS.IsClass or not NS.IsClass("DRUID") then
+        return false
+    end
+    if not HasActiveClassForm() then
+        return false
+    end
+    if not (IsFlying and IsFlying()) then
+        return false
+    end
+    if NS.IsSkyridingActive then
+        return NS.IsSkyridingActive()
+    end
+    return false
+end
+
+function NS.IsSkyridingActive()
+    if not (IsFlying and IsFlying()) then
+        return false
+    end
+    if GetBonusBarIndex and GetBonusBarOffset then
+        local bonusBarIndex = GetBonusBarIndex()
+        local bonusBarOffset = GetBonusBarOffset()
+        if bonusBarIndex == 11 and bonusBarOffset == 5 then
+            return true
+        end
+    end
+    if C_PlayerInfo and C_PlayerInfo.GetGlidingInfo then
+        local isGliding, canGlide = C_PlayerInfo.GetGlidingInfo()
+        if isGliding then
+            return true
+        end
+        if canGlide and UnitPowerBarID and (UnitPowerBarID("player") or 0) ~= 0 then
+            return true
+        end
+    end
+    return false
+end
+
+function NS.GetFormActionBarBaseSlot()
+    if UnitInVehicle and UnitInVehicle("player") then return nil end
+    if HasVehicleActionBar and HasVehicleActionBar() then return nil end
+    if HasOverrideActionBar and HasOverrideActionBar() then return nil end
+    if IsPossessBarVisible and IsPossessBarVisible() then return nil end
+    if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then return nil end
+
+    if HasBonusActionBar and HasBonusActionBar() and not (IsMounted and IsMounted()) then
+        if HasActiveClassForm() then
+            return GetBonusBarBaseSlot()
+        end
+    end
+
+    if HasTempShapeshiftActionBar and HasTempShapeshiftActionBar() then
+        return GetTempShapeshiftBaseSlot()
+    end
+
+    return nil
+end
+
+function NS.IsInterceptBlocked()
+    if UnitInVehicle and UnitInVehicle("player") then
+        return true
+    end
+    if HasVehicleActionBar and HasVehicleActionBar() then
+        return true
+    end
+    if HasOverrideActionBar and HasOverrideActionBar() then
+        return true
+    end
+    if IsPossessBarVisible and IsPossessBarVisible() then
+        return true
+    end
+    if NS.IsSkyridingActive and NS.IsSkyridingActive() then
+        return true
+    end
+    if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then
+        return true
+    end
+    if IsMounted and IsMounted() and not (IsFlying and IsFlying()) then
+        return true
+    end
+    if HasBonusActionBar and HasBonusActionBar() and not NS.GetFormActionBarBaseSlot() then
+        return true
+    end
+    return false
+end
+
+local function IsSlotOnActiveFormBar(slot)
+    local baseSlot = NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()
+    if not baseSlot or not slot then return false, nil, nil end
+
+    local btnIndex = slot - baseSlot
+    if btnIndex >= 1 and btnIndex <= 12 then
+        return true, baseSlot, btnIndex
+    end
+    return false, baseSlot, nil
+end
+
+local function GetBindingKeysForSlot(slot)
+    if not slot then return nil, nil end
+
+    local onFormBar, _, btnIndex = IsSlotOnActiveFormBar(slot)
+    if onFormBar then
+        return NS.GetBindingKey("ACTIONBUTTON" .. btnIndex)
+    end
+
+    local barIndex = NS.math_floor((slot - 1) / 12)
+    local bindingName = BINDING_BARS[barIndex + 1]
+    if bindingName then
+        local index = ((slot - 1) % 12) + 1
+        return NS.GetBindingKey(bindingName .. index)
+    end
+
+    return nil, nil
+end
+
+local function FindSBAActionSlotInRange(startSlot, endSlot, sbaName, sbaIcon)
+    for i = startSlot, endSlot do
+        local actionType, id = NS.GetActionInfo(i)
+        if actionType == "spell" and id == NS.SBA_SPELL_ID then
+            NS.DebugPrint("SBA slot via ID match:", i)
+            return i
+        end
+        if actionType == "spell" and id and sbaName and NS.C_Spell and NS.C_Spell.GetSpellName then
+            local name = NS.C_Spell.GetSpellName(id)
+            if name and name == sbaName then
+                NS.DebugPrint("SBA slot via name match:", i, "(ID:", id, ")")
+                return i
+            end
+        end
+    end
+
+    if sbaIcon then
+        for i = startSlot, endSlot do
+            if HasAction(i) then
+                local actionType, id = NS.GetActionInfo(i)
+                if actionType and actionType ~= "spell" and id then
+                    local tex = GetActionTexture(i)
+                    if tex == sbaIcon then
+                        NS.DebugPrint("SBA slot via icon match:", i, "type:", actionType, "id:", id)
+                        return i
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
+local function FindBT4ButtonForSlot(slot)
+    if not slot then return nil end
+
+    local direct = _G["BT4Button" .. slot]
+    if direct then
+        local action = direct.GetAttribute and direct:GetAttribute("action")
+        if action == nil or action == slot or direct.action == slot or direct._state_action == slot then
+            return direct
+        end
+    end
+
+    for i = 1, 180 do
+        local btn = _G["BT4Button" .. i]
+        if btn then
+            local action = btn.GetAttribute and btn:GetAttribute("action")
+            if action == slot or btn.action == slot or btn._state_action == slot then
+                return btn
+            end
+        end
+    end
+
+    return nil
+end
+
+local function FindElvUIButtonForSlot(slot)
+    if not (_G["ElvUI"] and _G["ElvUI_Bar1Button1"]) then return nil end
+
+    for bar = 1, 15 do
+        for btn = 1, 12 do
+            local elvBtn = _G["ElvUI_Bar" .. bar .. "Button" .. btn]
+            if elvBtn and elvBtn._state_action == slot then
+                return elvBtn
+            end
+        end
+    end
+
+    return nil
+end
+
+local function IsEllesmereActionBarsActive()
+    -- EllesmereUIActionBars creates EABButton frames instead of using Blizzard's
+    -- ActionButton frames, which it keeps hidden beneath the custom bars.
+    return _G["EABBar_MainBar"] ~= nil or _G["EABButton1"] ~= nil
+end
+
+local function FindEllesmereUIButtonForSlot(slot)
+    if not slot or not IsEllesmereActionBarsActive() then return nil end
+    -- EAB changes this secure attribute while paging. Do not inspect it in combat.
+    if NS.InCombatLockdown() then return nil end
+
+    local fallback
+    for i = 1, 180 do
+        local btn = _G["EABButton" .. i]
+        if btn and btn.GetAttribute and btn:GetAttribute("action") == slot then
+            if btn:IsVisible() and btn:IsMouseEnabled() then
+                return btn
+            end
+            fallback = fallback or btn
+        end
+    end
+
+    return fallback
+end
+
+local function ResetMissingKeybindRequests()
+    missingKeybindRequested = {}
+    missingKeybindScanQueued = false
+end
+
+local function ResolveFormattedKeybindForSlot(slot)
+    if not slot then return nil end
+
+    local key
+
+    if IsEllesmereActionBarsActive() then
+        local eabBtn = FindEllesmereUIButtonForSlot(slot)
+        if eabBtn and eabBtn.commandName then
+            key = NS.GetBindingKey(eabBtn.commandName)
+        end
+    elseif _G["Bartender4"] then
+        local btBtn = FindBT4ButtonForSlot(slot)
+        if btBtn then
+            key = NS.GetBindingKey("CLICK " .. btBtn:GetName() .. ":Keybind")
+        end
+    elseif _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
+        local elvBtn = FindElvUIButtonForSlot(slot)
+        if elvBtn then
+            local binding = elvBtn.bindstring or elvBtn.keyBoundTarget
+                or ("CLICK " .. elvBtn:GetName() .. ":LeftButton")
+            key = NS.GetBindingKey(binding)
+        end
+    else
+        key = GetBindingKeysForSlot(slot)
+    end
+
+    if not key and NS.C_AddOns.IsAddOnLoaded("ConsolePort") and _G["ConsolePort"] then
+        local CP = _G["ConsolePort"]
+        if CP.GetActionBinding then
+            key = CP.GetActionBinding(slot)
+        end
+    end
+
+    if key then
+        return NS.FormatKeybind(key)
+    end
+
+    return nil
+end
+
+function NS.FindSBAActionSlot()
+    local sbaName = NS.GetSBASpellName()
+    local sbaIcon = NS.C_Spell and NS.C_Spell.GetSpellTexture
+        and NS.C_Spell.GetSpellTexture(NS.SBA_SPELL_ID)
+
+    local formBaseSlot = NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()
+    if formBaseSlot then
+        local slot = FindSBAActionSlotInRange(formBaseSlot + 1, formBaseSlot + 12, sbaName, sbaIcon)
+        if slot then
+            sbaActionSlot = slot
+            return slot
+        end
+        NS.DebugPrint("|cFFFF4444SBA slot NOT FOUND|r on active form bar")
+        sbaActionSlot = nil
+        return nil
+    end
+
+    -- Use dedicated API if available (11.1.7+)
+    if NS.C_ActionBar and NS.C_ActionBar.FindAssistedCombatActionButtons then
+        local ok, slots = NS.pcall(NS.C_ActionBar.FindAssistedCombatActionButtons)
+        if ok and slots and slots[1] then
+            NS.DebugPrint("SBA slot via FindAssistedCombatActionButtons:", slots[1])
+            sbaActionSlot = slots[1]
+            return slots[1]
+        end
+    end
+
+    local slot = FindSBAActionSlotInRange(1, 180, sbaName, sbaIcon)
+    if slot then
+        sbaActionSlot = slot
+        return slot
+    end
+
+    NS.DebugPrint("|cFFFF4444SBA slot NOT FOUND|r on any action bar")
+    sbaActionSlot = nil
+    return nil
+end
+
 function NS.ScanKeybinds()
+    -- EAB's live action attributes are secure. Delay the entire scan until the
+    -- first out-of-combat edge rather than reading them during combat.
+    if IsEllesmereActionBarsActive() and NS.InCombatLockdown() then
+        NS._pendingKeybindScan = true
+        return
+    end
+
+    ResetMissingKeybindRequests()
     keybindCache = {}
 
     -- Bartender4
@@ -113,6 +394,23 @@ function NS.ScanKeybinds()
                                 keybindCache[id] = NS.FormatKeybind(key)
                             end
                         end
+                    end
+                end
+            end
+        end
+
+    -- EllesmereUI Action Bars
+    elseif IsEllesmereActionBarsActive() then
+        for i = 1, 180 do
+            local eabBtn = _G["EABButton" .. i]
+            local slot = eabBtn and eabBtn:GetAttribute("action")
+            local binding = eabBtn and eabBtn.commandName
+            if slot and binding then
+                local actionType, id = NS.GetActionInfo(slot)
+                if actionType == "spell" and id and not keybindCache[id] then
+                    local key = NS.GetBindingKey(binding)
+                    if key then
+                        keybindCache[id] = NS.FormatKeybind(key)
                     end
                 end
             end
@@ -168,19 +466,30 @@ function NS.ScanKeybinds()
         end
     end
 
-    -- Class-specific bonus bar priority: certain specs use bonus/override bars
-    -- (Druid forms, Rogue stealth, etc.). Scan the bonus bar (slots 73-84)
-    -- with higher priority so form-specific keybinds are preferred.
-    local bonusBarOffset = GetBonusBarOffset and GetBonusBarOffset() or 0
-    if bonusBarOffset > 0 then
-        local baseSlot = (bonusBarOffset + 5) * 12  -- bonus bars start at bar 7+
+    -- Class-form action pages (druid forms, rogue stealth, temporary
+    -- shapeshift pages, etc.) still use ACTIONBUTTON1-12 bindings.
+    local baseSlot = NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()
+    if baseSlot then
         for btnIdx = 1, 12 do
             local slot = baseSlot + btnIdx
             if slot <= 180 then
                 local actionType, id = NS.GetActionInfo(slot)
                 if actionType == "spell" and id then
-                    -- Override with main bar keybind (bonus bar uses ACTIONBUTTON bindings)
-                    local key = NS.GetBindingKey("ACTIONBUTTON" .. btnIdx)
+                    local key
+                    if IsEllesmereActionBarsActive() then
+                        local eabBtn = FindEllesmereUIButtonForSlot(slot)
+                        if eabBtn and eabBtn.commandName then
+                            key = NS.GetBindingKey(eabBtn.commandName)
+                        end
+                    elseif _G["Bartender4"] then
+                        local btBtn = FindBT4ButtonForSlot(slot)
+                        if btBtn then
+                            key = NS.GetBindingKey("CLICK " .. btBtn:GetName() .. ":Keybind")
+                        end
+                    else
+                        -- The currently paged main bar always uses ACTIONBUTTON bindings.
+                        key = NS.GetBindingKey("ACTIONBUTTON" .. btnIdx)
+                    end
                     if key then
                         keybindCache[id] = NS.FormatKeybind(key)
                     end
@@ -197,7 +506,70 @@ function NS.ScanKeybinds()
 end
 
 function NS.GetKeybindForSpell(spellID)
-    return keybindCache[spellID]
+    local key = keybindCache[spellID]
+    if not key and spellID then
+        NS.QueueMissingKeybindScan(spellID)
+    end
+    return key
+end
+
+function NS.ScanMissingKeybinds()
+    if NS.InCombatLockdown() then
+        NS._pendingMissingKeybindScan = true
+        return false
+    end
+
+    if not next(missingKeybindRequested) then
+        return false
+    end
+
+    local changed = false
+
+    for slot = 1, 180 do
+        local actionType, id = NS.GetActionInfo(slot)
+        if actionType == "spell" and id and missingKeybindRequested[id] and not keybindCache[id] then
+            local key = ResolveFormattedKeybindForSlot(slot)
+            if key then
+                keybindCache[id] = key
+                missingKeybindRequested[id] = nil
+                changed = true
+            end
+        end
+    end
+
+    if changed then
+        if NS.UpdateNow then
+            NS.UpdateNow()
+        end
+        if NS.UpdatePriorityDisplay then
+            NS.UpdatePriorityDisplay()
+        end
+    end
+
+    return changed
+end
+
+function NS.QueueMissingKeybindScan(spellID)
+    if not spellID or keybindCache[spellID] or missingKeybindRequested[spellID] then
+        return
+    end
+
+    missingKeybindRequested[spellID] = true
+
+    if NS.InCombatLockdown() then
+        NS._pendingMissingKeybindScan = true
+        return
+    end
+
+    if missingKeybindScanQueued then
+        return
+    end
+
+    missingKeybindScanQueued = true
+    NS.C_Timer_After(0.05, function()
+        missingKeybindScanQueued = false
+        NS.ScanMissingKeybinds()
+    end)
 end
 
 function NS.BuildBindingChord(key)
@@ -227,6 +599,15 @@ end
 -- secure button so targeting/petattack/channel protection work
 -- even when the user presses their normal action bar keybind.
 ----------------------------------------------------------------
+local function ClearSBAOverride(secure)
+    if secure then
+        ClearOverrideBindings(secure)
+    end
+    NS._overrideKeys = nil
+    NS._overrideSlot = nil
+    NS.UpdateKeybindStatus()
+end
+
 function NS.OverrideSBAKeybind()
     if NS.InCombatLockdown() then
         NS._pendingKeybindOverride = true
@@ -236,54 +617,55 @@ function NS.OverrideSBAKeybind()
     local secure = NS.secureButton
     if not secure then return end
 
-    local iType = NS.db and NS.db.interceptionType or "Keybind"
+    local db = NS.db
+    if not db or not db.enabled then
+        ClearSBAOverride(secure)
+        return
+    end
+
+    local iType = db.interceptionType or "Keybind"
     if iType == "Click" then
-        if NS._overrideKeys then
-            ClearOverrideBindings(secure)
-        end
-        NS._overrideKeys = nil
-        NS._overrideSlot = nil
-        NS.UpdateKeybindStatus()
+        ClearSBAOverride(secure)
         return
     end
 
-    -- If on a special bar, mounted, or in a vehicle, always clear our
-    -- overrides so the bar's own keybinds work unimpeded.
-    -- SBA is not usable on these bars / while mounted, so nothing to intercept.
-    -- IsMounted() catches both regular mounts and skyriding transitions
-    -- where HasBonusActionBar() may flicker.
-    -- This check MUST happen before FindSBAActionSlot, because the API
-    -- can return SBA's underlying slot even when a bonus bar is active.
-    local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
-        or (HasOverrideActionBar and HasOverrideActionBar())
-        or (HasVehicleActionBar and HasVehicleActionBar())
-        or (IsPossessBarVisible and IsPossessBarVisible())
-        or (IsMounted and IsMounted())
-    if onSpecialBar then
-        if NS._overrideKeys then
-            ClearOverrideBindings(secure)
-        end
-        NS._overrideKeys = nil
-        NS._overrideSlot = nil
-        NS.UpdateKeybindStatus()
+    -- Pause only for true replacement bars (vehicle, possess, override,
+    -- mount/skyriding, etc.). Class form pages remain interceptable.
+    if NS.IsInterceptBlocked and NS.IsInterceptBlocked() then
+        ClearSBAOverride(secure)
         return
     end
 
-    -- Find the SBA slot (only on normal action bars)
+    -- Find the SBA slot on the active action page / form bar.
     local slot = sbaActionSlot or NS.FindSBAActionSlot()
     if not slot then
-        NS.UpdateKeybindStatus()
+        -- The old hotkey may now belong to another action.  Never leave an
+        -- override active after a stable no-slot result.
+        ClearSBAOverride(secure)
         return
     end
 
     -- Collect keybinds for the slot
     local keys = {}
 
+    -- EllesmereUI Action Bars
+    if IsEllesmereActionBarsActive() then
+        local eabBtn = FindEllesmereUIButtonForSlot(slot)
+        if eabBtn and eabBtn.commandName then
+            local key1, key2 = NS.GetBindingKey(eabBtn.commandName)
+            if key1 then keys[#keys + 1] = key1 end
+            if key2 then keys[#keys + 1] = key2 end
+        end
+
     -- Bartender4
-    if _G["Bartender4"] then
-        local key1, key2 = NS.GetBindingKey("CLICK BT4Button" .. slot .. ":Keybind")
-        if key1 then keys[#keys + 1] = key1 end
-        if key2 then keys[#keys + 1] = key2 end
+    elseif _G["Bartender4"] then
+        local btBtn = FindBT4ButtonForSlot(slot)
+        if btBtn then
+            local binding = "CLICK " .. btBtn:GetName() .. ":Keybind"
+            local key1, key2 = NS.GetBindingKey(binding)
+            if key1 then keys[#keys + 1] = key1 end
+            if key2 then keys[#keys + 1] = key2 end
+        end
 
     -- ElvUI
     elseif _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
@@ -302,23 +684,15 @@ function NS.OverrideSBAKeybind()
 
     -- Dominos / Default Blizzard bars
     else
-        local barIndex = NS.math_floor((slot - 1) / 12)
-        local btnIndex = ((slot - 1) % 12) + 1
-        local bindingName = BINDING_BARS[barIndex + 1]
-        if bindingName then
-            bindingName = bindingName .. btnIndex
-            local key1, key2 = NS.GetBindingKey(bindingName)
-            if key1 then keys[#keys + 1] = key1 end
-            if key2 then keys[#keys + 1] = key2 end
-        end
+        local key1, key2 = GetBindingKeysForSlot(slot)
+        if key1 then keys[#keys + 1] = key1 end
+        if key2 then keys[#keys + 1] = key2 end
     end
 
     if #keys == 0 then
-        -- Slot found but no keybind â€” keep existing overrides if any
-        if NS._overrideKeys and #NS._overrideKeys > 0 then
-            return
-        end
-        NS.UpdateKeybindStatus()
+        -- UPDATE_BINDINGS may have removed or reassigned the old key.  Keeping
+        -- our prior override here would hijack that newly assigned action.
+        ClearSBAOverride(secure)
         return
     end
 
@@ -369,8 +743,12 @@ local BAR_BUTTON_PREFIX = {
 local function FindSBABarButton(slot)
     if not slot then return nil end
 
+    if IsEllesmereActionBarsActive() then
+        return FindEllesmereUIButtonForSlot(slot)
+    end
+
     if _G["Bartender4"] then
-        return _G["BT4Button" .. slot]
+        return FindBT4ButtonForSlot(slot)
     end
 
     if _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
@@ -385,6 +763,11 @@ local function FindSBABarButton(slot)
         return nil
     end
 
+    local onFormBar, _, btnIndex = IsSlotOnActiveFormBar(slot)
+    if onFormBar then
+        return _G["ActionButton" .. btnIndex]
+    end
+
     local barIndex = NS.math_floor((slot - 1) / 12)
     local btnIndex = ((slot - 1) % 12) + 1
     local prefix = BAR_BUTTON_PREFIX[barIndex + 1]
@@ -396,6 +779,100 @@ end
 
 local clickOverlay = nil
 local clickBorder = nil
+local clickPressOverlay = nil
+local CLICK_PRESS_DURATION = 0.09
+
+local function EnsureClickPressOverlay()
+    if clickPressOverlay then return clickPressOverlay end
+    local overlay = NS.CreateFrame("Frame", nil, NS.UIParent)
+    overlay.tex = overlay:CreateTexture(nil, "ARTWORK")
+    overlay.tex:SetColorTexture(0, 0, 0, 0.35)
+    overlay.tex:SetAllPoints()
+    overlay:Hide()
+    clickPressOverlay = overlay
+    return overlay
+end
+
+local function ClearClickPressVisual()
+    if not clickPressOverlay then return end
+    clickPressOverlay._pressUntil = nil
+    clickPressOverlay._pressHeld = nil
+    clickPressOverlay._pressStartedAt = nil
+    clickPressOverlay:SetScript("OnUpdate", nil)
+    clickPressOverlay:Hide()
+end
+
+local function ClickPressOnUpdate(self)
+    if self._pressHeld then return end
+    local untilTime = self._pressUntil
+    if not untilTime or GetTime() >= untilTime then
+        ClearClickPressVisual()
+    end
+end
+
+-- Refresh both interception paths as one operation.  A combat-time refresh
+-- records every required protected action so PLAYER_REGEN_ENABLED can apply a
+-- coherent disabled or enabled state without touching secure frames in combat.
+function NS.RefreshSBAInterception()
+    if NS.InCombatLockdown() then
+        NS._pendingKeybindScan = true
+        NS._pendingKeybindOverride = true
+        NS._pendingClickIntercept = true
+        return false
+    end
+    NS.ScanKeybinds()
+    return true
+end
+
+local function ResolveSBABarButton()
+    if clickOverlay and clickOverlay._barBtn then
+        return clickOverlay._barBtn
+    end
+    local slot = sbaActionSlot or NS.FindSBAActionSlot()
+    if not slot then return nil end
+    return FindSBABarButton(slot)
+end
+
+local function StartClickPressVisual(held)
+    local barBtn = ResolveSBABarButton()
+    if not barBtn then return end
+    local overlay = EnsureClickPressOverlay()
+    overlay:ClearAllPoints()
+    overlay:SetAllPoints(barBtn)
+    overlay:SetFrameStrata(barBtn:GetFrameStrata())
+    overlay:SetFrameLevel(barBtn:GetFrameLevel() + 6)
+    if held then
+        overlay._pressHeld = true
+        overlay._pressStartedAt = GetTime()
+        overlay._pressUntil = nil
+        overlay:SetScript("OnUpdate", nil)
+    else
+        overlay._pressHeld = nil
+        overlay._pressStartedAt = nil
+        overlay._pressUntil = GetTime() + CLICK_PRESS_DURATION
+        overlay:SetScript("OnUpdate", ClickPressOnUpdate)
+    end
+    overlay:Show()
+end
+
+local function ReleaseClickPressVisual()
+    if not clickPressOverlay or not clickPressOverlay._pressHeld then
+        ClearClickPressVisual()
+        return
+    end
+    local startedAt = clickPressOverlay._pressStartedAt or GetTime()
+    local elapsed = GetTime() - startedAt
+    local remaining = CLICK_PRESS_DURATION - elapsed
+    clickPressOverlay._pressHeld = nil
+    clickPressOverlay._pressStartedAt = nil
+    if remaining > 0 then
+        clickPressOverlay._pressUntil = GetTime() + remaining
+        clickPressOverlay:SetScript("OnUpdate", ClickPressOnUpdate)
+        clickPressOverlay:Show()
+    else
+        ClearClickPressVisual()
+    end
+end
 
 local function ShowClickBorder(barBtn)
     if not clickBorder then
@@ -419,6 +896,18 @@ local function HideClickBorder()
     if clickBorder then clickBorder:Hide() end
 end
 
+function NS.StartInterceptBarPressVisual(held)
+    StartClickPressVisual(held)
+end
+
+function NS.ReleaseInterceptBarPressVisual()
+    ReleaseClickPressVisual()
+end
+
+function NS.ClearInterceptBarPressVisual()
+    ClearClickPressVisual()
+end
+
 function NS.UpdateClickIntercept()
     if NS.InCombatLockdown() then
         NS._pendingClickIntercept = true
@@ -427,23 +916,20 @@ function NS.UpdateClickIntercept()
 
     local db = NS.db
     local iType = db and db.interceptionType or "Keybind"
-    if not db or (iType ~= "Click" and iType ~= "Both") then
+    if not db or not db.enabled or (iType ~= "Click" and iType ~= "Both") then
         if clickOverlay then
             clickOverlay:Hide()
             clickOverlay:ClearAllPoints()
         end
         HideClickBorder()
+        ClearClickPressVisual()
         return
     end
 
-    local onSpecialBar = (HasBonusActionBar and HasBonusActionBar())
-        or (HasOverrideActionBar and HasOverrideActionBar())
-        or (HasVehicleActionBar and HasVehicleActionBar())
-        or (IsPossessBarVisible and IsPossessBarVisible())
-        or (IsMounted and IsMounted())
-    if onSpecialBar then
+    if NS.IsInterceptBlocked and NS.IsInterceptBlocked() then
         if clickOverlay then clickOverlay:Hide() end
         HideClickBorder()
+        ClearClickPressVisual()
         return
     end
 
@@ -451,6 +937,7 @@ function NS.UpdateClickIntercept()
     if not slot then
         if clickOverlay then clickOverlay:Hide() end
         HideClickBorder()
+        ClearClickPressVisual()
         return
     end
 
@@ -458,6 +945,7 @@ function NS.UpdateClickIntercept()
     if not barBtn then
         if clickOverlay then clickOverlay:Hide() end
         HideClickBorder()
+        ClearClickPressVisual()
         return
     end
 
@@ -496,6 +984,12 @@ function NS.UpdateClickIntercept()
                 local fn = target:GetScript("OnLeave")
                 if fn then fn(target) end
             end
+        end)
+        ov:SetScript("OnMouseDown", function()
+            StartClickPressVisual(true)
+        end)
+        ov:SetScript("OnMouseUp", function()
+            ReleaseClickPressVisual()
         end)
 
         clickOverlay = ov

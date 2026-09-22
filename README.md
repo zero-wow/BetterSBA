@@ -53,6 +53,12 @@ It also gives you a **rotation queue display** showing your full SBA spell pool 
 
 ## Animations
 
+The current development build adds **Motion**, a separate lightweight feedback system with **Pulse**, **Echo**, and **Sweep** presets. Choose it under **Appearance → Cast Feedback**. **Reduced Motion** uses a brief stationary rim flash; **Off** disables cast feedback. **Classic** retains the original clone and particle controls. Preview buttons play once.
+
+**Active Display → Button Style** selects **Soft** (rounded icon, quiet edge lighting, and a readable keycap) or **Classic** (the existing square/Masque appearance). The secure casting overlay stays fixed while feedback animates around the display.
+
+Motion reuses three effect layers and native animation groups. Classic clone frames also remain pooled across settings changes. Configuration drag handlers stop on release/hide, and BetterSBA leaves WoW's shared garbage collector alone. These changes reduce avoidable work; in-game FPS and memory improvements have not been benchmarked.
+
 <p align="center">
   <a href="https://github.com/zero-wow/BetterSBA/releases/download/v0006/POP!_Animation_Example.mp4">
     <img src="https://github.com/zero-wow/BetterSBA/releases/download/v0006/POP!_Animation_Example.mp4" alt="POP! Animation Example" width="600" />
@@ -84,6 +90,14 @@ Animated clone keybind text now has its own tuning controls for edge-case setups
 
 ### Tank Off-GCD Abilities
 Auto-detects your tank spec and appends class-specific off-GCD abilities after `/cast SBA`: Shield Block, Ignore Pain (Warrior), Ironfur (Druid), Shield of the Righteous (Paladin), Rune Tap (Death Knight), Purifying Brew (Monk). Each ability has an individual toggle in the Combat Assist section.
+
+### Equipped trinkets
+Combat Assist detects both equipped trinkets and their use effects outside combat. Trinket Use defaults to **Off**. **Verified** includes only the exact item/use-spell pairs you individually allow after checking that they are instant, off the GCD, and do not channel. Passive, uncached, cast-time, and unapproved items stay out of the macro. Detection alone cannot prove those properties for every item.
+
+Approved items are attempted after SBA, on your normal keypress, against a living hostile target in combat. Changing equipment does not approve a different item. Protected macro changes made during combat wait until combat ends. The macro preview uses the same action list as the secure button.
+
+### Cooldown compatibility
+Blizzard's recommendation remains authoritative. Restricted cooldown information stays unknown to addon logic and is passed through supported native cooldown rendering. Priority icons use stable base-cooldown importance rather than a locally predicted rotation.
 
 ### Profiles
 Multiple named profiles with per-character bindings. Create, copy, rename, reset, and switch profiles. All characters share a global default unless overridden. Settings migrate automatically from older versions.

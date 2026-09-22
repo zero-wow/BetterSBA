@@ -15,8 +15,8 @@ function NS.CreatePanel(name, parent, w, h)
     local f = NS.CreateFrame("Frame", name, parent or NS.UIParent, "BackdropTemplate")
     f:SetSize(w, h)
     f:SetBackdrop(BACKDROP_PANEL)
-    f:SetBackdropColor(NS.unpack(T.BG))
-    f:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    f:SetBackdropColor(NS.unpack(T.BG_DARK))
+    f:SetBackdropBorderColor(T.ACCENT_DIM[1], T.ACCENT_DIM[2], T.ACCENT_DIM[3], 0.65)
     f:SetFrameStrata("DIALOG")
     return f
 end
@@ -88,6 +88,14 @@ function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
     -- State
     local expanded = true
     local contentH = 0
+    local fadeGroup = content:CreateAnimationGroup()
+    local fadeAlpha = fadeGroup:CreateAnimation("Alpha")
+    fadeAlpha:SetFromAlpha(0)
+    fadeAlpha:SetToAlpha(1)
+    fadeAlpha:SetDuration(0.15)
+    fadeGroup:SetScript("OnFinished", function()
+        content:SetAlpha(1)
+    end)
 
     -- Build content (widgets created inside buildFunc)
     contentH = buildFunc(content)
@@ -102,20 +110,10 @@ function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
             underline:Show()
             titleText:SetTextColor(NS.unpack(T.ACCENT))
             card:SetBackdropBorderColor(T.ACCENT_DIM[1], T.ACCENT_DIM[2], T.ACCENT_DIM[3], 0.4)
-            for _, d in NS.ipairs(dots) do d:Show() end
-            -- Fade in content
+            -- Fade in content with one reusable native animation group.
             content:SetAlpha(0)
-            local fadeStart = GetTime()
-            local fadeFrame = NS.CreateFrame("Frame")
-            fadeFrame:SetScript("OnUpdate", function(self)
-                local pct = (GetTime() - fadeStart) / 0.15
-                if pct >= 1 then
-                    content:SetAlpha(1)
-                    self:SetScript("OnUpdate", nil)
-                else
-                    content:SetAlpha(pct)
-                end
-            end)
+            fadeGroup:Stop()
+            fadeGroup:Play()
         else
             card:SetHeight(HEADER_H)
             content:Hide()
@@ -123,7 +121,8 @@ function NS.CreateCollapsibleSection(parent, title, buildFunc, layoutFunc)
             underline:Hide()
             titleText:SetTextColor(NS.unpack(T.TEXT_DIM))
             card:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.3)
-            for _, d in NS.ipairs(dots) do d:Hide() end
+            fadeGroup:Stop()
+            content:SetAlpha(1)
         end
         if layoutFunc then layoutFunc() end
     end
@@ -166,10 +165,10 @@ end
 -- Toggle (square checkbox)
 ----------------------------------------------------------------
 function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
-    local size = 14
+    local size = 16
     local pw = parent._contentWidth or parent:GetWidth()
     local row = NS.CreateFrame("Button", nil, parent)
-    row:SetSize(pw - 28, 20)
+    row:SetSize(pw - 28, 22)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yOffset)
 
     local box = NS.CreateFrame("Frame", nil, row, "BackdropTemplate")
@@ -181,40 +180,74 @@ function NS.CreateToggle(parent, label, dbKey, yOffset, onChange)
     fill:SetPoint("TOPLEFT", 2, -2)
     fill:SetPoint("BOTTOMRIGHT", -2, 2)
 
+    local hover = row:CreateTexture(nil, "HIGHLIGHT")
+    hover:SetPoint("TOPLEFT", box, "TOPRIGHT", 5, 0)
+    hover:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 0)
+    hover:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.35)
+
     local lbl = row:CreateFontString(nil, "OVERLAY")
     lbl:SetFont(NS.GetConfigFontPath(), 11, NS.GetConfigFontOutline())
     lbl:SetPoint("LEFT", box, "RIGHT", 8, 0)
     lbl:SetTextColor(NS.unpack(T.TEXT))
     lbl:SetText(label)
 
+    row._enabled = true
+    row._box = box
+    row._fill = fill
+    row._lbl = lbl
+
     local function Refresh()
         local on = NS.db[dbKey]
+        local enabled = row._enabled
         if on then
             local sc = parent._sectionColor or T.TOGGLE_ON
-            box:SetBackdropColor(sc[1], sc[2], sc[3], sc[4] or 1)
-            box:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.6)
-            fill:SetColorTexture(sc[1], sc[2], sc[3], 0.9)
+            if enabled then
+                box:SetBackdropColor(sc[1], sc[2], sc[3], sc[4] or 1)
+                box:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.6)
+                fill:SetColorTexture(sc[1], sc[2], sc[3], 0.9)
+            else
+                box:SetBackdropColor(T.TOGGLE_OFF[1], T.TOGGLE_OFF[2], T.TOGGLE_OFF[3], 1)
+                box:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.9)
+                fill:SetColorTexture(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.45)
+            end
             fill:Show()
         else
             box:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
             box:SetBackdropBorderColor(NS.unpack(T.BORDER))
             fill:Hide()
         end
+        if enabled then
+            lbl:SetTextColor(NS.unpack(T.TEXT))
+        else
+            lbl:SetTextColor(NS.unpack(T.TEXT_MUTED))
+        end
     end
 
     row:SetScript("OnClick", function()
+        if not row._enabled then return end
         NS.db[dbKey] = not NS.db[dbKey]
         Refresh()
         if onChange then onChange(NS.db[dbKey]) end
     end)
 
     row:SetScript("OnEnter", function()
+        if not row._enabled then return end
         local sc = parent._sectionColorBright or T.ACCENT_BRIGHT
         lbl:SetTextColor(NS.unpack(sc))
     end)
     row:SetScript("OnLeave", function()
-        lbl:SetTextColor(NS.unpack(T.TEXT))
+        if row._enabled then
+            lbl:SetTextColor(NS.unpack(T.TEXT))
+        else
+            lbl:SetTextColor(NS.unpack(T.TEXT_MUTED))
+        end
     end)
+
+    function row:SetEnabledState(enabled)
+        self._enabled = enabled and true or false
+        self:EnableMouse(self._enabled)
+        Refresh()
+    end
 
     Refresh()
     row.Refresh = Refresh
@@ -242,7 +275,7 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
     valText:SetTextColor(NS.unpack(T.TEXT))
 
     local track = NS.CreateFrame("Frame", nil, row, "BackdropTemplate")
-    track:SetHeight(6)
+    track:SetHeight(7)
     track:SetPoint("TOPLEFT", 0, -16)
     track:SetPoint("TOPRIGHT", 0, -16)
     track:SetBackdrop(BACKDROP_PANEL)
@@ -281,6 +314,16 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
     track:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             dragging = true
+            self:SetScript("OnUpdate", function(frame)
+                if not dragging then return end
+                local cx = select(1, GetCursorPosition()) / frame:GetEffectiveScale()
+                local left = frame:GetLeft()
+                local width = frame:GetWidth()
+                if width and width > 0 then
+                    local pct = math.max(0, math.min(1, (cx - left) / width))
+                    SetValue(min + pct * (max - min))
+                end
+            end)
             local cx = select(1, GetCursorPosition()) / self:GetEffectiveScale()
             local left = self:GetLeft()
             local width = self:GetWidth()
@@ -288,17 +331,13 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
             SetValue(min + pct * (max - min))
         end
     end)
-    track:SetScript("OnMouseUp", function() dragging = false end)
-    track:SetScript("OnUpdate", function(self)
-        if dragging then
-            local cx = select(1, GetCursorPosition()) / self:GetEffectiveScale()
-            local left = self:GetLeft()
-            local width = self:GetWidth()
-            if width and width > 0 then
-                local pct = math.max(0, math.min(1, (cx - left) / width))
-                SetValue(min + pct * (max - min))
-            end
-        end
+    track:SetScript("OnMouseUp", function(self)
+        dragging = false
+        self:SetScript("OnUpdate", nil)
+    end)
+    track:SetScript("OnHide", function(self)
+        dragging = false
+        self:SetScript("OnUpdate", nil)
     end)
 
     -- Delay initial position until frame is sized
@@ -330,7 +369,7 @@ function NS.CreateDropdown(parent, label, dbKey, options, yOffset, onChange, wid
 
     -- Button showing current value
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
-    btn:SetSize(W, 20)
+    btn:SetSize(W, 22)
     btn:SetPoint("TOPLEFT", 0, -16)
     btn:SetBackdrop(BACKDROP_PANEL)
     btn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
@@ -1065,8 +1104,8 @@ end
 function NS.CreateNestedDropdown(config)
     local parent = config.parent
     local W = config.width or ((parent._contentWidth or parent:GetWidth()) - 28)
-    local ENTRY_H = 22
-    local FOLDER_H = 20
+    local ENTRY_H = 24
+    local FOLDER_H = 22
     local MAX_H = 320
     local PREVIEW_W = config.previewWidth or 0
     local MAX_STRIP_COLORS = 8
@@ -1087,7 +1126,7 @@ function NS.CreateNestedDropdown(config)
     lbl:SetText(config.label)
 
     local btn = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
-    btn:SetSize(W, 20)
+    btn:SetSize(W, 22)
     btn:SetPoint("TOPLEFT", 0, -16)
     btn:SetBackdrop(BACKDROP_PANEL)
     btn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))

@@ -8,30 +8,36 @@
 ## AddonCompartmentFunc: BetterSBA_OnAddonCompartmentClick
 ## AddonCompartmentFuncOnEnter: BetterSBA_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: BetterSBA_OnAddonCompartmentLeave
-## OptionalDeps: Bartender4, Dominos, ElvUI, Masque, LibSharedMedia-3.0, LibDBIcon-1.0, LibDataBroker-1.1, ConsolePort
+## OptionalDeps: Bartender4, Dominos, ElvUI, EllesmereUIActionBars, Masque, LibSharedMedia-3.0, LibDBIcon-1.0, LibDataBroker-1.1, ConsolePort
 
 # Registration (LSM fonts — must load before anything uses them)
 Register.lua
 
 # Core
 Core\Constants.lua
+Core\TalentBuildData.lua
 Core\Palettes.lua
 Core\Database.lua
 Core\Functions.lua
 Core\Functions\Debug.lua
 Core\Functions\Masque.lua
 Core\Functions\Spells.lua
+Core\Functions\Trinkets.lua
 Core\Functions\Bindings.lua
 Core\Functions\Fonts.lua
 Core\Functions\Display.lua
+Core\Functions\ButtonStyle.lua
+Core\Functions\Motion.lua
 Core\Functions\Particles.lua
 Core\Functions\Animations.lua
+Core\Functions\TalentBuilds.lua
 Core\LDB.lua
 
 # GUI
 GUI\Framework.lua
 GUI\MainButton.lua
 GUI\PriorityDisplay.lua
+GUI\TalentBuildsPanel.lua
 GUI\Config.lua
 
 # Main

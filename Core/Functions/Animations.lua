@@ -1,4 +1,5 @@
 local ADDON_NAME, NS = ...
+local feedbackGeneration = 0
 
 local animPool = {}
 
@@ -344,7 +345,7 @@ local function EnsureAnimRefButton()
     animRefButton = ref
 end
 
-local MAX_ANIM_POOL = 10  -- cap to prevent unbounded frame creation
+local MAX_ANIM_POOL = 10  -- per skin variant; at most 20 reusable frames
 
 local function UseMasqueAnimClone()
     return NS.masqueAnimGroup and NS.db.animCloneMasque ~= false
@@ -370,7 +371,7 @@ end
 
 local function GetAnimCloneHotkeyFontSize()
     local db = NS.db or {}
-    return db.animCloneKeybindFontSize or db.keybindFontSize or 12
+    return db.animCloneKeybindFontSize or db.keybindFontSize or 14
 end
 
 local function ApplyAnimCloneHotkeyFont(hk)
@@ -531,11 +532,14 @@ function NS.ApplyAnimCloneDebugBinding()
 end
 
 function NS.ResetAnimClonePool()
+    feedbackGeneration = feedbackGeneration + 1
+    if NS.ResetParticlePool then NS.ResetParticlePool() end
     slamBounceTarget = nil
     slamBounceElapsed = 0
     slamBounceDriver:Hide()
     for _, f in NS.ipairs(animPool) do
         if f.ag then f.ag:Stop() end
+        if NS.ClearButtonPressVisual then NS.ClearButtonPressVisual(f) end
         f:Hide()
         f:ClearAllPoints()
         f:SetScale(1)
@@ -555,22 +559,33 @@ function NS.ResetAnimClonePool()
             f.hotkey:SetText("")
             f.hotkey:Hide()
         end
-        if NS.masqueAnimGroup and f._usesMasque and NS.masqueAnimGroup.RemoveButton then
-            NS.masqueAnimGroup:RemoveButton(f)
-        end
     end
-    for i = 1, #animPool do
-        animPool[i] = nil
+    -- WoW frames cannot be destroyed. Keep both skin variants for reuse instead
+    -- of orphaning the pool every time a slider or profile changes.
+    NS._recreateFading = false
+    if NS.mainButton and NS.db then
+        local alpha = NS.InCombatLockdown() and NS.db.alphaCombat or NS.db.alphaOOC
+        NS.mainButton:SetAlpha(NS.db.enabled and (alpha or 1) or 0)
     end
+end
+
+function NS.RefreshCastFeedbackSettings()
+    NS.ResetAnimClonePool()
+    if NS.ResetMotionFeedback then NS.ResetMotionFeedback() end
+    if NS.InitializeMotionFeedback then NS.InitializeMotionFeedback() end
+    if NS.UpdateNow then NS.UpdateNow() end
 end
 
 local function AcquireAnimFrame()
     local useMasque = UseMasqueAnimClone()
+    local variantCount = 0
     for _, f in NS.ipairs(animPool) do
+        if f._usesMasque == useMasque then variantCount = variantCount + 1 end
         if not f._inUse and f._usesMasque == useMasque then
             f._inUse = true
             f._acquireKind = "reuse"
             if f.ag then f.ag:Stop() end
+            if NS.ClearButtonPressVisual then NS.ClearButtonPressVisual(f) end
             f:SetScale(1)
             f:SetAlpha(0)
             f._spellID = nil
@@ -579,10 +594,11 @@ local function AcquireAnimFrame()
     end
 
     -- Pool full â€” recycle the oldest frame
-    if #animPool >= MAX_ANIM_POOL then
+    if variantCount >= MAX_ANIM_POOL then
         for _, oldest in NS.ipairs(animPool) do
             if oldest._usesMasque == useMasque then
                 if oldest.ag then oldest.ag:Stop() end
+                if NS.ClearButtonPressVisual then NS.ClearButtonPressVisual(oldest) end
                 oldest:Hide()
                 oldest:ClearAllPoints()
                 oldest:SetScale(1)
@@ -620,6 +636,7 @@ local function AcquireAnimFrame()
         local pushedTex = f:CreateTexture()
         pushedTex:SetColorTexture(0, 0, 0, 0.5)
         pushedTex:SetAllPoints(f.icon)
+        f.pushedTex = pushedTex
         f:SetPushedTexture(pushedTex)
 
         local hlTex = f:CreateTexture()
@@ -663,6 +680,11 @@ local function AcquireAnimFrame()
         f.icon:SetPoint("TOPLEFT", 1, -1)
         f.icon:SetPoint("BOTTOMRIGHT", -1, 1)
         f.icon:SetTexCoord(NS.unpack(NS.ICON_TEXCOORD))
+
+        f.pushedTex = f:CreateTexture(nil, "ARTWORK", nil, 1)
+        f.pushedTex:SetColorTexture(0, 0, 0, 0.35)
+        f.pushedTex:SetAllPoints(f.icon)
+        f:SetPushedTexture(f.pushedTex)
     end
 
     -- Keybind â€” on a child frame so Masque can't hook the FontString
@@ -703,6 +725,7 @@ local function AcquireAnimFrame()
             NS.FireParticleBurst(f._sourceBtn, f._particleStyle, f._particlePalette, f._particleGcdScale)
         end
 
+        if NS.ClearButtonPressVisual then NS.ClearButtonPressVisual(f) end
         f:Hide()
         f:ClearAllPoints()
         f:SetScale(1)  -- reset preScale from reverse animations
@@ -763,6 +786,13 @@ NS._recreateFading = false
 -- 7. Incoming OnFinished reveals the real button
 ----------------------------------------------------------------
 function NS.PlayCastAnimation(spellID)
+    feedbackGeneration = feedbackGeneration + 1
+    local engine = NS.db and NS.db.castFeedback or "Classic"
+    if engine == "Off" or not (NS.db and NS.db.enabled) then return end
+    if engine == "Motion" then
+        if NS.PlayMotionFeedback then NS.PlayMotionFeedback(spellID) end
+        return
+    end
     local btn = NS.mainButton
     if not btn or not btn:IsShown() then return end
 
@@ -858,6 +888,9 @@ function NS.PlayCastAnimation(spellID)
     -- 6. Keybind text
     ApplyAnimHotkey(anim, spellID)
     DebugAnimClone("OUT", anim, spellID, btn)
+    if NS.StartButtonPressVisual then
+        NS.StartButtonPressVisual(anim, spellID)
+    end
 
     -- 7. Store references for OnFinished
     anim._sourceBtn = btn
@@ -891,7 +924,10 @@ function NS.PlayCastAnimation(spellID)
     if particlesOn and particleStyle ~= "None" then
         if particleTiming == "Specific" then
             local delay = NS.db[animKey .. "ParticleDelay"] or 0.3
+            local generation = feedbackGeneration
             NS.C_Timer_After(delay, function()
+                if generation ~= feedbackGeneration or not NS.db.enabled
+                    or NS.db.castFeedback ~= "Classic" or not btn:IsVisible() then return end
                 NS.FireParticleBurst(btn, particleStyle, particlePalette, g)
             end)
         else
@@ -916,8 +952,10 @@ function NS.PlayCastAnimation(spellID)
         -- Mark that we expect an incoming peer (prevents outgoing's
         -- OnFinished from revealing the button if it finishes first)
         anim._hasIncomingPeer = true
-
+        local generation = feedbackGeneration
         NS.C_Timer_After(0.05, function()
+            if generation ~= feedbackGeneration or not NS.db.enabled
+                or NS.db.castFeedback ~= "Classic" then return end
             -- Bail if the outgoing was cancelled (new animation started)
             if not anim._sourceBtn then
                 -- Outgoing was orphaned â€” no peer expected anymore
@@ -1109,6 +1147,8 @@ do
     end
 
     function NS.StopPreviewMode()
+        if NS.ResetMotionFeedback then NS.ResetMotionFeedback() end
+        NS.ResetAnimClonePool()
         if not previewTicker and not previewGlowTicker then
             print("|cFF66B8D9BetterSBA|r: No preview running")
             return

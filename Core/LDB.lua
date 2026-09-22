@@ -31,6 +31,9 @@ function NS.InitLDB()
             tip:AddLine(" ")
 
             local status = NS.db.enabled and "|cFF44FF44Enabled|r" or "|cFFFF4444Disabled|r"
+            if not NS.db.enabled and NS.InCombatLockdown() and NS._pendingKeybindOverride then
+                status = "|cFFFFCC66Disable pending until combat ends|r"
+            end
             tip:AddLine("Status: " .. status)
 
             local lockText = NS.db.locked and "|cFF888888Locked|r" or "|cFF44FF44Unlocked|r"
@@ -169,17 +172,23 @@ function NS.GetInterceptBlockReason()
     if HasOverrideActionBar and HasOverrideActionBar() then
         return "Override Bar"
     end
-    if HasBonusActionBar and HasBonusActionBar() then
-        -- Dragonriding / Skyriding uses bonus action bar
-        if IsMounted and IsMounted() then
-            return "Skyriding"
-        end
-        return "Bonus Bar"
-    end
     if IsPossessBarVisible and IsPossessBarVisible() then
         return "Possess Bar"
     end
-    if IsMounted and IsMounted() then
+    if NS.IsSkyridingActive and NS.IsSkyridingActive() then
+        return "SkyRiding"
+    end
+    if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then
+        return "Flight Form"
+    end
+    if HasBonusActionBar and HasBonusActionBar()
+        and not (NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()) then
+        if IsMounted and IsMounted() then
+            return "SkyRiding"
+        end
+        return "Bonus Bar"
+    end
+    if IsMounted and IsMounted() and not (IsFlying and IsFlying()) then
         return "Mounted"
     end
     return nil
@@ -200,6 +209,11 @@ function NS.UpdateLDBText()
     if not dataObj then return end
     if not NS.db.ldbShowText then
         dataObj.text = ""
+        return
+    end
+    if not NS.db.enabled then
+        dataObj.text = NS.InCombatLockdown() and NS._pendingKeybindOverride
+            and "Disable pending until combat ends" or "Disabled"
         return
     end
 

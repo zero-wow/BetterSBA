@@ -17,6 +17,7 @@ NS.SBA_SPELL_ID = 1229376
 NS.AUTO_ATTACK_SPELL_ID = 6603
 -- Class-specific off-GCD ability spell IDs
 NS.DEMON_SPIKES_SPELL_ID    = 203720   -- Vengeance DH
+NS.CONVOKE_THE_SPIRITS_ID   = 391528   -- Druid
 NS.SHIELD_BLOCK_SPELL_ID    = 2565     -- Protection Warrior
 NS.IGNORE_PAIN_SPELL_ID     = 190456   -- Protection Warrior
 NS.IRONFUR_SPELL_ID         = 192081   -- Guardian Druid
@@ -43,6 +44,56 @@ NS.SPELL_IMPORTANCE_BRIGHT = {
     LONG_CD     = { 0.80, 0.45, 1.00, 1.0 },
     MAJOR_CD    = { 1.00, 0.70, 0.30, 1.0 },
 }
+
+NS.SPEC_THEME_COLORS = {
+    [62] = { 0.45, 0.78, 1.00, 1.0 },
+    [63] = { 1.00, 0.45, 0.18, 1.0 },
+    [64] = { 0.62, 0.88, 1.00, 1.0 },
+    [65] = { 1.00, 0.92, 0.58, 1.0 },
+    [66] = { 1.00, 0.86, 0.42, 1.0 },
+    [70] = { 1.00, 0.76, 0.30, 1.0 },
+    [71] = { 0.82, 0.58, 0.42, 1.0 },
+    [72] = { 0.93, 0.42, 0.20, 1.0 },
+    [73] = { 0.70, 0.54, 0.48, 1.0 },
+    [102] = { 0.56, 0.62, 1.00, 1.0 },
+    [103] = { 1.00, 0.56, 0.24, 1.0 },
+    [104] = { 0.98, 0.60, 0.22, 1.0 },
+    [105] = { 0.22, 0.86, 0.56, 1.0 },
+    [250] = { 0.80, 0.18, 0.22, 1.0 },
+    [251] = { 0.36, 0.90, 0.96, 1.0 },
+    [252] = { 0.42, 0.88, 0.50, 1.0 },
+    [253] = { 0.70, 1.00, 0.48, 1.0 },
+    [254] = { 0.88, 0.96, 0.58, 1.0 },
+    [255] = { 0.58, 1.00, 0.40, 1.0 },
+    [256] = { 1.00, 1.00, 0.92, 1.0 },
+    [257] = { 1.00, 0.96, 0.84, 1.0 },
+    [258] = { 0.68, 0.52, 1.00, 1.0 },
+    [259] = { 1.00, 0.86, 0.18, 1.0 },
+    [260] = { 1.00, 0.68, 0.24, 1.0 },
+    [261] = { 0.82, 0.48, 1.00, 1.0 },
+    [262] = { 0.28, 0.62, 1.00, 1.0 },
+    [263] = { 0.52, 0.88, 1.00, 1.0 },
+    [264] = { 0.22, 0.88, 0.96, 1.0 },
+    [265] = { 0.64, 0.30, 0.78, 1.0 },
+    [266] = { 0.84, 0.46, 1.00, 1.0 },
+    [267] = { 1.00, 0.46, 0.36, 1.0 },
+    [268] = { 0.64, 1.00, 0.52, 1.0 },
+    [269] = { 0.54, 1.00, 0.36, 1.0 },
+    [270] = { 0.42, 0.96, 0.68, 1.0 },
+    [577] = { 0.82, 0.30, 1.00, 1.0 },
+    [581] = { 0.62, 0.24, 0.92, 1.0 },
+    [1467] = { 0.36, 0.84, 1.00, 1.0 },
+    [1468] = { 0.34, 0.96, 0.78, 1.0 },
+    [1473] = { 0.74, 0.64, 1.00, 1.0 },
+}
+
+function NS.GetSpecThemeColor(specID, fallback)
+    local color = specID and NS.SPEC_THEME_COLORS[specID]
+    if color then
+        return color
+    end
+    return fallback or { 1, 1, 1, 1 }
+end
 
 -- Icon
 NS.ICON_PATH = "Interface\\AddOns\\BetterSBA\\IMG\\BetterSBA"
@@ -99,6 +150,7 @@ NS.defaults = {
     enabled = true,
     locked = true,
     buttonSize = 48,
+    buttonStyle = "Soft",
     scale = 1.0,
     position = nil,
 
@@ -107,16 +159,35 @@ NS.defaults = {
     enableTargeting = true,
     enablePetAttack = true,
     enableChannelProtection = true,
+    trinketMode = "Off",
+    trinketApproved = {},
     interceptionType = "Keybind",
 
     -- Class-specific combat options (off-GCD abilities appended after /cast SBA)
     enableDemonSpikes = true,       -- Vengeance DH: /cast Demon Spikes
+    enableConvokeTheSpirits = true, -- Druid: /cast [nochanneling,combat] Convoke the Spirits
     enableShieldBlock = true,       -- Prot Warrior: /cast Shield Block
     enableIgnorePain = false,       -- Prot Warrior: /cast Ignore Pain (off by default — drains Rage)
     enableIronfur = true,           -- Guardian Druid: /cast Ironfur
     enableShieldOfRighteous = true, -- Prot Paladin: /cast Shield of the Righteous
     enableRuneTap = false,          -- Blood DK: /cast Rune Tap (off by default — talent, short duration)
     enablePurifyingBrew = false,    -- Brewmaster: /cast Purifying Brew (off by default — situational)
+
+    talentBuildsEnabled = true,
+    selectedTalentBuildIDs = {},
+    talentBuildLastStatus = {},
+    talentBuildAutoApplyMode = "Auto-Apply",
+    talentBuildRetryAfterCombat = true,
+    talentBuildManagedLoadouts = true,
+    talentBuildLoadoutPanelEnabled = true,
+    talentBuildLoadoutPanelFilter = "ACTIVE_SPEC",
+    talentBuildShowBuiltIn = true,
+    talentBuildShowUser = true,
+    talentBuildSourceFilter = "All",
+    talentBuildSearchText = "",
+    talentBuildUseDefaultSort = true,
+    talentBuildSortColumn = "name",
+    talentBuildSortAscending = true,
 
     -- Display
     showKeybind = true,
@@ -125,7 +196,7 @@ NS.defaults = {
     outOfRangeSound = false,
     spellUsability = false,
     keybindFontSize = 12,
-    animCloneKeybindFontSize = 12,
+    animCloneKeybindFontSize = 14,
     keybindOffsetX = -5,
     keybindOffsetY = -5,
     keybindAnchor = "TOPRIGHT",
@@ -151,6 +222,7 @@ NS.defaults = {
     priorityOffsetX = 0,
     priorityOffsetY = 0,
     showActiveGlow = true,
+    configPanelBaseHeight = 560,
     configPanelHeight = 620,
 
     -- Visibility
@@ -206,6 +278,7 @@ NS.defaults = {
     sectionColorAppearance = { 0.72, 0.52, 0.95, 1.0 },
     sectionColorActive     = { 0.30, 0.78, 1.00, 1.0 },
     sectionColorPriority   = { 0.20, 0.90, 0.45, 1.0 },
+    sectionColorTalentBuilds = { 1.00, 0.55, 0.18, 1.0 },
     sectionColorVisibility = { 0.30, 0.95, 0.80, 1.0 },
     sectionColorImportance = { 1.00, 0.82, 0.20, 1.0 },
     sectionColorAdvanced   = { 1.00, 0.30, 0.30, 1.0 },
@@ -221,6 +294,11 @@ NS.defaults = {
     configPanelFontOverride = false,
 
     -- Animation
+    castFeedback = "Motion",
+    motionPreset = "Pulse",
+    motionDuration = 0.4,
+    motionIntensity = 0.65,
+    motionReduced = false,
     castAnimation = "DRIFT",
     animateIncoming = false,
     gcdDuration = 1.9,

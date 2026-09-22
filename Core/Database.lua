@@ -10,6 +10,10 @@ local GLOBAL_KEYS = {
     palettes = true,
     palettePaths = true,
     paletteFavorites = true,
+    talentBuildEntries = true,
+    talentBuildNextID = true,
+    talentBuildCatalogVersion = true,
+    talentBuildCharacters = true,
 }
 
 ----------------------------------------------------------------
@@ -149,6 +153,33 @@ local function ApplyDefaults(profile)
     end
 end
 
+-- Migrate before defaults so legacy keys can populate their replacements.
+local function PrepareProfile(profile)
+    MigrateProfileSettings(profile)
+    ApplyDefaults(profile)
+end
+
+-- minimap is root-global LibDBIcon state; keep the profile compatibility alias.
+local function AttachGlobalState(root, profile)
+    profile.minimap = root.minimap
+    if root.minimap and root.minimap.hide then
+        profile.showMinimapButton = false
+    end
+end
+
+local function CopyProfileFields(source, destination)
+    for key in NS.pairs(destination) do
+        if key ~= "minimap" then
+            destination[key] = nil
+        end
+    end
+    for key, value in NS.pairs(source) do
+        if key ~= "minimap" then
+            destination[key] = NS.type(value) == "table" and CopyTable(value) or value
+        end
+    end
+end
+
 ----------------------------------------------------------------
 -- Initialize database with profile support
 ----------------------------------------------------------------
@@ -192,6 +223,10 @@ function NS:InitializeDatabase()
     root.palettes = root.palettes or {}
     root.palettePaths = root.palettePaths or {}
     root.paletteFavorites = root.paletteFavorites or {}
+    root.talentBuildEntries = root.talentBuildEntries or {}
+    root.talentBuildNextID = root.talentBuildNextID or 1
+    root.talentBuildCatalogVersion = root.talentBuildCatalogVersion or ((NS.TALENT_BUILD_CATALOG and NS.TALENT_BUILD_CATALOG.version) or 1)
+    root.talentBuildCharacters = root.talentBuildCharacters or {}
 
     -- Ensure at least one profile exists
     if not next(root.profiles) then
@@ -215,19 +250,16 @@ function NS:InitializeDatabase()
 
     local profile = root.profiles[profileName]
 
-    -- Apply defaults and run migrations
-    ApplyDefaults(profile)
-    MigrateProfileSettings(profile)
-
-    -- Alias root minimap into profile so NS.db.minimap works for LibDBIcon
-    profile.minimap = root.minimap
-    if root.minimap and root.minimap.hide then
-        profile.showMinimapButton = false
-    end
+    -- Migrate before defaults, then attach root-global state.
+    PrepareProfile(profile)
+    AttachGlobalState(root, profile)
 
     -- Set the active reference (all NS.db.X reads now hit the profile)
     self.db = profile
     self._activeProfileName = profileName
+    if NS.InitializeTalentBuildStorage then
+        NS.InitializeTalentBuildStorage()
+    end
 end
 
 ----------------------------------------------------------------
@@ -258,12 +290,14 @@ function NS:CreateProfile(name)
 
     local copy = {}
     for k, v in NS.pairs(self.db) do
-        if NS.type(v) == "table" then
+        if k ~= "minimap" and NS.type(v) == "table" then
             copy[k] = CopyTable(v)
-        else
+        elseif k ~= "minimap" then
             copy[k] = v
         end
     end
+    PrepareProfile(copy)
+    AttachGlobalState(self.dbRoot, copy)
     self.dbRoot.profiles[name] = copy
     return true
 end
@@ -341,11 +375,14 @@ function NS:SwitchProfile(name)
     if name == self._activeProfileName then return false, "Already active" end
 
     local profile = self.dbRoot.profiles[name]
-    ApplyDefaults(profile)
-    MigrateProfileSettings(profile)
+    PrepareProfile(profile)
+    AttachGlobalState(self.dbRoot, profile)
 
     self.db = profile
     self._activeProfileName = name
+    if NS.InitializeTalentBuildStorage then
+        NS.InitializeTalentBuildStorage()
+    end
 
     -- Update the character binding
     local charKey = NS.GetCharKey()
@@ -368,18 +405,11 @@ function NS:CopyFromProfile(srcName)
     if srcName == self._activeProfileName then return false, "Cannot copy from self" end
 
     local src = self.dbRoot.profiles[srcName]
+    PrepareProfile(src)
     -- Overwrite current profile's settings
-    for k in NS.pairs(self.db) do
-        self.db[k] = nil
-    end
-    for k, v in NS.pairs(src) do
-        if NS.type(v) == "table" then
-            self.db[k] = CopyTable(v)
-        else
-            self.db[k] = v
-        end
-    end
-    ApplyDefaults(self.db)
+    CopyProfileFields(src, self.db)
+    PrepareProfile(self.db)
+    AttachGlobalState(self.dbRoot, self.db)
 
     -- Refresh visuals
     self:ApplyProfileVisuals()
@@ -396,9 +426,12 @@ function NS:ResetProfile(name)
 
     -- Wipe and re-apply defaults
     for k in NS.pairs(profile) do
-        profile[k] = nil
+        if k ~= "minimap" then
+            profile[k] = nil
+        end
     end
-    ApplyDefaults(profile)
+    PrepareProfile(profile)
+    AttachGlobalState(self.dbRoot, profile)
 
     -- Refresh visuals if active
     if name == self._activeProfileName then
@@ -582,6 +615,9 @@ end
 -- Apply all visual changes after a profile switch
 ----------------------------------------------------------------
 function NS:ApplyProfileVisuals()
+    if NS.RefreshSBAInterception then NS.RefreshSBAInterception() end
+    if NS.StopTicker then NS.StopTicker() end
+    if NS.StartTicker then NS.StartTicker() end
     -- Rebuild macro (may change targeting/petattack/channel options)
     if NS.RebuildMacroText then
         if NS.InCombatLockdown() then
@@ -594,9 +630,12 @@ function NS:ApplyProfileVisuals()
     if NS.ApplyButtonSettings then NS.ApplyButtonSettings() end
     if NS.ApplyAnimCloneDebugBinding then NS.ApplyAnimCloneDebugBinding() end
     if NS.ApplyDebugSettings then NS.ApplyDebugSettings() end
+    if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
+    if NS.RefreshTrinkets then NS.RefreshTrinkets() end
     -- Update priority display
     if NS.ApplyPriorityFonts then NS.ApplyPriorityFonts() end
     if NS.LayoutPriority then NS.LayoutPriority() end
+    if NS.RefreshTalentBuildRuntimeState then NS.RefreshTalentBuildRuntimeState() end
     -- Refresh all display state
     if NS.UpdateNow then NS.UpdateNow() end
     -- Update LDB text

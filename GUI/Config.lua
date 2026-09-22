@@ -3,6 +3,61 @@ local ADDON_NAME, NS = ...
 local T = NS.THEME
 NS.Config = {}
 
+local function GetContextSignature()
+    local specIndex = GetSpecialization and GetSpecialization() or 0
+    local convokeKnown = IsPlayerSpell and IsPlayerSpell(NS.CONVOKE_THE_SPIRITS_ID) and 1 or 0
+    return tostring(specIndex) .. ":" .. tostring(convokeKnown)
+end
+
+function NS.Config:QueueContextRefresh()
+    if self._contextRefreshQueued then return end
+    self._contextRefreshQueued = true
+    NS.C_Timer_After(0, function()
+        self._contextRefreshQueued = false
+        local frame = self.frame
+        if not frame or not frame:IsShown() then
+            self._contextRefreshPending = true
+            return
+        end
+        if NS.InCombatLockdown() then
+            self._contextRefreshPending = true
+            return
+        end
+
+        self._contextRefreshPending = false
+        NS._restoreSection = NS._activeSection or 1
+        NS._restoreScroll = self.scrollFrame and self.scrollFrame:GetVerticalScroll() or nil
+        frame:SetAlpha(0)
+        frame:Hide()
+        self.frame = nil
+        NS.C_Timer_After(0.02, function()
+            self:Toggle()
+            if self.frame then self.frame:SetAlpha(1) end
+        end)
+    end)
+end
+
+local contextRefreshFrame = NS.CreateFrame("Frame")
+contextRefreshFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+contextRefreshFrame:RegisterEvent("SPELLS_CHANGED")
+contextRefreshFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+contextRefreshFrame:SetScript("OnEvent", function(_, event)
+    if event == "PLAYER_REGEN_ENABLED" then
+        if NS.Config._contextRefreshPending then
+            NS.Config:QueueContextRefresh()
+        end
+        return
+    end
+    local signature = GetContextSignature()
+    if signature == NS.Config._contextSignature then return end
+    NS.Config._contextSignature = signature
+    if not NS.Config.frame or not NS.Config.frame:IsShown() then
+        NS.Config._contextRefreshPending = true
+        return
+    end
+    NS.Config:QueueContextRefresh()
+end)
+
 local function ApplyFont()
     NS.ApplyButtonSettings()
     -- If config panel override is off, global font also affects the panel
@@ -177,16 +232,37 @@ end
 -- Create the config panel (dual-panel: left nav + right content)
 ----------------------------------------------------------------
 function NS.Config:Create()
-    local panelW = 500
-    local leftW = 150
+    self._contextSignature = GetContextSignature()
+    self._contextRefreshPending = false
+    local panelW = 640
+    local talentPanelW = 980
+    local leftW = 180
     local rightW = panelW - leftW
-    local maxH = NS.db.configPanelHeight or 600
+    local defaultBasePanelH = (NS.defaults and NS.defaults.configPanelBaseHeight) or 560
+    local defaultTalentPanelH = (NS.defaults and NS.defaults.configPanelHeight) or 620
+    if NS.db.configPanelBaseHeight == nil then
+        NS.db.configPanelBaseHeight = defaultBasePanelH
+    end
+    if NS.db.configPanelHeight == nil then
+        NS.db.configPanelHeight = defaultTalentPanelH
+    end
+    if NS.db.configPanelBaseHeight == NS.db.configPanelHeight and NS.db.configPanelBaseHeight > defaultBasePanelH then
+        NS.db.configPanelBaseHeight = defaultBasePanelH
+    end
+    local function GetBasePanelHeight()
+        return math.max(300, math.min(900, NS.db.configPanelBaseHeight or defaultBasePanelH))
+    end
+    local function GetTalentPanelHeight()
+        return math.max(300, math.min(900, NS.db.configPanelHeight or defaultTalentPanelH))
+    end
     local titleH = 28
     local statusH = 18
     local scrollBarW = 6
-    local contentW = rightW - scrollBarW - 2
+    local scrollContentW = rightW - scrollBarW - 2
+    local talentScrollContentW = (talentPanelW - leftW) - scrollBarW - 2
+    local contentW = scrollContentW
 
-    local f = NS.CreatePanel("BetterSBA_ConfigPanel", NS.UIParent, panelW, maxH)
+    local f = NS.CreatePanel("BetterSBA_ConfigPanel", NS.UIParent, panelW, GetBasePanelHeight())
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetClampedToScreen(true)
@@ -211,72 +287,15 @@ function NS.Config:Create()
     titleBar:SetBackdropColor(NS.unpack(T.BG_HEADER))
     titleBar:SetBackdropBorderColor(NS.unpack(T.BORDER))
 
-    -- "Better" in obsidian blue-gray (subtle breathing animation)
-    local titleBetter = titleBar:CreateFontString(nil, "OVERLAY")
-    titleBetter:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
-    titleBetter:SetPoint("LEFT", 10, 0)
-    titleBetter:SetTextColor(0.42, 0.49, 0.56, 1)
-    titleBetter:SetText("Better")
-
-    -- "SBA" text: 3-layer effect — animated rainbow glow → black edge → white fill
-    local titleSBAOutline = titleBar:CreateFontString(nil, "ARTWORK", nil, 1)
-    titleSBAOutline:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
-    titleSBAOutline:SetPoint("LEFT", titleBetter, "RIGHT", 0, 0)
-    titleSBAOutline:SetTextColor(0.10, 0.30, 1.00, 1)
-    titleSBAOutline:SetText("SBA")
-
-    -- Layer 1 (outer): animated glow — stored for rainbow cycling
-    local sbaGlowFonts = {}
-    for _, off in NS.ipairs({
-        {-1.5, 0}, {1.5, 0}, {0, -1.5}, {0, 1.5},
-        {-1, -1}, {-1, 1}, {1, -1}, {1, 1},
-    }) do
-        local o = titleBar:CreateFontString(nil, "ARTWORK", nil, 1)
-        o:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
-        o:SetPoint("CENTER", titleSBAOutline, "CENTER", off[1], off[2])
-        o:SetTextColor(0.10, 0.30, 1.00, 0.5)
-        o:SetText("SBA")
-        sbaGlowFonts[#sbaGlowFonts + 1] = o
-    end
-
-    -- Animated rainbow glow cycling (only runs while config panel is shown)
-    local sbaGlowTime = 0
-    local sbaGlowFrame = NS.CreateFrame("Frame")
-    sbaGlowFrame:SetScript("OnUpdate", function(self, elapsed)
-        sbaGlowTime = sbaGlowTime + elapsed * 0.3
-        local r = 0.5 + 0.5 * math.sin(sbaGlowTime * 2 * math.pi)
-        local g = 0.5 + 0.5 * math.sin(sbaGlowTime * 2 * math.pi + 2.094)
-        local b = 0.5 + 0.5 * math.sin(sbaGlowTime * 2 * math.pi + 4.189)
-        for _, font in NS.ipairs(sbaGlowFonts) do
-            font:SetTextColor(r, g, b, 0.5)
-        end
-    end)
-    sbaGlowFrame:Hide()
-    f:HookScript("OnShow", function() sbaGlowFrame:Show() end)
-    f:HookScript("OnHide", function() sbaGlowFrame:Hide() end)
-
-    -- Layer 2 (middle): black edge
-    for _, off in NS.ipairs({
-        {-1, 0}, {1, 0}, {0, -1}, {0, 1},
-        {-0.7, -0.7}, {-0.7, 0.7}, {0.7, -0.7}, {0.7, 0.7},
-    }) do
-        local o = titleBar:CreateFontString(nil, "ARTWORK", nil, 2)
-        o:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
-        o:SetPoint("CENTER", titleSBAOutline, "CENTER", off[1], off[2])
-        o:SetTextColor(0, 0, 0, 1)
-        o:SetText("SBA")
-    end
-
-    -- Layer 3 (top): white fill
-    local titleSBA = titleBar:CreateFontString(nil, "OVERLAY")
-    titleSBA:SetFont("Fonts\\FRIZQT__.TTF", 11, "")
-    titleSBA:SetPoint("CENTER", titleSBAOutline, "CENTER", 0, 0)
-    titleSBA:SetTextColor(1, 1, 1, 1)
-    titleSBA:SetText("SBA")
+    local titleText = titleBar:CreateFontString(nil, "OVERLAY")
+    titleText:SetFont(NS.GetConfigFontPath(), 12, "OUTLINE")
+    titleText:SetPoint("LEFT", 12, 0)
+    titleText:SetTextColor(NS.unpack(T.ACCENT))
+    titleText:SetText("BetterSBA")
 
     local ver = titleBar:CreateFontString(nil, "OVERLAY")
     ver:SetFont(NS.GetConfigFontPath(), 9, "")
-    ver:SetPoint("LEFT", titleSBAOutline, "RIGHT", 6, 0)
+    ver:SetPoint("LEFT", titleText, "RIGHT", 8, 0)
     ver:SetTextColor(NS.unpack(T.TEXT_MUTED))
     ver:SetText(NS.VERSION)
 
@@ -286,7 +305,7 @@ function NS.Config:Create()
     -- Title click → GitHub URL popup
     ----------------------------------------------------------------
     local titleHitbox = NS.CreateFrame("Button", nil, titleBar)
-    titleHitbox:SetPoint("LEFT", titleBetter, "LEFT", -2, 0)
+    titleHitbox:SetPoint("LEFT", titleText, "LEFT", -2, 0)
     titleHitbox:SetPoint("RIGHT", ver, "RIGHT", 4, 0)
     titleHitbox:SetHeight(titleH)
 
@@ -438,7 +457,34 @@ function NS.Config:Create()
     statusText:SetPoint("RIGHT", -6, 0)
     statusText:SetJustifyH("LEFT")
 
+    local statusOverrideToken = 0
+    local statusOverrideActive = false
+
+    local function ApplyTemporaryStatus(kind, text)
+        if kind == "error" then
+            statusIcon:SetColorTexture(T.DANGER[1], T.DANGER[2], T.DANGER[3], 0.9)
+            statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+        elseif kind == "success" then
+            statusIcon:SetColorTexture(T.TOGGLE_ON[1], T.TOGGLE_ON[2], T.TOGGLE_ON[3], 1)
+            statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+        elseif kind == "queued" or kind == "waiting" or kind == "prompt" or kind == "creating" or kind == "applying" then
+            statusIcon:SetColorTexture(1.0, 0.53, 0.0, 0.9)
+            statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+        elseif kind == "custom" or kind == "selected" then
+            statusIcon:SetColorTexture(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.8)
+            statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+        else
+            statusIcon:SetColorTexture(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.8)
+            statusText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+        end
+        statusText:SetText(text or "")
+    end
+
     local function RefreshStatus()
+        if statusOverrideActive then
+            if NS.UpdateLDBText then NS.UpdateLDBText() end
+            return
+        end
         local keys = NS._overrideKeys
         local slot = NS._overrideSlot
         local bar = slot and (NS.math_floor((slot - 1) / 12) + 1) or nil
@@ -474,8 +520,34 @@ function NS.Config:Create()
         if NS.UpdateLDBText then NS.UpdateLDBText() end
     end
 
+    function NS.ShowConfigStatusMessage(text, kind, duration)
+        if not statusBar or not statusText or not statusIcon then
+            return
+        end
+        statusOverrideToken = statusOverrideToken + 1
+        local token = statusOverrideToken
+        statusOverrideActive = true
+        ApplyTemporaryStatus(kind, text)
+        NS.C_Timer_After(duration or 4, function()
+            if statusOverrideToken ~= token then
+                return
+            end
+            statusOverrideActive = false
+            RefreshStatus()
+        end)
+    end
+
     NS.UpdateKeybindStatus = RefreshStatus
     f:HookScript("OnShow", RefreshStatus)
+    f:HookScript("OnShow", function()
+        if NS.Config._contextRefreshPending then
+            NS.Config:QueueContextRefresh()
+        end
+    end)
+    f:HookScript("OnHide", function()
+        statusOverrideToken = statusOverrideToken + 1
+        statusOverrideActive = false
+    end)
 
     ----------------------------------------------------------------
     -- Left panel (navigation sidebar)
@@ -521,7 +593,7 @@ function NS.Config:Create()
     scrollFrame:SetPoint("BOTTOMRIGHT", -scrollBarW - 2, statusH)
 
     local scrollChild = NS.CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(contentW)
+    scrollChild:SetWidth(scrollContentW)
     scrollChild:SetHeight(100)
     scrollFrame:SetScrollChild(scrollChild)
 
@@ -551,6 +623,20 @@ function NS.Config:Create()
     scrollThumb:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             thumbDragging = true
+            self:SetScript("OnUpdate", function(frame)
+                if not thumbDragging then return end
+                local _, cursorY = GetCursorPosition()
+                local scale = frame:GetEffectiveScale()
+                cursorY = cursorY / scale
+                local delta = thumbDragStart - cursorY
+                local trackH = scrollTrack:GetHeight()
+                local thumbH = frame:GetHeight()
+                local scrollRange = scrollChild:GetHeight() - scrollFrame:GetHeight()
+                if scrollRange <= 0 or trackH <= thumbH then return end
+                local scrollPerPixel = scrollRange / (trackH - thumbH)
+                local newScroll = thumbScrollStart + delta * scrollPerPixel
+                scrollFrame:SetVerticalScroll(math.max(0, math.min(scrollRange, newScroll)))
+            end)
             local _, cursorY = GetCursorPosition()
             local scale = self:GetEffectiveScale()
             thumbDragStart = cursorY / scale
@@ -558,22 +644,14 @@ function NS.Config:Create()
         end
     end)
     scrollThumb:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" then thumbDragging = false end
+        if button == "LeftButton" then
+            thumbDragging = false
+            self:SetScript("OnUpdate", nil)
+        end
     end)
-    scrollThumb:SetScript("OnUpdate", function(self)
-        if not thumbDragging then return end
-        local _, cursorY = GetCursorPosition()
-        local scale = self:GetEffectiveScale()
-        cursorY = cursorY / scale
-        local delta = thumbDragStart - cursorY
-        local trackH = scrollTrack:GetHeight()
-        local thumbH = self:GetHeight()
-        local scrollRange = scrollChild:GetHeight() - scrollFrame:GetHeight()
-        if scrollRange <= 0 or trackH <= thumbH then return end
-        local scrollPerPixel = scrollRange / (trackH - thumbH)
-        local newScroll = thumbScrollStart + delta * scrollPerPixel
-        newScroll = math.max(0, math.min(scrollRange, newScroll))
-        scrollFrame:SetVerticalScroll(newScroll)
+    scrollThumb:SetScript("OnHide", function(self)
+        thumbDragging = false
+        self:SetScript("OnUpdate", nil)
     end)
 
     local function UpdateScrollbar()
@@ -624,7 +702,7 @@ function NS.Config:Create()
     -- Resize grip
     ----------------------------------------------------------------
     f:SetResizable(true)
-    f:SetResizeBounds(panelW, 300, panelW, 900)
+    f:SetResizeBounds(panelW, 480, panelW, 900)
 
     local grip = NS.CreateFrame("Button", nil, f)
     grip:SetSize(16, 16)
@@ -636,7 +714,11 @@ function NS.Config:Create()
     grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
     grip:SetScript("OnMouseUp", function()
         f:StopMovingOrSizing()
-        NS.db.configPanelHeight = f:GetHeight()
+        if math.abs(f:GetWidth() - talentPanelW) < 0.5 then
+            NS.db.configPanelHeight = f:GetHeight()
+        else
+            NS.db.configPanelBaseHeight = f:GetHeight()
+        end
         UpdateScrollbar()
     end)
 
@@ -649,29 +731,99 @@ function NS.Config:Create()
         { id = "APPEARANCE",     label = "Appearance",      dotColor = db.sectionColorAppearance, dbKey = "sectionColorAppearance" },
         { id = "ACTIVE_DISPLAY", label = "Active Display",  dotColor = db.sectionColorActive,     dbKey = "sectionColorActive" },
         { id = "PRIORITY",       label = "Priority Display", dotColor = db.sectionColorPriority,   dbKey = "sectionColorPriority" },
+        { id = "TALENT_BUILDS",  label = "Talent Builds",   dotColor = db.sectionColorTalentBuilds, dbKey = "sectionColorTalentBuilds" },
         { id = "VISIBILITY",     label = "Visibility",      dotColor = db.sectionColorVisibility, dbKey = "sectionColorVisibility" },
         { id = "IMPORTANCE",     label = "Importance",      dotColor = db.sectionColorImportance, dbKey = "sectionColorImportance" },
         { id = "ADVANCED",       label = "Advanced",        dotColor = db.sectionColorAdvanced,   dbKey = "sectionColorAdvanced" },
         { id = "PROFILES",       label = "Profiles",        dotColor = db.sectionColorProfiles,   dbKey = "sectionColorProfiles" },
     }
 
+    local function IsTalentBuildSectionIndex(idx)
+        return idx and SECTIONS[idx] and SECTIONS[idx].id == "TALENT_BUILDS"
+    end
+
+    local function ApplySectionWindowSize(idx)
+        local isTalent = IsTalentBuildSectionIndex(idx)
+        local targetW = isTalent and talentPanelW or panelW
+        local targetH = isTalent and GetTalentPanelHeight() or GetBasePanelHeight()
+        local targetContentW = isTalent and talentScrollContentW or scrollContentW
+
+        f:SetWidth(targetW)
+        f:SetHeight(targetH)
+        f:SetResizeBounds(targetW, 480, targetW, 900)
+        scrollChild:SetWidth(targetContentW)
+    end
+
     -- Content frames (one per section, parented to scrollChild)
     local contentFrames = {}
     local subHeaderLines = {}
     local activeSection = 1
 
+    local function ClampColorValue(value)
+        return math.max(0, math.min(1, value))
+    end
+
+    local function BrightenColor(color, amount, alpha)
+        amount = amount or 0.3
+        return {
+            ClampColorValue(color[1] + (1 - color[1]) * amount),
+            ClampColorValue(color[2] + (1 - color[2]) * amount),
+            ClampColorValue(color[3] + (1 - color[3]) * amount),
+            alpha or 1,
+        }
+    end
+
+    local function DarkenColor(color, factor, alpha)
+        factor = factor or 0.7
+        return {
+            ClampColorValue(color[1] * factor),
+            ClampColorValue(color[2] * factor),
+            ClampColorValue(color[3] * factor),
+            alpha or 1,
+        }
+    end
+
+    local function PositionSectionEndDivider(line, parent, yPos)
+        if line then
+            line:Hide()
+        end
+    end
+
+    local function CreateSectionEndDivider(parent, yPos)
+        local line = parent:CreateTexture(nil, "ARTWORK")
+        line:SetHeight(2)
+        PositionSectionEndDivider(line, parent, yPos)
+        subHeaderLines[#subHeaderLines + 1] = line
+        return line
+    end
+
     for i = 1, #SECTIONS do
         local cf = NS.CreateFrame("Frame", nil, scrollChild)
-        cf:SetWidth(contentW)
-        cf._contentWidth = contentW
+        if SECTIONS[i].id == "TALENT_BUILDS" then
+            cf:SetWidth(talentScrollContentW)
+            cf._contentWidth = talentScrollContentW
+        else
+            cf:SetWidth(contentW)
+            cf._contentWidth = contentW
+        end
         cf:SetPoint("TOPLEFT", 0, 0)
         cf:Hide()
         cf._sectionIndex = i
         cf._subsections = {}
         local dc = SECTIONS[i].dotColor
         cf._sectionColor = dc
-        cf._sectionColorBright = { math.min(1, dc[1] * 0.7 + 0.3), math.min(1, dc[2] * 0.7 + 0.3), math.min(1, dc[3] * 0.7 + 0.3), 1 }
-        cf._sectionColorDim = { dc[1], dc[2], dc[3], 0.7 }
+        cf._sectionColorBright = BrightenColor(dc, 0.3, 1)
+        cf._sectionColorDim = DarkenColor(dc, 0.82, 0.7)
+        cf:SetScript("OnSizeChanged", function(self)
+            if self:IsVisible() and activeSection == self._sectionIndex then
+                scrollChild:SetHeight(self._contentH or self:GetHeight())
+                local maxScroll = math.max(0, scrollChild:GetHeight() - scrollFrame:GetHeight())
+                if scrollFrame:GetVerticalScroll() > maxScroll then
+                    scrollFrame:SetVerticalScroll(maxScroll)
+                end
+                UpdateScrollbar()
+            end
+        end)
         contentFrames[i] = cf
     end
 
@@ -773,6 +925,7 @@ function NS.Config:Create()
     c = contentFrames[1]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
     local macroHdr = CreateSubHeader(c, "MACRO ACTIONS", y)
     CreateDefaultBtn(c, macroHdr, {"enableDismount", "enableTargeting", "enablePetAttack", "enableChannelProtection"})
     y = y - 18
@@ -822,42 +975,64 @@ function NS.Config:Create()
         { "enableDemonSpikes",      "Demon Spikes",           NS.DEMON_SPIKES_SPELL_ID,   "Vengeance",
             "Vengeance Demon Hunter only.",
             "Off-GCD mitigation with charges. Maintains",
-            "armor + parry uptime passively." },
+            "armor + parry uptime passively.", nil, true },
+        { "enableConvokeTheSpirits","Convoke the Spirits",    NS.CONVOKE_THE_SPIRITS_ID,  "DRUID",
+            "Druid only.",
+            "Adds a combat-only cast line before the",
+            "Single-Button Assistant cast for burst windows.",
+            "before", true },
         { "enableShieldBlock",      "Shield Block",           NS.SHIELD_BLOCK_SPELL_ID,   "Protection:W",
             "Protection Warrior only.",
             "Off-GCD, 2 charges. Blocks melee attacks.",
-            "Costs " .. N .. "30" .. R .. " Rage per cast." },
+            "Costs " .. N .. "30" .. R .. " Rage per cast.", nil, true },
         { "enableIgnorePain",       "Ignore Pain",            NS.IGNORE_PAIN_SPELL_ID,    "Protection:W",
             "Protection Warrior only.",
             "Off-GCD Rage dump that applies an absorb shield.",
-            W .. "Off by default" .. R .. " \226\128\148 drains Rage quickly." },
+            W .. "Off by default" .. R .. " \226\128\148 drains Rage quickly.", nil, true },
         { "enableIronfur",          "Ironfur",                NS.IRONFUR_SPELL_ID,        "Guardian",
             "Guardian Druid only.",
             "Off-GCD stacking armor buff (7 sec). Costs",
-            N .. "40" .. R .. " Rage. Stacks up to 3 times." },
+            N .. "40" .. R .. " Rage. Stacks up to 3 times.",
+            "before", true },
         { "enableShieldOfRighteous","Shield of the Righteous",NS.SHIELD_OF_RIGHTEOUS_ID,  "Protection:Pa",
             "Protection Paladin only.",
             "Off-GCD active mitigation. Costs " .. N .. "3" .. R .. " Holy Power.",
-            W .. "Competes with Word of Glory for HP." .. R },
+            W .. "Competes with Word of Glory for HP." .. R, nil, true },
         { "enableRuneTap",          "Rune Tap",               NS.RUNE_TAP_SPELL_ID,       "Blood",
             "Blood Death Knight only.",
             "Off-GCD, 2 charges, 20% damage reduction (4 sec).",
-            W .. "Off by default" .. R .. " \226\128\148 talent-gated, short duration." },
+            W .. "Off by default" .. R .. " \226\128\148 talent-gated, short duration.", nil, true },
         { "enablePurifyingBrew",    "Purifying Brew",         NS.PURIFYING_BREW_SPELL_ID, "Brewmaster",
             "Brewmaster Monk only.",
             "Off-GCD, 2 charges. Clears 50% of current Stagger.",
-            W .. "Off by default" .. R .. " \226\128\148 best used reactively on high Stagger." },
+            W .. "Off by default" .. R .. " \226\128\148 best used reactively on high Stagger.", nil, true },
     }
+
+    local function IsCombatAssistAbilityVisible(info)
+        local gate = info[4]
+        if gate == "DRUID" then
+            return NS.IsClass("DRUID")
+        end
+        return NS.IsSpec(gate)
+    end
+
+    local function IsCombatAssistAbilityAvailable(info)
+        if info[1] == "enableConvokeTheSpirits" then
+            return IsPlayerSpell and IsPlayerSpell(NS.CONVOKE_THE_SPIRITS_ID)
+        end
+        return true
+    end
 
     -- Collect which abilities apply to this character's current spec
     local activeAbilities = {}
     for _, info in NS.ipairs(CLASS_ABILITIES) do
-        if NS.IsSpec(info[4]) then
+        if IsCombatAssistAbilityVisible(info) then
             activeAbilities[#activeAbilities + 1] = info
         end
     end
 
     local classToggles = {}
+    local RefreshMacroPreview
     if #activeAbilities > 0 then
         -- Sub-header: CLASS OPTIONS
         do
@@ -879,24 +1054,164 @@ function NS.Config:Create()
 
         local classKeys = {}
         for _, info in NS.ipairs(activeAbilities) do
-            local dbKey, label, _, _, specNote, desc1, desc2 = NS.unpack(info)
+            local dbKey, label, _, _, specNote, desc1, desc2, castOrder = NS.unpack(info)
             classKeys[#classKeys + 1] = dbKey
             local toggle = NS.CreateToggle(c, label, dbKey, y, function() NS.RebuildMacroText() end)
-            NS.AddTooltip(toggle, label, {
-                "Adds " .. K .. "/cast " .. label .. R .. " after the",
+            local available = IsCombatAssistAbilityAvailable(info)
+            toggle:SetEnabledState(available)
+            local castNote
+            if castOrder == "before" then
+                castNote = "Adds " .. K .. "/cast " .. label .. R .. " before the"
+            else
+                castNote = "Adds " .. K .. "/cast " .. label .. R .. " after the"
+            end
+            local tooltipLines = {
+                castNote,
                 U .. "Single-Button Assistant" .. R .. " cast.",
                 " ",
                 desc1,
                 desc2,
                 " ",
                 W .. specNote .. R,
-            }, c)
+            }
+            if dbKey == "enableIronfur" then
+                tooltipLines[#tooltipLines + 1] = " "
+                tooltipLines[#tooltipLines + 1] = W .. "Ironfur is injected before " .. U .. "Single-Button Assistant" .. R .. W .. "." .. R
+                tooltipLines[#tooltipLines + 1] = "That means it spends Rage first, so the same press usually"
+                tooltipLines[#tooltipLines + 1] = "will not have enough Rage left for " .. V .. "Maul" .. R .. " or " .. V .. "Raze" .. R .. "."
+                tooltipLines[#tooltipLines + 1] = "This trades damage for survivability."
+                tooltipLines[#tooltipLines + 1] = " "
+                tooltipLines[#tooltipLines + 1] = "If you want to manage it separately, add another button with:"
+                tooltipLines[#tooltipLines + 1] = K .. "/castsequence [nochanneling] Ironfur, Ironfur, Raze" .. R
+                tooltipLines[#tooltipLines + 1] = "That gives you a simple sequence that can use both"
+                tooltipLines[#tooltipLines + 1] = V .. "Ironfur" .. R .. " and " .. V .. "Raze" .. R .. " outside the SBA macro."
+            end
+            if not available and dbKey == "enableConvokeTheSpirits" then
+                tooltipLines[#tooltipLines + 1] = " "
+                tooltipLines[#tooltipLines + 1] = W .. "Requires the " .. V .. "Convoke the Spirits" .. R .. W .. " talent." .. R
+                tooltipLines[#tooltipLines + 1] = "This option is shown so you know the effect exists,"
+                tooltipLines[#tooltipLines + 1] = "but it stays disabled until the talent is learned."
+            end
+            NS.AddTooltip(toggle, label, tooltipLines, c)
             classToggles[#classToggles + 1] = toggle
             y = y - 22
         end
         CreateDefaultBtn(c, c._subHdr, classKeys)
         y = y - 4
     end
+
+    local trinketHdr = CreateSubHeader(c, "TRINKETS", y)
+    CreateDefaultBtn(c, trinketHdr, {"trinketMode"})
+    y = y - 18
+    local trinketModeRow = NS.CreateOptionsDropdown(c, "Trinket Use", "trinketMode", {"Off", "Verified"}, y, function()
+        if NS.RefreshTrinkets then NS.RefreshTrinkets() end
+        if NS.RebuildMacroText then NS.RebuildMacroText() end
+        if RefreshMacroPreview then RefreshMacroPreview() end
+        if NS.RefreshTrinketConfig then NS.RefreshTrinketConfig() end
+    end)
+    NS.AddTooltip(trinketModeRow, "Trinket Use", {
+        V .. "Verified" .. R .. " uses only item and spell pairs you have individually approved.",
+        "Approve only instant, off-GCD, non-channeling trinket uses.",
+        W .. "Off" .. R .. " leaves trinkets out of the SBA macro.",
+    }, c)
+    y = y - 46
+
+    local trinketRows = {}
+    for slot = 1, 2 do
+        local row = NS.CreateFrame("Frame", nil, c)
+        row:SetSize(contentW - 28, 66)
+        row:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
+        local name = row:CreateFontString(nil, "OVERLAY")
+        name:SetFont(NS.GetConfigFontPath(), 10, NS.GetConfigFontOutline())
+        name:SetPoint("TOPLEFT", 0, 0)
+        name:SetPoint("RIGHT", row, "RIGHT", -78, 0)
+        name:SetJustifyH("LEFT")
+        local state = row:CreateFontString(nil, "OVERLAY")
+        state:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        state:SetPoint("TOPRIGHT", 0, 0)
+        state:SetJustifyH("RIGHT")
+        local reason = row:CreateFontString(nil, "OVERLAY")
+        reason:SetFont(NS.GetConfigFontPath(), 9, NS.GetConfigFontOutline())
+        reason:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -1)
+        reason:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+        reason:SetJustifyH("LEFT")
+        reason:SetWordWrap(true)
+        reason:SetMaxLines(2)
+
+        local allow = NS.CreateFrame("Button", nil, row, "BackdropTemplate")
+        allow:SetSize(16, 16)
+        allow:SetPoint("TOPLEFT", reason, "BOTTOMLEFT", 0, -4)
+        allow:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8X8",
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+        })
+        local allowFill = allow:CreateTexture(nil, "ARTWORK")
+        allowFill:SetPoint("TOPLEFT", 2, -2)
+        allowFill:SetPoint("BOTTOMRIGHT", -2, 2)
+        local allowLabel = row:CreateFontString(nil, "OVERLAY")
+        allowLabel:SetFont(NS.GetConfigFontPath(), 9, NS.GetConfigFontOutline())
+        allowLabel:SetPoint("LEFT", allow, "RIGHT", 6, 0)
+        allowLabel:SetText("Allow this trinket")
+        NS.AddTooltip(allow, "Allow This Trinket", {
+            "Confirm that this exact item and use spell are instant, off-GCD, and non-channeling.",
+            "Cast-time items are not eligible.",
+            "Approval follows the item and spell, not this equipment slot.",
+        }, c)
+        trinketRows[slot] = {
+            name = name, state = state, reason = reason,
+            allow = allow, allowFill = allowFill, allowLabel = allowLabel,
+        }
+        y = y - 70
+    end
+
+    function NS.RefreshTrinketConfig()
+        for slot = 1, 2 do
+            local row = trinketRows[slot]
+            local inventorySlot = slot + 12
+            local info = NS.GetTrinketStatus and NS.GetTrinketStatus(inventorySlot) or nil
+            local label = (info and info.name) or ("Trinket " .. slot)
+            local status = (info and info.status) or "Unavailable"
+            local reason = (info and info.reason) or "No verified trinket status."
+            row.name:SetText(label)
+            row.state:SetText(status)
+            row.reason:SetText(reason)
+            local canApprove = info and info.canApprove
+            if canApprove then
+                local approved = NS.IsTrinketApproved and NS.IsTrinketApproved(inventorySlot)
+                row.allow:Show()
+                row.allowLabel:Show()
+                row.allow:SetBackdropColor(NS.unpack(approved and T.TOGGLE_ON or T.TOGGLE_OFF))
+                row.allow:SetBackdropBorderColor(NS.unpack(approved and T.ACCENT_DIM or T.BORDER))
+                row.allowFill:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.9)
+                if approved then row.allowFill:Show() else row.allowFill:Hide() end
+                row.allowLabel:SetTextColor(NS.unpack(approved and T.TEXT or T.TEXT_DIM))
+            else
+                row.allow:Hide()
+                row.allowLabel:Hide()
+            end
+            if info and info.eligible then
+                row.state:SetTextColor(NS.unpack(T.TOGGLE_ON))
+                row.name:SetTextColor(NS.unpack(T.TEXT))
+            else
+                row.state:SetTextColor(NS.unpack(T.TEXT_MUTED))
+                row.name:SetTextColor(NS.unpack(T.TEXT_DIM))
+            end
+            row.reason:SetTextColor(NS.unpack(T.TEXT_MUTED))
+        end
+    end
+    for slot, row in NS.ipairs(trinketRows) do
+        row.allow:SetScript("OnClick", function()
+            if not (NS.SetTrinketApproved and NS.IsTrinketApproved) then return end
+            local inventorySlot = slot + 12
+            NS.SetTrinketApproved(inventorySlot, not NS.IsTrinketApproved(inventorySlot))
+            if NS.RefreshTrinkets then NS.RefreshTrinkets() end
+            if NS.RebuildMacroText then NS.RebuildMacroText() end
+            NS.RefreshTrinketConfig()
+            if RefreshMacroPreview then RefreshMacroPreview() end
+        end)
+    end
+    NS.RefreshTrinketConfig()
 
     -- Sub-header: INTERCEPTION TYPE
     do
@@ -988,6 +1303,7 @@ function NS.Config:Create()
     local sc = c._sectionColor or T.ACCENT
     previewPanel:SetBackdropColor(0.02, 0.02, 0.03, 0.85)
     previewPanel:SetBackdropBorderColor(sc[1], sc[2], sc[3], 0.35)
+    local sectionEndDivider = CreateSectionEndDivider(c, y)
 
     -- Gutter background (slightly lighter than code area)
     local gutterBG = previewPanel:CreateTexture(nil, "BACKGROUND", nil, 1)
@@ -1005,16 +1321,15 @@ function NS.Config:Create()
 
     -- Syntax color codes
     local CMD  = "|cFFFFD100"   -- gold — slash commands
-    local COND = "|cFF44FF44"   -- green — conditionals
-    local SPELL = "|cFF66B8D9"  -- cyan — spell names
-    local CMT  = "|cFF555555"   -- dim gray — inline comments
+    local CMT  = "|cFF9AAABA"   -- readable secondary hints
     local RST  = "|r"
-    local LINENUM_COLOR = "|cFF3A3A44"
+    local LINENUM_COLOR = "|cFF7A8896"
 
-    -- Max macro lines: 5 base + up to 2 class abilities (e.g. Prot Warrior has 2)
-    local MAX_PREVIEW = 5 + math.max(#activeAbilities, 1)
-    local PREVIEW_FONT_SIZE = 9
-    local PREVIEW_LINE_H = 13
+    -- The macro builder owns this list. Keep enough pooled rows for optional
+    -- class actions and verified trinkets without allocating during refreshes.
+    local MAX_PREVIEW = 12
+    local PREVIEW_FONT_SIZE = 10
+    local PREVIEW_LINE_H = 15
     local PREVIEW_TOP_PAD = 5
     local previewLineNums = {}
     local previewLines = {}
@@ -1032,66 +1347,31 @@ function NS.Config:Create()
         fs:SetPoint("TOPLEFT", previewPanel, "TOPLEFT", GUTTER_W + 6, -PREVIEW_TOP_PAD - (i - 1) * PREVIEW_LINE_H)
         fs:SetPoint("RIGHT", previewPanel, "RIGHT", -8, 0)
         fs:SetJustifyH("LEFT")
-        fs:SetWordWrap(false)
+        fs:SetWordWrap(true)
         fs:Hide()
         previewLines[i] = fs
     end
 
-    -- Helper: resolve localized spell name with fallback
-    local function spellName(spellID, fallback)
-        return NS.C_Spell and NS.C_Spell.GetSpellName
-            and NS.C_Spell.GetSpellName(spellID) or fallback
-    end
-
-    local function RefreshMacroPreview()
+    local RefreshAnnotLayout
+    RefreshMacroPreview = function()
         local idx = 0
-        local adb = NS.db
-        local ann = showAnnotations
+        local actions = NS.GetMacroActions and NS.GetMacroActions() or {}
 
-        if adb.enableChannelProtection then
+        for _, action in NS.ipairs(actions) do
+            if idx >= MAX_PREVIEW then break end
             idx = idx + 1
-            local t = CMD .. "/stopmacro" .. RST .. " " .. COND .. "[channeling]" .. RST
-            if ann then t = t .. "  " .. CMT .. "-- protect channels" .. RST end
-            previewLines[idx]:SetText(t)
-            previewLines[idx]:Show()
-        end
-        if adb.enableDismount then
-            idx = idx + 1
-            local t = CMD .. "/dismount" .. RST .. " " .. COND .. "[mounted]" .. RST
-            if ann then t = t .. "  " .. CMT .. "-- auto-dismount" .. RST end
-            previewLines[idx]:SetText(t)
-            previewLines[idx]:Show()
-        end
-        if adb.enableTargeting then
-            idx = idx + 1
-            local t = CMD .. "/targetenemy" .. RST .. " " .. COND .. "[noharm][dead]" .. RST
-            if ann then t = t .. "  " .. CMT .. "-- acquire target" .. RST end
-            previewLines[idx]:SetText(t)
-            previewLines[idx]:Show()
-        end
-        if adb.enablePetAttack and NS.IsPetClass and NS.IsPetClass() then
-            idx = idx + 1
-            local t = CMD .. "/petattack" .. RST
-            if ann then t = t .. "  " .. CMT .. "-- send pet" .. RST end
-            previewLines[idx]:SetText(t)
-            previewLines[idx]:Show()
-        end
-        idx = idx + 1
-        local sbaName = NS.GetSBASpellName and NS.GetSBASpellName() or "Single-Button Assistant"
-        local t = CMD .. "/cast" .. RST .. " " .. SPELL .. sbaName .. RST
-        if ann then t = t .. "  " .. CMT .. "-- fire recommended" .. RST end
-        previewLines[idx]:SetText(t)
-        previewLines[idx]:Show()
-
-        for _, info in NS.ipairs(activeAbilities) do
-            local dbKey, label, sid = info[1], info[2], info[3]
-            if adb[dbKey] then
-                idx = idx + 1
-                local t2 = CMD .. "/cast" .. RST .. " " .. SPELL .. spellName(sid, label) .. RST
-                if ann then t2 = t2 .. "  " .. CMT .. "-- off-GCD" .. RST end
-                previewLines[idx]:SetText(t2)
-                previewLines[idx]:Show()
+            local text = CMD .. (action.text or "") .. RST
+            if showAnnotations and action.hint and action.hint ~= "" then
+                text = text .. "  " .. CMT .. "-- " .. action.hint .. RST
             end
+            previewLines[idx]:SetText(text)
+            previewLines[idx]:Show()
+        end
+
+        if idx == 0 then
+            idx = 1
+            previewLines[idx]:SetText(CMT .. "No macro actions are available." .. RST)
+            previewLines[idx]:Show()
         end
 
         -- Hide unused lines
@@ -1100,16 +1380,25 @@ function NS.Config:Create()
             previewLines[i]:Hide()
         end
         -- Show line numbers for visible lines
+        local rowY = PREVIEW_TOP_PAD
         for i = 1, idx do
             previewLineNums[i]:SetText(LINENUM_COLOR .. i .. RST)
             previewLineNums[i]:Show()
+            previewLineNums[i]:ClearAllPoints()
+            previewLineNums[i]:SetPoint("TOPRIGHT", previewPanel, "TOPLEFT", GUTTER_W - 4, -rowY)
+            local line = previewLines[i]
+            line:ClearAllPoints()
+            line:SetPoint("TOPLEFT", previewPanel, "TOPLEFT", GUTTER_W + 6, -rowY)
+            line:SetPoint("RIGHT", previewPanel, "RIGHT", -8, 0)
+            rowY = rowY + math.max(PREVIEW_LINE_H, (line:GetStringHeight() or PREVIEW_LINE_H) + 4)
         end
 
         -- Resize panel to fit
-        previewPanel:SetHeight(6 + idx * PREVIEW_LINE_H)
+        previewPanel:SetHeight(rowY + 6)
+        if RefreshAnnotLayout then RefreshAnnotLayout() end
     end
 
-    local function RefreshAnnotLayout()
+    RefreshAnnotLayout = function()
         local sc = c._sectionColor or T.ACCENT
         if showAnnotations then
             annotDesc:Show()
@@ -1123,7 +1412,9 @@ function NS.Config:Create()
             annotBtn._lbl:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
         end
         local extra = showAnnotations and ANNOT_DESC_H or 0
-        local totalY = math.abs(previewBaseY) + extra + (6 + MAX_PREVIEW * PREVIEW_LINE_H) + 8
+        local totalY = math.abs(previewBaseY) + extra + previewPanel:GetHeight() + 8
+        PositionSectionEndDivider(sectionEndDivider, c, -totalY)
+        totalY = totalY + 12
         c._contentH = totalY
         c:SetHeight(totalY)
     end
@@ -1131,8 +1422,8 @@ function NS.Config:Create()
     annotBtn:SetScript("OnClick", function()
         showAnnotations = not showAnnotations
         annotBtn._lbl:SetText(showAnnotations and "HIDE HINTS" or "SHOW HINTS")
-        RefreshAnnotLayout()
         RefreshMacroPreview()
+        RefreshAnnotLayout()
     end)
     annotBtn:SetScript("OnEnter", function()
         local sc = c._sectionColorBright or T.ACCENT_BRIGHT
@@ -1164,28 +1455,98 @@ function NS.Config:Create()
     c = contentFrames[2]
     y = -6
     do
-    local particleTestTicker = nil  -- forward-declare for OnHide cleanup
-
-    -- Sub-header: ANIMATION
-    do
-        local col = c._sectionColor or T.TEXT_DIM
-        local hdr = c:CreateFontString(nil, "OVERLAY")
-        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
-        hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
-        hdr:SetTextColor(col[1], col[2], col[3])
-        hdr:SetText("ANIMATION")
-        local line = c:CreateTexture(nil, "ARTWORK")
-        line:SetHeight(1)
-        line:SetColorTexture(col[1], col[2], col[3], 0.4)
-        line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
-        line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
-        subHeaderLines[#subHeaderLines + 1] = line
-        CreateDefaultBtn(c, hdr, {"castAnimation", "animateIncoming", "animHideButton", "animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX", "animCloneKeybindOffsetY", "animCloneKeybindFont", "animCloneKeybindOutline", "animCloneKeybindFontSize", "cfgAnimTransitions", "gcdDuration"})
-    end
+    local c, y = c, y -- Keep callbacks bound to this section.
+    local motionHdr = CreateSubHeader(c, "MOTION FEEDBACK", y)
+    CreateDefaultBtn(c, motionHdr, {
+        "castFeedback", "motionPreset", "motionDuration", "motionIntensity", "motionReduced",
+    })
     y = y - 18
 
+    local motionDropW = contentW - 28 - 80 - 6
+    local feedbackRow = NS.CreateOptionsDropdown(c, "Cast Feedback", "castFeedback",
+        {"Motion", "Classic", "Off"}, y, function()
+            if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
+            rebuildPanel()
+        end, motionDropW)
+    NS.AddTooltip(feedbackRow, "Cast Feedback", {
+        V .. "Motion" .. R .. " uses the new native effect layers.",
+        V .. "Classic" .. R .. " keeps the existing animated clone system.",
+        V .. "Off" .. R .. " disables cast feedback.",
+    }, c)
+
+    local motionPreview = NS.CreateFrame("Button", nil, c, "BackdropTemplate")
+    motionPreview:SetSize(74, 20)
+    motionPreview:SetPoint("TOPLEFT", feedbackRow, "TOPRIGHT", 6, -16)
+    motionPreview:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    motionPreview:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
+    motionPreview:SetBackdropBorderColor(NS.unpack(T.BORDER))
+    local motionPreviewText = motionPreview:CreateFontString(nil, "OVERLAY")
+    motionPreviewText:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+    motionPreviewText:SetPoint("CENTER")
+    motionPreviewText:SetTextColor(NS.unpack(T.TEXT))
+    motionPreviewText:SetText(NS.GLYPH_PLAY .. " Preview")
+    motionPreview:SetEnabled(NS.db.castFeedback ~= "Off")
+    motionPreview:SetAlpha(NS.db.castFeedback == "Off" and 0.4 or 1)
+    motionPreview:SetScript("OnClick", function()
+        if NS.db.castFeedback == "Classic" then
+            NS.PlayCastAnimation(NS.mainButton and NS.mainButton.spellID or NS.SBA_SPELL_ID)
+        elseif NS.db.castFeedback == "Motion" and NS.PreviewMotionFeedback then
+            NS.PreviewMotionFeedback()
+        end
+    end)
+    motionPreview:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(T.ACCENT_DIM)) end)
+    motionPreview:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(T.BORDER)) end)
+    y = y - 46
+
+    if NS.db.castFeedback == "Motion" then
+        local presetRow = NS.CreateOptionsDropdown(c, "Motion Preset", "motionPreset",
+            {"Pulse", "Echo", "Sweep"}, y, function()
+                if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
+            end)
+        NS.AddTooltip(presetRow, "Motion Preset", {
+            "Select the effect layer shown when SBA casts.",
+        }, c)
+        y = y - 46
+
+        local durationRow = NS.CreateSlider(c, "Motion Duration", "motionDuration", 0.2, 0.8, 0.05, y, function()
+            if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
+        end)
+        NS.AddTooltip(durationRow, "Motion Duration", {
+            "Controls how long the motion feedback lasts.",
+        }, c)
+        y = y - 38
+
+        local intensityRow = NS.CreateSlider(c, "Motion Intensity", "motionIntensity", 0.2, 1.0, 0.05, y, function()
+            if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
+        end)
+        NS.AddTooltip(intensityRow, "Motion Intensity", {
+            "Controls the reach and opacity of the motion layers.",
+        }, c)
+        y = y - 38
+
+        local reducedRow = NS.CreateToggle(c, "Reduced Motion", "motionReduced", y, function()
+            if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
+        end)
+        NS.AddTooltip(reducedRow, "Reduced Motion", {
+            "Uses the smallest possible cast feedback movement.",
+        }, c)
+        y = y - 32
+    end
+
+    if NS.db.castFeedback == "Classic" then
+    local classicHdr = CreateSubHeader(c, "CLASSIC ANIMATION", y)
+    CreateDefaultBtn(c, classicHdr, {"castAnimation", "animateIncoming", "animHideButton", "cfgAnimTransitions", "gcdDuration"})
+    y = y - 18
+
+    local ScheduleParticleRebuild
     local animDropW = contentW - 28 - 80 - 6
-    local animRow = NS.CreateOptionsDropdown(c, "Cast Animation", "castAnimation", NS.CAST_ANIMATIONS, y, nil, animDropW)
+    local animRow = NS.CreateOptionsDropdown(c, "Cast Animation", "castAnimation", NS.CAST_ANIMATIONS, y, function()
+        if ScheduleParticleRebuild then ScheduleParticleRebuild() end
+    end, animDropW)
     NS.AddTooltip(animRow, "Cast Animation", {
         "Visual effect that plays on the " .. U .. "Active Display" .. R,
         "each time " .. U .. "SBA" .. R .. " casts an ability.",
@@ -1216,40 +1577,13 @@ function NS.Config:Create()
     testBtnText:SetFont(NS.NERD_FONT, 10, "OUTLINE")
     testBtnText:SetPoint("CENTER")
     testBtnText:SetTextColor(NS.unpack(T.TEXT))
-    testBtnText:SetText(NS.GLYPH_PLAY .. " Play")
-
-    local testTicker = nil
+    testBtnText:SetText(NS.GLYPH_PLAY .. " Preview")
     testBtn:SetScript("OnClick", function()
-        if testTicker then
-            testTicker:Cancel()
-            testTicker = nil
-            testBtnText:SetText(NS.GLYPH_PLAY .. " Play")
-            testBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-        else
-            NS.PlayCastAnimation(NS.SBA_SPELL_ID)
-            local gcdG = (NS.db.gcdDuration or 1.9) / 1.9
-            testTicker = NS.C_Timer_NewTicker(1.2 * gcdG, function()
-                NS.PlayCastAnimation(NS.SBA_SPELL_ID)
-            end)
-            testBtnText:SetText(NS.GLYPH_STOP .. " Stop")
-            testBtn:SetBackdropColor(T.TOGGLE_ON[1], T.TOGGLE_ON[2], T.TOGGLE_ON[3], 0.6)
-        end
+        NS.PlayCastAnimation(NS.mainButton and NS.mainButton.spellID or NS.SBA_SPELL_ID)
     end)
     testBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(T.ACCENT_DIM)) end)
     testBtn:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(T.BORDER)) end)
 
-    f:HookScript("OnHide", function()
-        if testTicker then
-            testTicker:Cancel()
-            testTicker = nil
-            testBtnText:SetText(NS.GLYPH_PLAY .. " Play")
-            testBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-        end
-        if particleTestTicker then
-            particleTestTicker:Cancel()
-            particleTestTicker = nil
-        end
-    end)
     y = y - 46
 
     local animIncoming = NS.CreateToggle(c, "Incoming Animation", "animateIncoming", y)
@@ -1273,89 +1607,7 @@ function NS.Config:Create()
     }, c)
     y = y - 28
 
-    local animMasque = NS.CreateToggle(c, "Masque Skin Animated Clone", "animCloneMasque", y, function()
-        if NS.ResetAnimClonePool then NS.ResetAnimClonePool() end
-    end)
-    NS.AddTooltip(animMasque, "Masque Skin Animated Clone", {
-        "When " .. V .. "enabled" .. R .. ", the " .. U .. "animation clone" .. R .. " uses",
-        "the " .. V .. "Animated Button" .. R .. " Masque group skin.",
-        " ",
-        "When " .. W .. "disabled" .. R .. ", only the " .. U .. "clone" .. R .. " falls back",
-        "to BetterSBA's own border/icon layout.",
-        " ",
-        "The " .. U .. "Active Display" .. R .. " still uses Masque normally.",
-    }, c)
     y = y - 32
-
-    local animBindRow = NS.CreateAnimCloneReapplyKeyControl(c, y, contentW - 28)
-    NS.AddTooltip(animBindRow.btn, "Reapply Clone Hotkey", {
-        "Sets a debug key that re-applies the " .. U .. "animated clone" .. R .. " keybind text",
-        "font, text, and X/Y anchor while the clone is visible.",
-        " ",
-        "Uses the cached spell keybind table only.",
-        "Does " .. W .. "not" .. R .. " change the secure " .. U .. "SBA" .. R .. " binding.",
-        " ",
-        "This uses an override binding while set, so pick a spare combo.",
-    }, c)
-    y = y - 46
-
-    local function RefreshAnimCloneHotkeyStyle()
-        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
-    end
-
-    local cloneHalfW = math.floor((contentW - 28 - 6) / 2)
-    local cloneKbX = NS.CreateSlider(c, "Clone Keybind X", "animCloneKeybindOffsetX", -20, 20, 1, y, function()
-        RefreshAnimCloneHotkeyStyle()
-    end)
-    cloneKbX:SetSize(cloneHalfW, 32)
-    NS.AddTooltip(cloneKbX, "Animated Clone Keybind X Offset", {
-        "Horizontal adjustment applied to the " .. K .. "keybind" .. R .. " text",
-        "on the " .. U .. "animated clone" .. R .. " only.",
-        " ",
-        "This is added on top of the " .. U .. "Active Display" .. R .. " keybind X offset.",
-    }, c)
-    local cloneKbY = NS.CreateSlider(c, "Clone Keybind Y", "animCloneKeybindOffsetY", -20, 20, 1, y, function()
-        RefreshAnimCloneHotkeyStyle()
-    end)
-    cloneKbY:SetSize(cloneHalfW, 32)
-    cloneKbY:ClearAllPoints()
-    cloneKbY:SetPoint("TOPLEFT", cloneKbX, "TOPRIGHT", 6, 0)
-    NS.AddTooltip(cloneKbY, "Animated Clone Keybind Y Offset", {
-        "Vertical adjustment applied to the " .. K .. "keybind" .. R .. " text",
-        "on the " .. U .. "animated clone" .. R .. " only.",
-        " ",
-        "This is added on top of the " .. U .. "Active Display" .. R .. " keybind Y offset.",
-    }, c)
-    y = y - 38
-
-    local cloneFontRowW = contentW - 28
-    local cloneFontW = math.floor(cloneFontRowW * 0.46)
-    local cloneOutlineW = math.floor(cloneFontRowW * 0.26)
-    local cloneSizeW = cloneFontRowW - cloneFontW - cloneOutlineW - 12
-
-    local cloneFontRow = NS.CreateFontDropdown(c, "Clone Font", "animCloneKeybindFont", y, RefreshAnimCloneHotkeyStyle, cloneFontW)
-    NS.AddTooltip(cloneFontRow, "Animated Clone Keybind Font", {
-        "Font used by the " .. U .. "animated clone" .. R .. " keybind text.",
-        " ",
-        "This only changes the virtual clone, not the main display.",
-    }, c)
-
-    local cloneOutRow = NS.CreateDropdown(c, "Clone Outline", "animCloneKeybindOutline",
-        NS.FONT_OUTLINE_OPTIONS, y, RefreshAnimCloneHotkeyStyle, cloneOutlineW)
-    cloneOutRow:ClearAllPoints()
-    cloneOutRow:SetPoint("TOPLEFT", cloneFontRow, "TOPRIGHT", 6, 0)
-    NS.AddTooltip(cloneOutRow, "Animated Clone Keybind Outline", {
-        "Outline style for the " .. U .. "animated clone" .. R .. " keybind text.",
-    }, c)
-
-    local cloneSizeRow = NS.CreateSlider(c, "Clone Size", "animCloneKeybindFontSize", 6, 24, 1, y, RefreshAnimCloneHotkeyStyle)
-    cloneSizeRow:SetSize(cloneSizeW, 32)
-    cloneSizeRow:ClearAllPoints()
-    cloneSizeRow:SetPoint("TOPLEFT", cloneOutRow, "TOPRIGHT", 6, 0)
-    NS.AddTooltip(cloneSizeRow, "Animated Clone Keybind Size", {
-        "Font size for the " .. U .. "animated clone" .. R .. " keybind text.",
-    }, c)
-    y = y - 46
 
     local gcdSlider = NS.CreateSlider(c, "GCD Duration", "gcdDuration", 0.5, 3.0, 0.1, y)
     NS.AddTooltip(gcdSlider, "GCD Duration", {
@@ -1439,11 +1691,6 @@ function NS.Config:Create()
     local particleContainerH = 0
 
     local function BuildParticleControls()
-        -- Stop any running particle preview
-        if particleTestTicker then
-            particleTestTicker:Cancel()
-            particleTestTicker = nil
-        end
         -- Clear existing widgets
         for _, w in NS.ipairs(particleWidgets) do
             if w.Hide then w:Hide() end
@@ -1494,36 +1741,13 @@ function NS.Config:Create()
         ptestBtnText:SetFont(NS.NERD_FONT, 10, "OUTLINE")
         ptestBtnText:SetPoint("CENTER")
         ptestBtnText:SetTextColor(NS.unpack(T.TEXT))
-        ptestBtnText:SetText(NS.GLYPH_PLAY .. " Play")
-
-        local function StopParticlePreview()
-            if particleTestTicker then
-                particleTestTicker:Cancel()
-                particleTestTicker = nil
-            end
-            ptestBtnText:SetText(NS.GLYPH_PLAY .. " Play")
-            ptestBtn:SetBackdropColor(NS.unpack(T.TOGGLE_OFF))
-        end
+        ptestBtnText:SetText(NS.GLYPH_PLAY .. " Preview")
 
         ptestBtn:SetScript("OnClick", function()
-            if particleTestTicker then
-                StopParticlePreview()
-            else
-                local style = NS.db[animKey .. "ParticleStyle"] or "Confetti"
-                local palette = NS.db[animKey .. "ParticlePalette"] or "Confetti"
-                if NS.mainButton and style ~= "None" then
-                    NS.FireParticleBurst(NS.mainButton, style, palette)
-                end
-                local pGcdG = (NS.db.gcdDuration or 1.9) / 1.9
-                particleTestTicker = NS.C_Timer_NewTicker(1.2 * pGcdG, function()
-                    local s = NS.db[animKey .. "ParticleStyle"] or "Confetti"
-                    local p = NS.db[animKey .. "ParticlePalette"] or "Confetti"
-                    if NS.mainButton and s ~= "None" then
-                        NS.FireParticleBurst(NS.mainButton, s, p)
-                    end
-                end)
-                ptestBtnText:SetText(NS.GLYPH_STOP .. " Stop")
-                ptestBtn:SetBackdropColor(T.TOGGLE_ON[1], T.TOGGLE_ON[2], T.TOGGLE_ON[3], 0.6)
+            local style = NS.db[animKey .. "ParticleStyle"] or "Confetti"
+            local palette = NS.db[animKey .. "ParticlePalette"] or "Confetti"
+            if NS.mainButton and style ~= "None" then
+                NS.FireParticleBurst(NS.mainButton, style, palette)
             end
         end)
         ptestBtn:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(T.ACCENT_DIM)) end)
@@ -1662,35 +1886,18 @@ function NS.Config:Create()
     y = y - particleContainerH - 4
 
     -- Rebuild particle controls when animation dropdown changes
-    animRow:HookScript("OnHide", function() end)  -- placeholder
-    -- Hook the animation dropdown's onChange to rebuild particles
-    local origAnimOnClick = animRow.btn:GetScript("OnClick")
-    -- We re-trigger build after any dropdown selection via a small timer
+    -- Particle controls have different heights. Rebuild the layout once so
+    -- every following font section moves too, preserving the visible gutter.
     local particleRebuildTimer = nil
-    local function ScheduleParticleRebuild()
+    ScheduleParticleRebuild = function()
         if particleRebuildTimer then return end
-        particleRebuildTimer = NS.C_Timer_After(0.1, function()
+        particleRebuildTimer = true
+        NS.C_Timer_After(0.1, function()
             particleRebuildTimer = nil
-            local oldH = particleContainerH
-            BuildParticleControls()
-            local delta = particleContainerH - oldH
-            if delta ~= 0 then
-                y = y - delta
-                c._contentH = (c._contentH or 0) + delta
-                c:SetHeight(c._contentH)
-            end
+            rebuildPanel()
         end)
     end
-    -- Monitor the castAnimation DB key for changes
-    c:SetScript("OnShow", function()
-        c._lastAnim = NS.db.castAnimation
-    end)
-    c:HookScript("OnUpdate", function()
-        if c._lastAnim ~= NS.db.castAnimation then
-            c._lastAnim = NS.db.castAnimation
-            ScheduleParticleRebuild()
-        end
-    end)
+    end -- Classic feedback controls
 
     -- Sub-header: FONTS
     do
@@ -1946,6 +2153,8 @@ function NS.Config:Create()
         NS.ApplyButtonSettings()
     end)
     y = y - 38
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
     end -- do (Section 2)
@@ -1954,6 +2163,19 @@ function NS.Config:Create()
     c = contentFrames[3]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
+    local styleHdr = CreateSubHeader(c, "BUTTON STYLE", y)
+    CreateDefaultBtn(c, styleHdr, {"buttonStyle"})
+    y = y - 18
+    local styleRow = NS.CreateOptionsDropdown(c, "Button Style", "buttonStyle", {"Soft", "Classic"}, y, function()
+        NS.ApplyButtonSettings()
+    end)
+    NS.AddTooltip(styleRow, "Button Style", {
+        V .. "Soft" .. R .. " uses BetterSBA's native rounded treatment.",
+        V .. "Classic" .. R .. "keeps the prior button and Masque appearance.",
+    }, c)
+    y = y - 46
+
     local btnHdr = CreateSubHeader(c, "BUTTON LAYOUT", y)
     CreateDefaultBtn(c, btnHdr, {
         "buttonSize", "scale", "showKeybind", "showCooldown", "rangeColoring",
@@ -2065,7 +2287,102 @@ function NS.Config:Create()
             NS.mainButton.bg:SetColorTexture(col[1], col[2], col[3], col[4] or 0.6)
         end
     end)
-    y = y - 20
+    y = y - 30
+
+    local function RefreshAnimCloneHotkeyStyle()
+        if NS.RefreshAnimHotkeys then NS.RefreshAnimHotkeys() end
+    end
+
+    local cloneHdr = CreateSubHeader(c, "ACTIVE ANIMATION CLONE", y)
+    CreateDefaultBtn(c, cloneHdr, {
+        "animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX",
+        "animCloneKeybindOffsetY", "animCloneKeybindFont",
+        "animCloneKeybindOutline", "animCloneKeybindFontSize",
+    })
+    y = y - 18
+
+    local animMasque = NS.CreateToggle(c, "Masque Skin Animated Clone", "animCloneMasque", y, function()
+        if NS.ResetAnimClonePool then NS.ResetAnimClonePool() end
+    end)
+    NS.AddTooltip(animMasque, "Masque Skin Animated Clone", {
+        "When " .. V .. "enabled" .. R .. ", the " .. U .. "animation clone" .. R .. " uses",
+        "the " .. V .. "Animated Button" .. R .. " Masque group skin.",
+        " ",
+        "When " .. W .. "disabled" .. R .. ", only the " .. U .. "clone" .. R .. " falls back",
+        "to BetterSBA's own border/icon layout.",
+        " ",
+        "The " .. U .. "Active Display" .. R .. " still uses Masque normally.",
+    }, c)
+    y = y - 32
+
+    local animBindRow = NS.CreateAnimCloneReapplyKeyControl(c, y, contentW - 28)
+    NS.AddTooltip(animBindRow.btn, "Reapply Clone Hotkey", {
+        "Sets a debug key that re-applies the " .. U .. "animated clone" .. R .. " keybind text",
+        "font, text, and X/Y anchor while the clone is visible.",
+        " ",
+        "Uses the cached spell keybind table only.",
+        "Does " .. W .. "not" .. R .. " change the secure " .. U .. "SBA" .. R .. " binding.",
+        " ",
+        "This uses an override binding while set, so pick a spare combo.",
+    }, c)
+    y = y - 46
+
+    local cloneHalfW = math.floor((contentW - 28 - 6) / 2)
+    local cloneKbX = NS.CreateSlider(c, "Clone Keybind X", "animCloneKeybindOffsetX", -20, 20, 1, y, function()
+        RefreshAnimCloneHotkeyStyle()
+    end)
+    cloneKbX:SetSize(cloneHalfW, 32)
+    NS.AddTooltip(cloneKbX, "Animated Clone Keybind X Offset", {
+        "Horizontal adjustment applied to the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "animated clone" .. R .. " only.",
+        " ",
+        "This is added on top of the " .. U .. "Active Display" .. R .. " keybind X offset.",
+    }, c)
+    local cloneKbY = NS.CreateSlider(c, "Clone Keybind Y", "animCloneKeybindOffsetY", -20, 20, 1, y, function()
+        RefreshAnimCloneHotkeyStyle()
+    end)
+    cloneKbY:SetSize(cloneHalfW, 32)
+    cloneKbY:ClearAllPoints()
+    cloneKbY:SetPoint("TOPLEFT", cloneKbX, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(cloneKbY, "Animated Clone Keybind Y Offset", {
+        "Vertical adjustment applied to the " .. K .. "keybind" .. R .. " text",
+        "on the " .. U .. "animated clone" .. R .. " only.",
+        " ",
+        "This is added on top of the " .. U .. "Active Display" .. R .. " keybind Y offset.",
+    }, c)
+    y = y - 38
+
+    local cloneFontRowW = contentW - 28
+    local cloneFontW = math.floor(cloneFontRowW * 0.46)
+    local cloneOutlineW = math.floor(cloneFontRowW * 0.26)
+    local cloneSizeW = cloneFontRowW - cloneFontW - cloneOutlineW - 12
+
+    local cloneFontRow = NS.CreateFontDropdown(c, "Clone Font", "animCloneKeybindFont", y, RefreshAnimCloneHotkeyStyle, cloneFontW)
+    NS.AddTooltip(cloneFontRow, "Animated Clone Keybind Font", {
+        "Font used by the " .. U .. "animated clone" .. R .. " keybind text.",
+        " ",
+        "This only changes the virtual clone, not the main display.",
+    }, c)
+
+    local cloneOutRow = NS.CreateDropdown(c, "Clone Outline", "animCloneKeybindOutline",
+        NS.FONT_OUTLINE_OPTIONS, y, RefreshAnimCloneHotkeyStyle, cloneOutlineW)
+    cloneOutRow:ClearAllPoints()
+    cloneOutRow:SetPoint("TOPLEFT", cloneFontRow, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(cloneOutRow, "Animated Clone Keybind Outline", {
+        "Outline style for the " .. U .. "animated clone" .. R .. " keybind text.",
+    }, c)
+
+    local cloneSizeRow = NS.CreateSlider(c, "Clone Size", "animCloneKeybindFontSize", 6, 24, 1, y, RefreshAnimCloneHotkeyStyle)
+    cloneSizeRow:SetSize(cloneSizeW, 32)
+    cloneSizeRow:ClearAllPoints()
+    cloneSizeRow:SetPoint("TOPLEFT", cloneOutRow, "TOPRIGHT", 6, 0)
+    NS.AddTooltip(cloneSizeRow, "Animated Clone Keybind Size", {
+        "Font size for the " .. U .. "animated clone" .. R .. " keybind text.",
+    }, c)
+    y = y - 46
+
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
     end -- do (Section 3)
@@ -2074,6 +2391,7 @@ function NS.Config:Create()
     c = contentFrames[4]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
     local pdHdr = CreateSubHeader(c, "DISPLAY OPTIONS", y)
     CreateDefaultBtn(c, pdHdr, {
         "showPriority", "priorityIconSize", "prioritySpacing", "priorityPosition",
@@ -2354,14 +2672,25 @@ function NS.Config:Create()
     borderSwatch:SetPoint("TOPLEFT", bgSwatch, "TOPRIGHT", 6, 0)
     y = y - 24
 
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
     end -- do (Section 4)
 
-    -- 5. VISIBILITY (4 options)
+    -- 5. TALENT BUILDS
     c = contentFrames[5]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
+    NS.BuildTalentBuildsConfigSection(c)
+    end -- do (Section 5)
+
+    -- 6. VISIBILITY (4 options)
+    c = contentFrames[6]
+    y = -6
+    do
+    local c, y = c, y -- Keep callbacks bound to this section.
     local visHdr = CreateSubHeader(c, "COMBAT STATE", y)
     CreateDefaultBtn(c, visHdr, {"onlyInCombat", "alphaCombat", "alphaOOC", "hideInVehicle"})
     y = y - 18
@@ -2400,14 +2729,17 @@ function NS.Config:Create()
         "Range: " .. N .. "0" .. R .. " (invisible) to " .. N .. "1" .. R .. " (fully opaque).",
     }, c)
     y = y - 38
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
-    end -- do (Section 5)
+    end -- do (Section 6)
 
-    -- 6. IMPORTANCE BORDERS (6 options)
-    c = contentFrames[6]
+    -- 7. IMPORTANCE BORDERS (6 options)
+    c = contentFrames[7]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
     local impHdr = CreateSubHeader(c, "PRIORITY IMPORTANCE COLORS", y)
     CreateDefaultBtn(c, impHdr, {
         "importanceBorders", "importColorAutoAttack", "importColorFiller",
@@ -2470,7 +2802,8 @@ function NS.Config:Create()
         subHeaderLines[#subHeaderLines + 1] = line
         CreateDefaultBtn(c, secHeader, {
             "sectionColorCombat", "sectionColorAppearance", "sectionColorActive", "sectionColorPriority",
-            "sectionColorVisibility", "sectionColorImportance", "sectionColorAdvanced", "sectionColorProfiles",
+            "sectionColorTalentBuilds", "sectionColorVisibility", "sectionColorImportance",
+            "sectionColorAdvanced", "sectionColorProfiles",
         })
     end
     y = y - 18
@@ -2492,41 +2825,49 @@ function NS.Config:Create()
     local s3 = NS.CreateColorSwatchWithTooltip(c, "Active Display", "sectionColorActive", y, nil,
         "Active Display", { reloadNote })
     s3:SetSize(secHalfW, 20)
-    local s4 = NS.CreateColorSwatchWithTooltip(c, "Priority Display", "sectionColorPriority", y, nil,
-        "Priority Display", { reloadNote })
+    local s4 = NS.CreateColorSwatchWithTooltip(c, "Talent Builds", "sectionColorTalentBuilds", y, nil,
+        "Talent Builds", { reloadNote })
     s4:SetSize(secHalfW, 20)
     s4:ClearAllPoints()
     s4:SetPoint("TOPLEFT", s3, "TOPRIGHT", 6, 0)
     y = y - 24
 
-    local s5 = NS.CreateColorSwatchWithTooltip(c, "Visibility", "sectionColorVisibility", y, nil,
-        "Visibility", { reloadNote })
+    local s5 = NS.CreateColorSwatchWithTooltip(c, "Priority Display", "sectionColorPriority", y, nil,
+        "Priority Display", { reloadNote })
     s5:SetSize(secHalfW, 20)
-    local s6 = NS.CreateColorSwatchWithTooltip(c, "Importance", "sectionColorImportance", y, nil,
-        "Importance", { reloadNote })
+    local s6 = NS.CreateColorSwatchWithTooltip(c, "Visibility", "sectionColorVisibility", y, nil,
+        "Visibility", { reloadNote })
     s6:SetSize(secHalfW, 20)
     s6:ClearAllPoints()
     s6:SetPoint("TOPLEFT", s5, "TOPRIGHT", 6, 0)
     y = y - 24
 
-    local s7 = NS.CreateColorSwatchWithTooltip(c, "Advanced", "sectionColorAdvanced", y, nil,
-        "Advanced", { reloadNote })
+    local s7 = NS.CreateColorSwatchWithTooltip(c, "Importance", "sectionColorImportance", y, nil,
+        "Importance", { reloadNote })
     s7:SetSize(secHalfW, 20)
-    local s8 = NS.CreateColorSwatchWithTooltip(c, "Profiles", "sectionColorProfiles", y, nil,
-        "Profiles", { reloadNote })
+    local s8 = NS.CreateColorSwatchWithTooltip(c, "Advanced", "sectionColorAdvanced", y, nil,
+        "Advanced", { reloadNote })
     s8:SetSize(secHalfW, 20)
     s8:ClearAllPoints()
     s8:SetPoint("TOPLEFT", s7, "TOPRIGHT", 6, 0)
+    y = y - 24
+
+    local s9 = NS.CreateColorSwatchWithTooltip(c, "Profiles", "sectionColorProfiles", y, nil,
+        "Profiles", { reloadNote })
+    s9:SetSize(secHalfW, 20)
     y = y - 20
 
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
-    end -- do (Section 6)
+    end -- do (Section 7)
 
-    -- 7. ADVANCED
-    c = contentFrames[7]
+    -- 8. ADVANCED
+    c = contentFrames[8]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
     local genHdr = CreateSubHeader(c, "GENERAL", y)
     CreateDefaultBtn(c, genHdr, {"modifierScaling", "locked"})
     y = y - 18
@@ -2636,48 +2977,17 @@ function NS.Config:Create()
         gcLine:SetPoint("TOPLEFT", gcHdr, "BOTTOMLEFT", 0, -3)
         gcLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = gcLine
-        CreateDefaultBtn(c, gcHdr, {"enableGC", "gcTargetMB"})
     end
     y = y - 18
 
     local gcNote = c:CreateFontString(nil, "OVERLAY")
-    gcNote:SetFont(NS.GetConfigFontPath(), 7, NS.GetConfigFontOutline())
+    gcNote:SetFont(NS.GetConfigFontPath(), 9, NS.GetConfigFontOutline())
     gcNote:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
     gcNote:SetPoint("RIGHT", c, "RIGHT", -14, 0)
     gcNote:SetJustifyH("LEFT")
     gcNote:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
-    gcNote:SetText("Tunes Lua's built-in incremental GC to be more aggressive. Work is spread across allocations — no timer spikes or freezes. Off by default.")
-    y = y - 22
-
-    local gcToggle = NS.CreateToggle(c, "Enable GC Tuning", "enableGC", y, function(on)
-        if on then NS.StartGCTicker() else NS.StopGCTicker() end
-    end)
-    NS.AddTooltip(gcToggle, "Enable GC Tuning", {
-        "Tune Lua's " .. V .. "incremental garbage collector" .. R .. ".",
-        " ",
-        "When " .. V .. "enabled" .. R .. ", adjusts " .. K .. "setpause" .. R,
-        "and " .. K .. "setstepmul" .. R .. " so the collector runs",
-        "more aggressively, keeping memory tighter.",
-        " ",
-        "This spreads GC work across allocations — no",
-        "timer-based spikes or frame freezes.",
-    }, c)
-    y = y - 24
-
-    local gcTarget = NS.CreateSlider(c, "Target MB", "gcTargetMB", 0, 10, 0.5, y, function()
-        NS.StopGCTicker()
-        NS.StartGCTicker()
-    end)
-    NS.AddTooltip(gcTarget, "Target Memory (MB)", {
-        "Controls how aggressively the GC runs.",
-        " ",
-        N .. "Lower" .. R .. " = tighter memory, more GC work per allocation.",
-        N .. "Higher" .. R .. " = relaxed, less GC overhead.",
-        " ",
-        "Set to " .. N .. "0" .. R .. " for moderate defaults.",
-        "Recommended: " .. N .. "2" .. R .. " to " .. N .. "4" .. R .. " MB.",
-    }, c)
-    y = y - 44
+    gcNote:SetText("Memory is managed by World of Warcraft automatically. BetterSBA does not change the shared Lua garbage collector.")
+    y = y - 30
 
     -- Sub-header: THEME
     do
@@ -3281,16 +3591,19 @@ function NS.Config:Create()
         if perfTicker then perfTicker:Cancel() perfTicker = nil end
     end)
 
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
-    end -- do (Section 7)
+    end -- do (Section 8)
 
     ----------------------------------------------------------------
-    -- Section 8: Profiles (wrapped in do...end to limit locals)
+    -- Section 9: Profiles (wrapped in do...end to limit locals)
     ----------------------------------------------------------------
-    c = contentFrames[8]
+    c = contentFrames[9]
     y = -6
     do
+    local c, y = c, y -- Keep callbacks bound to this section.
     local profHdr = CreateSubHeader(c, "PROFILE MANAGEMENT", y)
     y = y - 18
 
@@ -3468,14 +3781,29 @@ function NS.Config:Create()
     -- Delete Profile button
     local delProfBtn = MakeProfileButton(c, "Delete", 14 + profBtnW + 50, y - 16, 42, function()
         local current = NS:GetActiveProfileName()
+        local replacement
+        for _, name in NS.ipairs(NS:GetProfileList()) do
+            if name ~= current then
+                replacement = name
+                break
+            end
+        end
+        if not replacement then
+            print("|cFF66B8D9BetterSBA|r: |cFFFF4444Cannot delete last profile|r")
+            return
+        end
+
+        local switched, switchErr = NS:SwitchProfile(replacement)
+        if not switched then
+            print("|cFF66B8D9BetterSBA|r: |cFFFF4444" .. (switchErr or "Could not switch profile") .. "|r")
+            return
+        end
+
         local ok, err = NS:DeleteProfile(current)
         if ok then
             print("|cFF66B8D9BetterSBA|r: Deleted profile |cFFFFCC00" .. current .. "|r")
-            -- Switch to first available
-            local first = NS:GetProfileList()[1]
-            if first then NS:SwitchProfile(first) end
             -- Rebuild panel
-            NS._restoreSection = 8
+            NS._restoreSection = 9
             NS.Config.frame:SetAlpha(0)
             NS.Config.frame:Hide()
             NS.Config.frame = nil
@@ -3491,7 +3819,7 @@ function NS.Config:Create()
         W .. "Deletes" .. R .. " the currently active profile.",
         " ",
         "Cannot delete the " .. V .. "last remaining" .. R .. " profile.",
-        "Cannot delete the profile you are " .. V .. "using" .. R .. ".",
+        "Switches to another available profile first.",
     }, c)
 
     y = y - 52
@@ -3545,7 +3873,7 @@ function NS.Config:Create()
             print("|cFF66B8D9BetterSBA|r: Character bound to |cFFFFCC00" .. NS:GetActiveProfileName() .. "|r")
         end
         -- Rebuild to update button text / status
-        NS._restoreSection = 8
+        NS._restoreSection = 9
         NS.Config.frame:SetAlpha(0)
         NS.Config.frame:Hide()
         NS.Config.frame = nil
@@ -3702,7 +4030,7 @@ function NS.Config:Create()
         if ok then
             print("|cFF66B8D9BetterSBA|r: Copied settings from |cFFFFCC00" .. selectedCopySource .. "|r")
             -- Rebuild panel
-            NS._restoreSection = 8
+            NS._restoreSection = 9
             NS.Config.frame:SetAlpha(0)
             NS.Config.frame:Hide()
             NS.Config.frame = nil
@@ -3727,7 +4055,7 @@ function NS.Config:Create()
         local ok, err = NS:ResetProfile()
         if ok then
             print("|cFF66B8D9BetterSBA|r: Profile reset to defaults")
-            NS._restoreSection = 8
+            NS._restoreSection = 9
             NS.Config.frame:SetAlpha(0)
             NS.Config.frame:Hide()
             NS.Config.frame = nil
@@ -3747,6 +4075,8 @@ function NS.Config:Create()
     }, c)
     y = y - 30
 
+    CreateSectionEndDivider(c, y)
+    y = y - 12
     c._contentH = math.abs(y)
     c:SetHeight(c._contentH)
 
@@ -3770,20 +4100,23 @@ function NS.Config:Create()
         { label = "Click Interception", section = 1 },
         { label = "Keybind Interception", section = 1 },
         { label = "Macro Preview", section = 1 },
+        { label = "Trinkets", section = 1 },
+        { label = "Trinket Use", section = 1 },
         { label = "Appearance", section = 2, isSection = true },
+        { label = "Motion Feedback", section = 2 },
+        { label = "Cast Feedback", section = 2 },
+        { label = "Motion Preset", section = 2 },
+        { label = "Motion Duration", section = 2 },
+        { label = "Motion Intensity", section = 2 },
+        { label = "Reduced Motion", section = 2 },
+        { label = "Motion Preview", section = 2 },
+        { label = "Classic Animation", section = 2 },
         { label = "Cast Animation", section = 2 },
         { label = "Animation Style", section = 2 },
         { label = "Pop Animation", section = 2 },
         { label = "Animation Preview", section = 2 },
         { label = "Incoming Animation", section = 2 },
         { label = "Hide Button During Animation", section = 2 },
-        { label = "Masque Skin Animated Clone", section = 2 },
-        { label = "Reapply Clone Hotkey", section = 2 },
-        { label = "Clone Keybind X", section = 2 },
-        { label = "Clone Keybind Y", section = 2 },
-        { label = "Clone Font", section = 2 },
-        { label = "Clone Outline", section = 2 },
-        { label = "Clone Size", section = 2 },
         { label = "GCD Duration", section = 2 },
         { label = "Scan Line", section = 2 },
         { label = "Orbiting Dots", section = 2 },
@@ -3812,6 +4145,7 @@ function NS.Config:Create()
         { label = "Priority Label Font Size", section = 2 },
         { label = "Priority Label Override", section = 2 },
         { label = "Active Display", section = 3, isSection = true },
+        { label = "Button Style", section = 3 },
         { label = "Button Size", section = 3 },
         { label = "Show Keybind", section = 3 },
         { label = "Keybind Anchor", section = 3 },
@@ -3823,6 +4157,14 @@ function NS.Config:Create()
         { label = "Out-of-Range Sound", section = 3 },
         { label = "Spell Usability", section = 3 },
         { label = "Button Background", section = 3 },
+        { label = "Active Animation Clone", section = 3 },
+        { label = "Masque Skin Animated Clone", section = 3 },
+        { label = "Reapply Clone Hotkey", section = 3 },
+        { label = "Clone Keybind X", section = 3 },
+        { label = "Clone Keybind Y", section = 3 },
+        { label = "Clone Font", section = 3 },
+        { label = "Clone Outline", section = 3 },
+        { label = "Clone Size", section = 3 },
         { label = "Priority Display", section = 4, isSection = true },
         { label = "Show Priority Display", section = 4 },
         { label = "Active Spell Glow", section = 4 },
@@ -3845,54 +4187,64 @@ function NS.Config:Create()
         { label = "Priority Border", section = 4 },
         { label = "Label X Offset", section = 4 },
         { label = "Label Y Offset", section = 4 },
-        { label = "Visibility", section = 5, isSection = true },
-        { label = "Combat Only", section = 5 },
-        { label = "Hide In Vehicle", section = 5 },
-        { label = "Button Out-of-Combat Alpha", section = 5 },
-        { label = "Priority Out-of-Combat Alpha", section = 5 },
-        { label = "Importance", section = 6, isSection = true },
-        { label = "Importance Borders", section = 6 },
-        { label = "Auto Attack Color", section = 6 },
-        { label = "Filler Color", section = 6 },
-        { label = "Short Cooldown Color", section = 6 },
-        { label = "Long Cooldown Color", section = 6 },
-        { label = "Major Cooldown Color", section = 6 },
-        { label = "Section Theme Colors", section = 6 },
-        { label = "Combat Assist Color", section = 6 },
-        { label = "Appearance Color", section = 6 },
-        { label = "Active Display Color", section = 6 },
-        { label = "Priority Display Color", section = 6 },
-        { label = "Visibility Color", section = 6 },
-        { label = "Importance Color", section = 6 },
-        { label = "Advanced Color", section = 6 },
-        { label = "Profiles Color", section = 6 },
-        { label = "Advanced", section = 7, isSection = true },
-        { label = "Garbage Collection", section = 7 },
-        { label = "GC Steps", section = 7 },
-        { label = "Target MB", section = 7 },
-        { label = "Target Memory", section = 7 },
-        { label = "Modifier Scaling", section = 7 },
-        { label = "Lock Position", section = 7 },
-        { label = "Debug", section = 7 },
-        { label = "Debug Mode", section = 7 },
-        { label = "Spell Updates", section = 7 },
-        { label = "Animate Clone", section = 7 },
-        { label = "Other", section = 7 },
-        { label = "Color Theme", section = 7 },
-        { label = "Theme", section = 7 },
-        { label = "LDB / Minimap Options", section = 7 },
-        { label = "Show Minimap Button", section = 7 },
-        { label = "LDB Status Text", section = 7 },
-        { label = "Performance", section = 7 },
-        { label = "Memory Usage", section = 7 },
-        { label = "Health", section = 7 },
-        { label = "Profiles", section = 8, isSection = true },
-        { label = "Active Profile", section = 8 },
-        { label = "New Profile", section = 8 },
-        { label = "Delete Profile", section = 8 },
-        { label = "Character Binding", section = 8 },
-        { label = "Copy Settings From", section = 8 },
-        { label = "Reset to Defaults", section = 8 },
+        { label = "Talent Builds", section = 5, isSection = true },
+        { label = "Search Builds", section = 5 },
+        { label = "ALL", section = 5 },
+        { label = "BUILT-IN", section = 5 },
+        { label = "USER", section = 5 },
+        { label = "APPLY", section = 5 },
+        { label = "LOAD ANYWAY", section = 5 },
+        { label = "CREATE", section = 5 },
+        { label = "EDIT", section = 5 },
+        { label = "DELETE", section = 5 },
+        { label = "COPY", section = 5 },
+        { label = "VIEW SOURCE", section = 5 },
+        { label = "Visibility", section = 6, isSection = true },
+        { label = "Combat Only", section = 6 },
+        { label = "Hide In Vehicle", section = 6 },
+        { label = "Button Out-of-Combat Alpha", section = 6 },
+        { label = "Priority Out-of-Combat Alpha", section = 6 },
+        { label = "Importance", section = 7, isSection = true },
+        { label = "Importance Borders", section = 7 },
+        { label = "Auto Attack Color", section = 7 },
+        { label = "Filler Color", section = 7 },
+        { label = "Short Cooldown Color", section = 7 },
+        { label = "Long Cooldown Color", section = 7 },
+        { label = "Major Cooldown Color", section = 7 },
+        { label = "Section Theme Colors", section = 7 },
+        { label = "Combat Assist Color", section = 7 },
+        { label = "Appearance Color", section = 7 },
+        { label = "Active Display Color", section = 7 },
+        { label = "Talent Builds Color", section = 7 },
+        { label = "Priority Display Color", section = 7 },
+        { label = "Visibility Color", section = 7 },
+        { label = "Importance Color", section = 7 },
+        { label = "Advanced Color", section = 7 },
+        { label = "Profiles Color", section = 7 },
+        { label = "Advanced", section = 8, isSection = true },
+        { label = "Garbage Collection", section = 8 },
+        { label = "Modifier Scaling", section = 8 },
+        { label = "Lock Position", section = 8 },
+        { label = "Debug", section = 8 },
+        { label = "Debug Mode", section = 8 },
+        { label = "Spell Updates", section = 8 },
+        { label = "Animate Clone", section = 8 },
+        { label = "Other", section = 8 },
+        { label = "Color Theme", section = 8 },
+        { label = "Theme", section = 8 },
+        { label = "LDB / Minimap Options", section = 8 },
+        { label = "Show Minimap Button", section = 8 },
+        { label = "LDB Status Text", section = 8 },
+        { label = "Performance", section = 8 },
+        { label = "Memory Usage", section = 8 },
+        { label = "Health", section = 8 },
+        { label = "Profiles", section = 9, isSection = true },
+        { label = "Active Profile", section = 9 },
+        { label = "New Profile", section = 9 },
+        { label = "Delete Profile", section = 9 },
+        { label = "Character Binding", section = 9 },
+        { label = "Copy Settings From", section = 9 },
+        { label = "Reset to Defaults", section = 9 },
     }
 
     -- Search results frame (shown in right panel during search)
@@ -3968,7 +4320,7 @@ function NS.Config:Create()
     local highlightPulseTime = 0
     local highlightedHeader = nil
     local headerHighlightStart = 0
-    local highlightFrame = NS.CreateFrame("Frame")
+    local highlightFrame = NS.CreateFrame("Frame", nil, f)
     highlightFrame:SetScript("OnUpdate", function(self, elapsed)
         local running = false
         if searchHighlight:IsShown() then
@@ -4115,7 +4467,7 @@ function NS.Config:Create()
 
     local fadingContent = nil
     local fadeStartTime = 0
-    local fadeFrame = NS.CreateFrame("Frame")
+    local fadeFrame = NS.CreateFrame("Frame", nil, f)
     fadeFrame:SetScript("OnUpdate", function(self)
         if not fadingContent then
             self:Hide()
@@ -4176,11 +4528,24 @@ function NS.Config:Create()
         btn._childIndex = childIndex
 
         btn:SetScript("OnClick", function(self)
-            local subs = contentFrames[self._sectionIndex] and contentFrames[self._sectionIndex]._subsections
+            local cf = contentFrames[self._sectionIndex]
+            local subs = cf and cf._subsections
             local sub = subs and subs[self._childIndex]
             if not sub then return end
             activeSubsection = sub.label
             SelectSection(self._sectionIndex, true)
+            if sub.kind == "page" or sub.onSelect or (cf and cf._onSubsectionSelected) then
+                if sub.onSelect then
+                    sub.onSelect(sub, cf)
+                elseif cf and cf._onSubsectionSelected then
+                    cf._onSubsectionSelected(sub.label, sub)
+                end
+                scrollChild:SetHeight(cf._contentH or 100)
+                scrollFrame:SetVerticalScroll(0)
+                UpdateScrollbar()
+                RefreshSidebarLayout(true)
+                return
+            end
             local cf = contentFrames[self._sectionIndex]
             local viewH = scrollFrame:GetHeight()
             local maxScroll = math.max(0, (cf._contentH or 100) - viewH)
@@ -4362,6 +4727,32 @@ function NS.Config:Create()
         NS._activeSection = idx
 
         local cf = contentFrames[idx]
+        if cf and cf._subsections and #cf._subsections > 0 then
+            local targetSub
+            if activeSubsection then
+                for i = 1, #cf._subsections do
+                    if cf._subsections[i].label == activeSubsection then
+                        targetSub = cf._subsections[i]
+                        break
+                    end
+                end
+            end
+            if not targetSub then
+                local firstSub = cf._subsections[1]
+                if firstSub and (firstSub.kind == "page" or firstSub.onSelect or cf._onSubsectionSelected) then
+                    targetSub = firstSub
+                    activeSubsection = firstSub.label
+                end
+            end
+            if targetSub and (targetSub.kind == "page" or targetSub.onSelect or cf._onSubsectionSelected) then
+                if targetSub.onSelect then
+                    targetSub.onSelect(targetSub, cf)
+                elseif cf._onSubsectionSelected then
+                    cf._onSubsectionSelected(targetSub.label, targetSub)
+                end
+            end
+        end
+        ApplySectionWindowSize(idx)
         scrollChild:SetHeight(cf._contentH or 100)
         if NS._restoreScroll then
             scrollFrame:SetVerticalScroll(NS._restoreScroll)
@@ -4378,6 +4769,10 @@ function NS.Config:Create()
             fadeFrame:Show()
         else
             cf:SetAlpha(1)
+        end
+
+        if cf._refresh then
+            cf._refresh()
         end
 
         local dc = SECTIONS[idx].dotColor
@@ -4474,6 +4869,7 @@ function NS.Config:Create()
             if searchMode then
                 searchMode = false
                 searchResultsFrame:Hide()
+                ApplySectionWindowSize(activeSection)
                 contentFrames[activeSection]:Show()
                 local sec = SECTIONS[activeSection]
                 sectionTitle:SetText(sec.label:upper())
@@ -4490,6 +4886,8 @@ function NS.Config:Create()
             contentFrames[activeSection]:Hide()
             searchMode = true
         end
+
+        ApplySectionWindowSize(nil)
 
         sectionTitle:SetText("SEARCH")
         sectionTitle:SetTextColor(NS.unpack(T.TEXT_DIM))
@@ -4696,13 +5094,18 @@ function NS.Config:Create()
     f:HookScript("OnHide", function()
         searchBox:SetText("")
         searchBox:ClearFocus()
+        DismissSearchHighlight()
+        fadingContent = nil
+        fadeFrame:Hide()
+        animFrame:Hide()
+        indicatorCurrentY = indicatorTargetY
     end)
 
     ----------------------------------------------------------------
     -- Animations (indicator slide)
     -- Only runs while the indicator is actively sliding, then stops.
     ----------------------------------------------------------------
-    animFrame = NS.CreateFrame("Frame")
+    animFrame = NS.CreateFrame("Frame", nil, f)
     animFrame:SetScript("OnUpdate", function(self, elapsed)
         local diff = indicatorTargetY - indicatorCurrentY
         if math.abs(diff) > 0.3 then

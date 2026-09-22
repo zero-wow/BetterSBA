@@ -91,6 +91,11 @@ function NS.IsSpec(specName)
     return classToken == entry[1] and GetSpecialization() == entry[2]
 end
 
+function NS.IsClass(classToken)
+    local _, playerClassToken = UnitClass("player")
+    return playerClassToken == classToken
+end
+
 -- Classes that have permanent or frequently-summoned combat pets.
 -- /petattack is a no-op on other classes, so hide the option entirely.
 local PET_CLASSES = { HUNTER = true, WARLOCK = true, DEATHKNIGHT = true }
@@ -155,9 +160,14 @@ end
 local cdCache = {}
 local cdCacheDirty = true   -- start dirty so first tick queries
 local cdRefreshGen = {}     -- tracks which updateGeneration refreshed each spell
+local durationCache = {}    -- [spellID] = LuaDurationObject or CACHE_NIL
+local durationCacheDirty = true
+local durationRefreshGen = {}
 
 -- Clean (untainted) references captured at file load time
 local _GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
+local _GetSpellCooldownDuration = C_Spell and C_Spell.GetSpellCooldownDuration
+local _GetSpellChargeDuration = C_Spell and C_Spell.GetSpellChargeDuration
 local _IsPlayerSpell = IsPlayerSpell
 
 -- Reusable table pool: instead of storing the API's new table
@@ -174,32 +184,6 @@ end
 
 function NS.GetCooldownCached(spellID)
     if not _GetSpellCooldown then return nil end
-
-    -- Virtual cooldown path: if seeded, use virtual data for rotation spells
-    if virtualCDSeeded then
-        local vcd = virtualCD[spellID]
-        if vcd then
-            local now = GetTime()
-            if (vcd.startTime + vcd.duration) > now then
-                -- Still on CD â€” return virtual data in the same shape as API
-                local cached = cdCache[spellID]
-                if cached and cached ~= CACHE_NIL then
-                    cached.startTime = vcd.startTime
-                    cached.duration = vcd.duration
-                    cached.isEnabled = 1
-                    cached.modRate = 1
-                    return cached
-                end
-                -- Create a new entry
-                local entry = { startTime = vcd.startTime, duration = vcd.duration, isEnabled = 1, modRate = 1 }
-                cdCache[spellID] = entry
-                return entry
-            else
-                -- Virtual entry expired â€” remove it
-                virtualCD[spellID] = nil
-            end
-        end
-    end
 
     local cached = cdCache[spellID]
 
@@ -233,143 +217,65 @@ function NS.GetCooldownCached(spellID)
     return nil
 end
 
+-- Native cooldown widgets consume LuaDurationObject handles, not the
+-- SpellCooldownInfo tables returned by GetSpellCooldown. Charge recharge is
+-- queried first because it is the active timer for a charge-based spell.
+function NS.GetCooldownDurationCached(spellID)
+    if not spellID then return nil end
+
+    local cached = durationCache[spellID]
+    if not durationCacheDirty and cached then
+        if cached == CACHE_NIL then return nil end
+        return cached
+    end
+    if durationCacheDirty and cached and durationRefreshGen[spellID] == updateGeneration then
+        if cached == CACHE_NIL then return nil end
+        return cached
+    end
+
+    local duration
+    if _GetSpellChargeDuration then
+        local ok, value = pcall(_GetSpellChargeDuration, spellID)
+        if ok then duration = value end
+    end
+    if not duration and _GetSpellCooldownDuration then
+        local ok, value = pcall(_GetSpellCooldownDuration, spellID, true)
+        if ok then duration = value end
+    end
+
+    durationCache[spellID] = duration or CACHE_NIL
+    durationRefreshGen[spellID] = updateGeneration
+    return duration
+end
+
 -- Called by SPELL_UPDATE_COOLDOWN event handler
 function NS.InvalidateCooldownCache()
     cdCacheDirty = true
-    -- Reconcile virtual state with API to catch cooldown reset procs
-    if virtualCDSeeded then
-        NS.ReconcileVirtualCooldowns()
-    end
+    durationCacheDirty = true
 end
 
 ----------------------------------------------------------------
--- Virtual Cooldown System: tracks cooldowns via UNIT_SPELLCAST_SUCCEEDED
--- events instead of querying GetSpellCooldown every tick.  Seeded once
--- on login (out of combat), then maintained purely from cast events +
--- base cooldown data.  Zero API calls per tick, zero table garbage.
+-- Virtual cooldown compatibility. Predicting from cast events cannot account
+-- for charges, resets, haste, or spell-specific rules, so the display only
+-- uses Blizzard's current cooldown duration object. Keep no-op hooks for the
+-- existing event lifecycle while callers migrate away from prediction.
 ----------------------------------------------------------------
-local virtualCD = {}            -- [spellID] = { startTime, duration }
-local virtualCDSeeded = false
-local virtualCDPending = false  -- true if loaded in combat, waiting for OOC
-
 function NS.IsVirtualCDReady()
-    return virtualCDSeeded
+    return false
 end
 
-function NS.SeedVirtualCooldowns()
-    if NS.InCombatLockdown() then
-        virtualCDPending = true
-        return
-    end
-    virtualCDPending = false
-
-    local spells = NS.CollectRotationSpells()
-    for i = 1, #spells do
-        local sid = spells[i]
-        if sid and sid ~= 0 and _GetSpellCooldown then
-            -- Cache base cooldown (permanent)
-            NS.GetSpellBaseCooldown(sid)
-            -- Read current cooldown state
-            local ok, cdInfo = pcall(_GetSpellCooldown, sid)
-            if ok and cdInfo then
-                local dur = tonumber(tostring(cdInfo.duration)) or 0
-                if dur > 1.5 then
-                    virtualCD[sid] = {
-                        startTime = tonumber(tostring(cdInfo.startTime)) or 0,
-                        duration = dur,
-                    }
-                else
-                    virtualCD[sid] = nil
-                end
-            end
-        end
-    end
-    virtualCDSeeded = true
-end
-
-function NS.OnSpellCastSucceeded(spellID)
-    if not virtualCDSeeded or not spellID then return end
-    local baseCD = NS.GetSpellBaseCooldown(spellID)
-    if baseCD and baseCD > 1.5 then
-        virtualCD[spellID] = {
-            startTime = GetTime(),
-            duration = baseCD,
-        }
-    end
-end
-
--- Reconcile virtual state with API on SPELL_UPDATE_COOLDOWN.
--- Only queries spells that virtual tracking thinks are on CD,
--- catching cooldown reset procs that the virtual system would miss.
-function NS.ReconcileVirtualCooldowns()
-    if not virtualCDSeeded or not _GetSpellCooldown then return end
-    local now = GetTime()
-    for sid, entry in pairs(virtualCD) do
-        -- Only reconcile entries that haven't expired yet
-        if (entry.startTime + entry.duration) > now then
-            local ok, cdInfo = pcall(_GetSpellCooldown, sid)
-            if ok and cdInfo then
-                local dur = tonumber(tostring(cdInfo.duration)) or 0
-                if dur <= 1.5 then
-                    -- API says it's ready but virtual says on CD â†’ was reset by a proc
-                    virtualCD[sid] = nil
-                else
-                    -- Update with API's values (may differ due to haste changes)
-                    entry.startTime = tonumber(tostring(cdInfo.startTime)) or entry.startTime
-                    entry.duration = dur
-                end
-            end
-        else
-            -- Expired â€” clear
-            virtualCD[sid] = nil
-        end
-    end
-end
-
-function NS.ResetVirtualCooldowns()
-    virtualCD = {}
-    virtualCDSeeded = false
-    virtualCDPending = false
-end
-
--- Deferred seeding check (called from PLAYER_REGEN_ENABLED)
-function NS.CheckPendingVirtualCD()
-    if virtualCDPending then
-        NS.SeedVirtualCooldowns()
-    end
-end
+function NS.SeedVirtualCooldowns() end
+function NS.OnSpellCastSucceeded() end
+function NS.ReconcileVirtualCooldowns() end
+function NS.ResetVirtualCooldowns() end
+function NS.CheckPendingVirtualCD() end
 
 ----------------------------------------------------------------
--- GC: tune Lua's built-in incremental collector via setpause/setstepmul.
--- This spreads GC work across allocations with zero spikes â€” no manual
--- "step" calls that freeze the VM.  Target MB controls aggressiveness:
--- lower target = tighter pause + faster stepmul.
+-- Compatibility hooks. WoW owns the shared Lua collector, so the addon must
+-- not change process-wide collector settings.
 ----------------------------------------------------------------
-local gcSavedPause, gcSavedStepMul
-function NS.StartGCTicker()
-    NS.StopGCTicker()
-    if not NS.db or not NS.db.enableGC then return end
-    local targetMB = NS.db.gcTargetMB or 0
-    if targetMB <= 0 then
-        gcSavedPause = collectgarbage("setpause", 150)
-        gcSavedStepMul = collectgarbage("setstepmul", 200)
-    else
-        local pause = math.max(100, NS.math_floor(100 + targetMB * 10))
-        local stepmul = math.max(200, NS.math_floor(600 / targetMB))
-        gcSavedPause = collectgarbage("setpause", pause)
-        gcSavedStepMul = collectgarbage("setstepmul", stepmul)
-    end
-end
-function NS.StopGCTicker()
-    if gcSavedPause then
-        collectgarbage("setpause", gcSavedPause)
-        gcSavedPause = nil
-    end
-    if gcSavedStepMul then
-        collectgarbage("setstepmul", gcSavedStepMul)
-        gcSavedStepMul = nil
-    end
-end
+function NS.StartGCTicker() end
+function NS.StopGCTicker() end
 
 function NS.BeginUpdate()
     updateGeneration = updateGeneration + 1
@@ -384,22 +290,12 @@ end
 -- the next SPELL_UPDATE_COOLDOWN event fires.
 function NS.EndUpdate()
     cdCacheDirty = false
+    durationCacheDirty = false
 end
 
 -- Call this from event handlers that change the rotation pool
 function NS.InvalidateRotationCache()
     rotationDirty = true
-    -- Rotation changed â€” virtual CD data may be stale, re-seed when possible
-    if virtualCDSeeded then
-        NS.ResetVirtualCooldowns()
-        if not NS.InCombatLockdown() then
-            NS.C_Timer_After(0.5, function()
-                NS.SeedVirtualCooldowns()
-            end)
-        else
-            virtualCDPending = true
-        end
-    end
 end
 
 -- Call this from event handlers that change spell overrides (spec/talent/spell changes)
@@ -641,63 +537,89 @@ local function resolveSpellName(spellID, fallback)
     return name
 end
 
-function NS.BuildMacroText()
-    local lines = {}
+local function buildCastLine(spellText, combatOnly)
+    return "/cast " .. (combatOnly and "[combat,nochanneling] " or "[nochanneling] ") .. spellText
+end
+
+-- The secure macro and configuration preview consume the same ordered actions.
+-- This only runs when rebuilding settings, never during display updates.
+function NS.GetMacroActions()
+    local actions = {}
+    local function add(text, hint)
+        actions[#actions + 1] = { text = text, hint = hint or "Optional combat action" }
+    end
     local db = NS.db
 
     -- Channel protection FIRST â€” abort the entire macro while channeling
     if db.enableChannelProtection then
-        NS.table_insert(lines, "/stopmacro [channeling]")
+        add("/stopmacro [channeling]", "Protect an active channel")
     end
 
     if db.enableDismount then
-        NS.table_insert(lines, "/dismount [mounted]")
+        add("/dismount [mounted]", "Dismount before casting")
     end
 
     if db.enableTargeting then
-        NS.table_insert(lines, "/targetenemy [noharm][dead]")
+        add("/targetenemy [noharm][dead]", "Acquire a living enemy")
     end
 
     if db.enablePetAttack and NS.IsPetClass() then
-        NS.table_insert(lines, "/petattack")
+        add("/petattack", "Send your pet to attack")
     end
 
-    NS.table_insert(lines, "/cast " .. NS.GetSBASpellName())
-
-    -- Class-specific off-GCD abilities (appended after /cast SBA).
-    -- These all fire because they are off the GCD â€” SBA consuming the
-    -- GCD does not block them.  Each silently fails if on cooldown,
-    -- insufficient resource, or not learned.
-
-    -- Vengeance DH: Demon Spikes (off-GCD, charges, mitigation)
-    if db.enableDemonSpikes and NS.IsSpec("Vengeance") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.DEMON_SPIKES_SPELL_ID, "Demon Spikes"))
-    end
-    -- Protection Warrior: Shield Block (off-GCD, 2 charges, costs Rage)
-    if db.enableShieldBlock and NS.IsSpec("Protection:W") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.SHIELD_BLOCK_SPELL_ID, "Shield Block"))
-    end
-    -- Protection Warrior: Ignore Pain (off-GCD, Rage dump absorb)
-    if db.enableIgnorePain and NS.IsSpec("Protection:W") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.IGNORE_PAIN_SPELL_ID, "Ignore Pain"))
+    if db.enableConvokeTheSpirits and NS.IsClass("DRUID")
+        and IsPlayerSpell and IsPlayerSpell(NS.CONVOKE_THE_SPIRITS_ID) then
+        add(buildCastLine(resolveSpellName(NS.CONVOKE_THE_SPIRITS_ID, "Convoke the Spirits"), true), "Convoke in combat; may take this press before SBA")
     end
     -- Guardian Druid: Ironfur (off-GCD, stacking armor, costs Rage)
     if db.enableIronfur and NS.IsSpec("Guardian") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.IRONFUR_SPELL_ID, "Ironfur"))
+        add(buildCastLine(resolveSpellName(NS.IRONFUR_SPELL_ID, "Ironfur"), true))
+    end
+
+    add(buildCastLine(NS.GetSBASpellName(), false), "Blizzard Single-Button Assistant; works for the opening attack")
+
+    -- Class-specific combat injectables (appended after /cast SBA).
+    -- Most are off-GCD, while range or fallback lines simply fail
+    -- silently when they do not apply. Each also fails quietly if the
+    -- spell is on cooldown, lacking resources, or not learned.
+
+    -- Vengeance DH: Demon Spikes (off-GCD, charges, mitigation)
+    if db.enableDemonSpikes and NS.IsSpec("Vengeance") then
+        add(buildCastLine(resolveSpellName(NS.DEMON_SPIKES_SPELL_ID, "Demon Spikes"), true))
+    end
+    -- Protection Warrior: Shield Block (off-GCD, 2 charges, costs Rage)
+    if db.enableShieldBlock and NS.IsSpec("Protection:W") then
+        add(buildCastLine(resolveSpellName(NS.SHIELD_BLOCK_SPELL_ID, "Shield Block"), true))
+    end
+    -- Protection Warrior: Ignore Pain (off-GCD, Rage dump absorb)
+    if db.enableIgnorePain and NS.IsSpec("Protection:W") then
+        add(buildCastLine(resolveSpellName(NS.IGNORE_PAIN_SPELL_ID, "Ignore Pain"), true))
     end
     -- Protection Paladin: Shield of the Righteous (off-GCD for Prot, costs 3 HP)
     if db.enableShieldOfRighteous and NS.IsSpec("Protection:Pa") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.SHIELD_OF_RIGHTEOUS_ID, "Shield of the Righteous"))
+        add(buildCastLine(resolveSpellName(NS.SHIELD_OF_RIGHTEOUS_ID, "Shield of the Righteous"), true))
     end
     -- Blood DK: Rune Tap (off-GCD, 2 charges, talent-gated)
     if db.enableRuneTap and NS.IsSpec("Blood") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.RUNE_TAP_SPELL_ID, "Rune Tap"))
+        add(buildCastLine(resolveSpellName(NS.RUNE_TAP_SPELL_ID, "Rune Tap"), true))
     end
     -- Brewmaster Monk: Purifying Brew (off-GCD, 2 charges, clears Stagger)
     if db.enablePurifyingBrew and NS.IsSpec("Brewmaster") then
-        NS.table_insert(lines, "/cast " .. resolveSpellName(NS.PURIFYING_BREW_SPELL_ID, "Purifying Brew"))
+        add(buildCastLine(resolveSpellName(NS.PURIFYING_BREW_SPELL_ID, "Purifying Brew"), true))
     end
 
+    for slot = 13, 14 do
+        local info = NS.GetTrinketStatus and NS.GetTrinketStatus(slot)
+        if db.trinketMode == "Verified" and info and info.eligible then
+            add("/use [combat,harm,nodead,nochanneling] " .. slot, "Approved trinket: " .. info.name)
+        end
+    end
+    return actions
+end
+
+function NS.BuildMacroText()
+    local lines = {}
+    for index, action in ipairs(NS.GetMacroActions()) do lines[index] = action.text end
     return NS.table_concat(lines, "\n")
 end
 
