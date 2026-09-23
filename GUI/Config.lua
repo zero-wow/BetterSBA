@@ -249,7 +249,7 @@ function NS.CreateAnimCloneReapplyKeyControl(parent, yOffset, width)
 end
 
 ----------------------------------------------------------------
--- Create the config panel (dual-panel: left nav + right content)
+-- Create the config panel.
 ----------------------------------------------------------------
 function NS.Config:Create()
     self._contextSignature = GetContextSignature()
@@ -278,7 +278,7 @@ function NS.Config:Create()
     local titleH = 40
     local navH = 34
     local statusH = 24
-    local sectionHeaderH = 48
+    local sectionHeaderH = 42
     local scrollBarW = 6
     local scrollContentW = rightW - scrollBarW - 2
     local talentScrollContentW = (talentPanelW - leftW) - scrollBarW - 2
@@ -613,9 +613,6 @@ function NS.Config:Create()
     ----------------------------------------------------------------
     -- A horizontal navigation strip leaves the page's full width for settings.
     ----------------------------------------------------------------
-    local contentOrigin = NS.CreateFrame("Frame", nil, f)
-    contentOrigin:SetSize(0, 0)
-    contentOrigin:SetPoint("TOPLEFT", 0, -titleH - navH)
     local tabBar = NS.CreateFrame("Frame", nil, f)
     tabBar:SetHeight(navH)
     tabBar:SetPoint("TOPLEFT", 0, -titleH)
@@ -625,7 +622,7 @@ function NS.Config:Create()
     tabBackground:SetColorTexture(T.BG_HEADER[1], T.BG_HEADER[2], T.BG_HEADER[3], 0.65)
     self.tabBar = tabBar
 
-    local divider = f:CreateTexture(nil, "OVERLAY")
+    local divider = tabBar:CreateTexture(nil, "OVERLAY")
     divider:SetHeight(1)
     divider:SetPoint("BOTTOMLEFT", tabBar, "BOTTOMLEFT", 12, 0)
     divider:SetPoint("BOTTOMRIGHT", tabBar, "BOTTOMRIGHT", -12, 0)
@@ -636,7 +633,7 @@ function NS.Config:Create()
     ----------------------------------------------------------------
     local sectionTitle = f:CreateFontString(nil, "OVERLAY")
     sectionTitle:SetFont(NS.GetConfigFontPath(), 16, "")
-    sectionTitle:SetPoint("TOPLEFT", contentOrigin, "TOPRIGHT", 14, -10)
+    sectionTitle:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -titleH - navH - 10)
     sectionTitle:SetPoint("RIGHT", f, "RIGHT", -138, 0)
     sectionTitle:SetJustifyH("LEFT")
     sectionTitle:SetTextColor(NS.unpack(T.TEXT))
@@ -684,7 +681,7 @@ function NS.Config:Create()
 
     local titleUnderline = f:CreateTexture(nil, "ARTWORK")
     titleUnderline:SetHeight(1)
-    titleUnderline:SetPoint("TOPLEFT", contentOrigin, "TOPRIGHT", 14, -sectionHeaderH + 9)
+    titleUnderline:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -titleH - navH - sectionHeaderH + 9)
     titleUnderline:SetPoint("RIGHT", f, "RIGHT", -14, 0)
     titleUnderline:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.6)
 
@@ -692,7 +689,7 @@ function NS.Config:Create()
     -- Right panel: scroll frame
     ----------------------------------------------------------------
     local scrollFrame = NS.CreateFrame("ScrollFrame", nil, f)
-    scrollFrame:SetPoint("TOPLEFT", contentOrigin, "TOPRIGHT", 0, -sectionHeaderH)
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -titleH - navH - sectionHeaderH)
     scrollFrame:SetPoint("BOTTOMRIGHT", -scrollBarW - 2, statusH)
 
     local scrollChild = NS.CreateFrame("Frame", nil, scrollFrame)
@@ -900,7 +897,6 @@ function NS.Config:Create()
         local line = parent:CreateTexture(nil, "ARTWORK")
         line:SetHeight(2)
         PositionSectionEndDivider(line, parent, yPos)
-        subHeaderLines[#subHeaderLines + 1] = line
         return line
     end
 
@@ -996,7 +992,7 @@ function NS.Config:Create()
     local function CreateSubHeader(parent, text, yPos)
         local col = parent._sectionColor or T.TEXT_DIM
         local hdr = parent:CreateFontString(nil, "OVERLAY")
-        hdr:SetFont(NS.GetConfigFontPath(), 10, "")
+        hdr:SetFont(NS.GetConfigFontPath(), 11, "")
         hdr:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yPos)
         hdr:SetTextColor(col[1], col[2], col[3])
         hdr:SetText(text)
@@ -1148,7 +1144,7 @@ function NS.Config:Create()
         do
             local col = c._sectionColor or T.TEXT_DIM
             local hdr = c:CreateFontString(nil, "OVERLAY")
-            hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+            hdr:SetFont(NS.GetConfigFontPath(), 11, "")
             hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
             hdr:SetTextColor(col[1], col[2], col[3])
             hdr:SetText("CLASS OPTIONS")
@@ -1350,7 +1346,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local hdr = c:CreateFontString(nil, "OVERLAY")
-        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        hdr:SetFont(NS.GetConfigFontPath(), 11, "")
         hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         hdr:SetTextColor(col[1], col[2], col[3])
         hdr:SetText("MACRO PREVIEW")
@@ -1731,8 +1727,8 @@ function NS.Config:Create()
     local cosmeticNote = N .. "Purely cosmetic" .. R .. ". " .. V .. "Safe" .. R .. " to " .. W .. "disable" .. R .. " \226\128\148 just " .. U .. "visual noise" .. R .. "."
     local aSlide = NS.CreateToggle(c, "Slide Transitions", "cfgAnimTransitions", y)
     NS.AddTooltip(aSlide, "Slide Transitions", {
-        "Smooth " .. V .. "sliding" .. R .. " and " .. V .. "fading" .. R .. " animations when",
-        "switching between sections in the " .. U .. "Config Panel" .. R .. ".",
+        "Slide the active tab indicator when switching sections.",
+        "Settings appear immediately.",
         " ",
         cosmeticNote,
     }, c)
@@ -1742,7 +1738,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local hdr = c:CreateFontString(nil, "OVERLAY")
-        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        hdr:SetFont(NS.GetConfigFontPath(), 11, "")
         hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         hdr:SetTextColor(col[1], col[2], col[3])
         hdr:SetText("PARTICLES")
@@ -2001,7 +1997,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local hdr = c:CreateFontString(nil, "OVERLAY")
-        hdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        hdr:SetFont(NS.GetConfigFontPath(), 11, "")
         hdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         hdr:SetTextColor(col[1], col[2], col[3])
         hdr:SetText("FONTS")
@@ -2888,7 +2884,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local secHeader = c:CreateFontString(nil, "OVERLAY")
-        secHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        secHeader:SetFont(NS.GetConfigFontPath(), 11, "")
         secHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         secHeader:SetTextColor(col[1], col[2], col[3])
         secHeader:SetText("SECTION THEME COLORS")
@@ -2994,7 +2990,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local dbgHdr = c:CreateFontString(nil, "OVERLAY")
-        dbgHdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        dbgHdr:SetFont(NS.GetConfigFontPath(), 11, "")
         dbgHdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         dbgHdr:SetTextColor(col[1], col[2], col[3])
         dbgHdr:SetText("DEBUG")
@@ -3065,7 +3061,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local gcHdr = c:CreateFontString(nil, "OVERLAY")
-        gcHdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        gcHdr:SetFont(NS.GetConfigFontPath(), 11, "")
         gcHdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         gcHdr:SetTextColor(col[1], col[2], col[3])
         gcHdr:SetText("GARBAGE COLLECTION")
@@ -3091,7 +3087,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local themeHdr = c:CreateFontString(nil, "OVERLAY")
-        themeHdr:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        themeHdr:SetFont(NS.GetConfigFontPath(), 11, "")
         themeHdr:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         themeHdr:SetTextColor(col[1], col[2], col[3])
         themeHdr:SetText("THEME")
@@ -3130,7 +3126,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local ldbHeader = c:CreateFontString(nil, "OVERLAY")
-        ldbHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        ldbHeader:SetFont(NS.GetConfigFontPath(), 11, "")
         ldbHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         ldbHeader:SetTextColor(col[1], col[2], col[3])
         ldbHeader:SetText("LDB / MINIMAP OPTIONS")
@@ -3170,7 +3166,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local perfHeader = c:CreateFontString(nil, "OVERLAY")
-        perfHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        perfHeader:SetFont(NS.GetConfigFontPath(), 11, "")
         perfHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         perfHeader:SetTextColor(col[1], col[2], col[3])
         perfHeader:SetText("PERFORMANCE")
@@ -3926,7 +3922,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local charHeader = c:CreateFontString(nil, "OVERLAY")
-        charHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        charHeader:SetFont(NS.GetConfigFontPath(), 11, "")
         charHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         charHeader:SetTextColor(col[1], col[2], col[3])
         charHeader:SetText("CHARACTER BINDING")
@@ -3991,7 +3987,7 @@ function NS.Config:Create()
     do
         local col = c._sectionColor or T.TEXT_DIM
         local mgmtHeader = c:CreateFontString(nil, "OVERLAY")
-        mgmtHeader:SetFont(NS.GetConfigFontPath(), 9, "OUTLINE")
+        mgmtHeader:SetFont(NS.GetConfigFontPath(), 11, "")
         mgmtHeader:SetPoint("TOPLEFT", c, "TOPLEFT", 14, y)
         mgmtHeader:SetTextColor(col[1], col[2], col[3])
         mgmtHeader:SetText("MANAGEMENT")
@@ -4558,25 +4554,6 @@ function NS.Config:Create()
     indicator:SetHeight(2)
     indicator:SetColorTexture(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3], 0.9)
 
-    local fadingContent = nil
-    local fadeStartTime = 0
-    local fadeFrame = NS.CreateFrame("Frame", nil, f)
-    fadeFrame:SetScript("OnUpdate", function(self)
-        if not fadingContent then
-            self:Hide()
-            return
-        end
-        local pct = (GetTime() - fadeStartTime) / 0.15
-        if pct >= 1 then
-            fadingContent:SetAlpha(1)
-            fadingContent = nil
-            self:Hide()
-        else
-            fadingContent:SetAlpha(pct)
-        end
-    end)
-    fadeFrame:Hide()
-
     local indicatorTargetX = 18
     local indicatorCurrentX = indicatorTargetX
     local animFrame
@@ -4669,10 +4646,9 @@ function NS.Config:Create()
 
     local function ApplyNavigationVisuals()
         for i, btn in NS.ipairs(sectionButtons) do
-            local dc = btn._dotColor
             local active = i == activeSection
             btn._lbl:SetTextColor(NS.unpack(active and T.TEXT or T.TEXT_DIM))
-            btn._bg:SetColorTexture(dc[1], dc[2], dc[3], active and 0.12 or 0)
+            btn._bg:SetColorTexture(1, 1, 1, active and 0.045 or 0)
         end
         for sectionIndex, btnList in NS.pairs(subsectionButtons) do
             local subs = contentFrames[sectionIndex]._subsections or {}
@@ -4773,16 +4749,10 @@ function NS.Config:Create()
         else
             scrollFrame:SetVerticalScroll(0)
         end
+        -- Settings must be readable immediately, including selections made
+        -- while the window is hidden. Animate only the navigation indicator.
+        cf:SetAlpha(1)
         cf:Show()
-
-        if NS.db.cfgAnimTransitions then
-            cf:SetAlpha(0)
-            fadingContent = cf
-            fadeStartTime = GetTime()
-            fadeFrame:Show()
-        else
-            cf:SetAlpha(1)
-        end
 
         if cf._refresh then
             cf._refresh()
@@ -5105,8 +5075,6 @@ function NS.Config:Create()
         searchBox:SetText("")
         searchBox:ClearFocus()
         DismissSearchHighlight()
-        fadingContent = nil
-        fadeFrame:Hide()
         animFrame:Hide()
         indicatorCurrentX = indicatorTargetX
     end)
@@ -5146,12 +5114,12 @@ function NS.Config:Create()
         PixelUtil.SetPoint(divider, "BOTTOMRIGHT", tabBar, "BOTTOMRIGHT", -12, 0)
         PixelUtil.SetHeight(indicator, 2, 1)
         PixelUtil.SetHeight(titleUnderline, 1, 1)
-        PixelUtil.SetPoint(titleUnderline, "TOPLEFT", contentOrigin, "TOPRIGHT", 14, -sectionHeaderH + 9)
+        PixelUtil.SetPoint(titleUnderline, "TOPLEFT", f, "TOPLEFT", 14, -titleH - navH - sectionHeaderH + 9)
         PixelUtil.SetPoint(titleUnderline, "RIGHT", f, "RIGHT", -14, 0)
         for _, line in ipairs(subHeaderLines) do
             PixelUtil.SetHeight(line, 1, 1)
-            PixelUtil.SetPoint(line, "TOPLEFT", line._header, "BOTTOMLEFT", 0, -3)
-            PixelUtil.SetPoint(line, "RIGHT", line:GetParent(), "RIGHT", -14, 0)
+            -- Keep each divider's original header anchor. Several sections
+            -- build headers directly and do not populate line._header.
         end
     end
     f:HookScript("OnShow", function()

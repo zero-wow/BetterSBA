@@ -11,6 +11,41 @@ local function visibleText(value)
     return text
 end
 
+-- IsShown is local state; IsVisible also follows parent visibility. Lifecycle
+-- scripts run only when that effective visibility actually changes.
+local function isVisible(node)
+    if not node or rawget(node, "_shown") == false then return false end
+    local parent = rawget(node, "_parent")
+    return not parent or isVisible(parent)
+end
+
+local function runScript(node, event, ...)
+    local primary = (rawget(node, "_scripts") or {})[event]
+    if primary then primary(node, ...) end
+    local hooks = (rawget(node, "_hooks") or {})[event]
+    if hooks then for _, hook in ipairs(hooks) do hook(node, ...) end end
+end
+
+local function captureVisibility(node, state)
+    state[node] = isVisible(node)
+    for _, child in ipairs(rawget(node, "_children") or {}) do captureVisibility(child, state) end
+end
+
+local function dispatchVisibility(node, before)
+    local visible = isVisible(node)
+    if before[node] ~= visible then runScript(node, visible and "OnShow" or "OnHide") end
+    for _, child in ipairs(rawget(node, "_children") or {}) do dispatchVisibility(child, before) end
+end
+
+local function setShown(node, shown)
+    shown = shown and true or false
+    if rawget(node, "_shown") == shown then return end
+    local before = {}
+    captureVisibility(node, before)
+    rawset(node, "_shown", shown)
+    dispatchVisibility(node, before)
+end
+
 -- Approximate WoW's text box metrics. Glyph widths vary, so this is a
 -- deliberately conservative inspection aid instead of a rendering promise.
 function M.textMetrics(fontString, constrainedWidth)
@@ -37,7 +72,7 @@ end
 local function widget(kind, parent)
     local o = {
         _kind = kind, _parent = parent, _children = {}, _shown = true,
-        _width = 0, _height = 0, _scripts = {}, _points = {}, _alpha = 1,
+        _width = 0, _height = 0, _scripts = {}, _hooks = {}, _points = {}, _alpha = 1,
         _widthExplicit = false, _heightExplicit = false,
     }
     if parent and parent._children then parent._children[#parent._children + 1] = o end
@@ -54,16 +89,35 @@ local function widget(kind, parent)
             SetPoint = function(s, ...) s._points[#s._points + 1] = {...} end,
             ClearAllPoints = function(s) s._points, s._allPoints = {}, nil end,
             SetAllPoints = function(s, target) s._allPoints = target or s._parent end,
-            SetParent = function(s, p) s._parent = p end,
-            Show = function(s) s._shown = true end,
-            Hide = function(s) s._shown = false end,
-            IsShown = function(s) return s._shown end,
-            SetShown = function(s, shown) s._shown = shown and true or false end,
+            SetParent = function(s, p)
+                local oldParent = rawget(s, "_parent")
+                if oldParent and oldParent._children then
+                    for i, child in ipairs(oldParent._children) do
+                        if child == s then table.remove(oldParent._children, i); break end
+                    end
+                end
+                s._parent = p
+                if p and p._children then p._children[#p._children + 1] = s end
+            end,
+            Show = function(s) setShown(s, true) end,
+            Hide = function(s) setShown(s, false) end,
+            IsShown = function(s) return rawget(s, "_shown") == true end,
+            IsVisible = function(s) return isVisible(s) end,
+            SetShown = function(s, shown) setShown(s, shown) end,
             SetAlpha = function(s, alpha) s._alpha = alpha end,
             GetAlpha = function(s) return s._alpha end,
             SetScript = function(s, event, fn) s._scripts[event] = fn end,
-            HookScript = function(s, event, fn) s._scripts[event] = fn end,
-            GetScript = function(s, event) return s._scripts[event] end,
+            HookScript = function(s, event, fn)
+                if not fn then return end
+                s._hooks[event] = s._hooks[event] or {}
+                s._hooks[event][#s._hooks[event] + 1] = fn
+            end,
+            GetScript = function(s, event)
+                local primary, hooks = s._scripts[event], s._hooks[event]
+                if not primary and (not hooks or #hooks == 0) then return nil end
+                if not hooks or #hooks == 0 then return primary end
+                return function(_, ...) runScript(s, event, ...) end
+            end,
             GetName = function(s) return rawget(s, "_name") end,
             SetAttribute = function(s, key, value)
                 local attributes = rawget(s, "_attributes") or {}
@@ -81,6 +135,25 @@ local function widget(kind, parent)
             CreateMaskTexture = function(s) return widget("MaskTexture", s) end,
             CreateFontString = function(s, name, layer)
                 local child = widget("FontString", s); child._name, child._layer = name, layer; return child
+            end,
+            GetChildren = function(s) return table.unpack(s._children) end,
+            CreateAnimationGroup = function(s)
+                local group = { _owner = s, _scripts = {}, _animations = {}, _playing = false }
+                function group:CreateAnimation(kind)
+                    local animation = { _kind = kind }
+                    function animation:SetFromAlpha(value) self._fromAlpha = value end
+                    function animation:SetToAlpha(value) self._toAlpha = value end
+                    function animation:SetDuration(value) self._duration = value end
+                    function animation:SetOrder(value) self._order = value end
+                    group._animations[#group._animations + 1] = animation
+                    return animation
+                end
+                function group:SetLooping(value) self._looping = value end
+                function group:SetScript(event, fn) self._scripts[event] = fn end
+                function group:Play() self._playing = true end
+                function group:Stop() self._playing = false end
+                function group:IsPlaying() return self._playing end
+                return group
             end,
             SetText = function(s, text) s._text = text or "" end,
             GetText = function(s) return rawget(s, "_text") or "" end,
@@ -153,6 +226,7 @@ end
 
 function M.install()
     local frames = {}
+    local now = 1
     local uiParent = widget("Frame")
     uiParent:SetSize(1920, 1080)
     local function createFrame(kind, name, parent)
@@ -163,10 +237,12 @@ function M.install()
     end
     _G.CreateFrame = createFrame
     _G.UIParent = uiParent
-    _G.GetTime = function() return 1 end
+    _G.GetTime = function() return now end
     _G.C_Timer = { After = function() end }
     _G.GetCursorPosition = function() return 0, 0 end
     _G.GetPhysicalScreenSize = function() return 1920, 1080 end
+    _G.UpdateAddOnMemoryUsage = noop
+    _G.GetAddOnMemoryUsage = function() return 256 end
     _G.InCombatLockdown = function() return false end
     _G.IsShiftKeyDown = function() return false end
     _G.IsControlKeyDown = function() return false end
@@ -209,7 +285,13 @@ function M.install()
                 PixelUtil.GetNearestPixelSize(y or 0, region:GetEffectiveScale(), minY))
         end,
     }
-    return { createFrame = createFrame, uiParent = uiParent, frames = frames }
+    local function advance(seconds)
+        now = now + (seconds or 0)
+        for _, frame in ipairs(frames) do
+            if frame:IsVisible() then runScript(frame, "OnUpdate", seconds or 0) end
+        end
+    end
+    return { createFrame = createFrame, uiParent = uiParent, frames = frames, advance = advance }
 end
 
 -- Resolve the common fixed-size and stretch anchors used by BetterSBA's

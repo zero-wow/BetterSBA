@@ -24,6 +24,20 @@ db.talentBuildSearchText, db.talentBuildSourceFilter = "", "All"
 for _, key in ipairs({"buttonBgColor", "priorityBgColor", "priorityBorderColor", "importColorAutoAttack", "importColorFiller", "importColorLongCD", "importColorMajorCD", "importColorShortCD"}) do
     db[key] = color()
 end
+-- Opening a page fires every slider's real OnShow initializer. Supply values
+-- for the full slider surface so lifecycle coverage does not accidentally
+-- depend on a mock that suppresses those handlers.
+for _, key in ipairs({
+    "motionDuration", "motionIntensity", "gcdDuration", "keybindFontSize",
+    "priorityKeybindFontSize", "priorityLabelFontSize", "pauseSymbolFontSize",
+    "pauseReasonFontSize", "buttonSize", "scale", "keybindOffsetX", "keybindOffsetY",
+    "animCloneKeybindOffsetX", "animCloneKeybindOffsetY", "animCloneKeybindFontSize",
+    "priorityIconSize", "priorityScale", "prioritySpacing", "priorityOffsetX",
+    "priorityOffsetY", "priorityKeybindOffsetX", "priorityKeybindOffsetY",
+    "priorityLabelOffsetX", "priorityLabelOffsetY", "alphaOOC", "priorityAlphaOOC",
+}) do
+    db[key] = 1
+end
 
 local NS = {
     THEME=colors, defaults=defaults, db=db, dbRoot={profiles={}}, UIParent=ui.uiParent,
@@ -45,7 +59,7 @@ local NS = {
     GetCharKey=function() return "Tester-Realm" end, GetCacheDiagnostics=function() return {} end,
     AnimKeyPrefix=function(animation) return "anim" .. tostring(animation) end,
     _restoreSection=false, _restoreScroll=false, _activeSection=1, _loadTime=0, _overrideKeys=false, _overrideSlot=false,
-    masque=false, priorityFrame=false, mainButton=false, secureButton=false,
+    masque=false, priorityFrame=false, mainButton=false, secureButton=false, _priorityIcons=false,
 }
 setmetatable(NS, { __index = function() return function() end end })
 local entries = {}
@@ -61,11 +75,30 @@ NS.GetTalentBuildCustomEntry = function(id, name) return {id="CUSTOM", name="Cus
 NS.GetSelectedTalentBuildID = function() return "CUSTOM" end
 NS.GetTalentBuildLastStatus = function() return nil end
 NS.RequestTalentBuildApply = function() return true end
+NS.GetInterceptBlockReason = function() return nil end
 UnitClass = function() return "Mage", "MAGE", 8 end
 
 assert(loadfile("GUI/Framework.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/TalentBuildsPanel.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/Config.lua"))("BetterSBA", NS)
+
+-- The config root has several OnShow/OnHide hooks. Verify the widget harness
+-- preserves primary scripts plus every hook and honours ancestor visibility.
+local lifecycleParent = ui.createFrame("Frame", nil, ui.uiParent)
+lifecycleParent:Hide()
+local lifecycleChild = ui.createFrame("Frame", nil, lifecycleParent)
+local lifecycleOrder = {}
+lifecycleChild:SetScript("OnShow", function() lifecycleOrder[#lifecycleOrder + 1] = "script" end)
+lifecycleChild:HookScript("OnShow", function() lifecycleOrder[#lifecycleOrder + 1] = "hook-one" end)
+lifecycleChild:HookScript("OnShow", function() lifecycleOrder[#lifecycleOrder + 1] = "hook-two" end)
+assert(lifecycleChild:IsShown() and not lifecycleChild:IsVisible(),
+    "a shown child of a hidden frame must not be treated as visible")
+lifecycleParent:Show()
+assert(table.concat(lifecycleOrder, ",") == "script,hook-one,hook-two",
+    "Show must preserve the primary script and every HookScript callback")
+lifecycleParent:Hide()
+assert(lifecycleChild:IsShown() and not lifecycleChild:IsVisible(),
+    "hiding an ancestor must make descendants non-visible without clearing local state")
 
 local function newestSection(index)
     for i = #ui.frames, 1, -1 do
@@ -77,6 +110,14 @@ local function findTextWidget(frame, wanted)
     if rawget(frame, "_text") == wanted then return frame end
     for _, child in ipairs(frame._children) do
         local found = findTextWidget(child, wanted)
+        if found then return found end
+    end
+end
+
+local function findHeaderWidget(frame, wanted)
+    if rawget(frame, "_text") == wanted and rawget(frame, "_line") then return frame end
+    for _, child in ipairs(frame._children) do
+        local found = findHeaderWidget(child, wanted)
         if found then return found end
     end
 end
@@ -170,6 +211,37 @@ end
 
 local panel = assert(NS.Config:Create())
 assert(panel:GetWidth() == 640 and panel:GetHeight() == 413, "saved 413px normal height must be honored above the 400px minimum")
+-- Config construction happens while its root is hidden. Show it for real so
+-- lifecycle hooks, effective child visibility, and the first selected page
+-- are exercised instead of treating local IsShown state as rendered content.
+local firstSection = assert(newestSection(1), "initial Combat Assist content missing")
+assert(not panel:IsVisible() and firstSection:IsShown() and not firstSection:IsVisible(),
+    "hidden config must retain its selected section without rendering it")
+NS.Config:Show()
+assert(panel:IsVisible() and firstSection:IsVisible() and firstSection:GetAlpha() == 1,
+    "opening config must make the selected content immediately visible and opaque")
+
+-- Multiple HookScript registrations must all survive, and pixels refreshes
+-- must preserve each manually anchored section-header ruler.
+local title = assert(findTextWidget(panel, "Combat Assist"), "page title missing")
+assert(rawget(title, "_points")[1][2] == panel,
+    "page title must anchor directly to the sized config frame")
+assert(rawget(NS.Config.scrollFrame, "_points")[1][2] == panel,
+    "scroll region must anchor directly to the sized config frame")
+local macroHeader = assert(findHeaderWidget(panel, "TRINKETS"), "trinket header missing")
+local macroLine = assert(rawget(macroHeader, "_line"), "trinket header ruler missing")
+local headerAnchorCount = #rawget(macroLine, "_points")
+local headerAnchorTarget = rawget(macroLine, "_points")[1][2]
+NS.Config:ApplyScale()
+assert(#rawget(macroLine, "_points") == headerAnchorCount and rawget(macroLine, "_points")[1][2] == headerAnchorTarget,
+    "pixel refresh must preserve section-header ruler anchors")
+
+NS.Config:Hide()
+assert(not panel:IsVisible() and firstSection:IsShown() and not firstSection:IsVisible(),
+    "hiding config must not discard the selected page's local shown state")
+NS.Config:Show()
+assert(panel:IsVisible() and firstSection:IsVisible() and firstSection:GetAlpha() == 1,
+    "reopening config must restore visible opaque page content")
 -- A roomy parent preserves a user's deliberate 150% panel preference; a
 -- smaller parent applies only a transient fit cap and leaves that preference.
 db.configPanelScale = 1.5
@@ -296,6 +368,22 @@ NS._restoreSection = false
 local minHeightPanel = assert(NS.Config:Create())
 assert(minHeightPanel:GetWidth() == 640 and minHeightPanel:GetHeight() == 400,
     "compact config must enforce its 400px minimum height")
+
+-- A page must never be left transparent when the user closes/reopens while
+-- transition settings are enabled. The shell no longer fades whole content.
+db.cfgAnimTransitions = true
+NS.Config.frame = nil
+NS._restoreSection = false
+local transitionPanel = assert(NS.Config:Create())
+local transitionSection = assert(newestSection(1), "transition test section missing")
+NS.Config:Show()
+assert(transitionSection:IsVisible() and transitionSection:GetAlpha() == 1,
+    "animated settings must open with opaque content")
+NS.Config:Hide()
+NS.Config:Show()
+assert(transitionSection:IsVisible() and transitionSection:GetAlpha() == 1,
+    "hide/reopen during transitions must not strand page content at alpha zero")
+db.cfgAnimTransitions = false
 
 print("config mock: actual Framework/Config/TalentBuildsPanel passed all sections, feedback states, and wrapped-source bounds")
 if arg and arg[1] and arg[1] ~= "" then
