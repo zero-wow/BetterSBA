@@ -55,9 +55,16 @@ for _, preset in ipairs({"Pulse","Echo","Sweep","Sheen","Snap","Orbit"}) do
 end
 assert(made==4, "Repeated casts never allocate more frames")
 local host, sweep = all[1], all[2]
-assert(sweep.orbitAG.playing and sweep.orbitRotation.degrees == 320
-    and sweep.orbitRotation.origin[3] == 48 / 2 - 2,
-    "Orbit needs a rotating rim glint around the button center")
+assert(sweep.scripts.OnUpdate and sweep.orbitCore.shown
+    and sweep.orbitCore.width == 7 and sweep.orbitCore.height == 7
+    and sweep.edge.texture == "Interface\\AddOns\\BetterSBA\\IMG\\Button\\Glow"
+    and all[3]:GetFrameLevel() > ns.mainButton:GetFrameLevel(),
+    "Orbit needs a visible glint and rim above the button")
+sweep.scripts.OnUpdate(sweep, sweep._orbitDuration / 4)
+assert(math.abs(sweep.edge.point[4] - sweep._orbitRadius) < .01
+    and math.abs(sweep.edge.point[5]) < .01
+    and sweep.orbitCore.point[4] == sweep.edge.point[4],
+    "Orbit glint must travel around the button, not remain at the lower edge")
 ns.db.motionPreset="Sheen"
 assert(ns.PlayMotionFeedback(1) and sweep.edge.rotation == math.pi / 9
     and sweep.edge.height == 48 * 1.30
@@ -67,7 +74,7 @@ ns.db.motionPreset="Snap"
 assert(ns.PlayMotionFeedback(1)
     and sweep.ag._scale.scaleX == 0.88
     and all[3].ag._scale.scaleX == 1.12
-    and not sweep.orbitAG.playing,
+    and not sweep.scripts.OnUpdate and not sweep.orbitCore.shown,
     "Snap must compress and release without leaving Orbit playing")
 ns.db.motionPreset="Sweep"
 assert(ns.PlayMotionFeedback(1))
@@ -91,10 +98,11 @@ assert(ns.PlayMotionFeedback(1) and host:GetFrameLevel() < ns.mainButton:GetFram
     and sweep:GetFrameLevel() < ns.mainButton:GetFrameLevel(),
     "Pulse must restore the quiet behind-button layer order after Sweep")
 ns.db.motionPreset="Orbit"
-assert(ns.PlayMotionFeedback(1) and sweep.orbitAG.playing)
+assert(ns.PlayMotionFeedback(1) and sweep.scripts.OnUpdate)
 ns.db.motionReduced=true
 ns.PlayMotionFeedback(1)
-assert(not sweep.orbitAG.playing, "Reduced motion must stop the orbiting glint")
+assert(not sweep.scripts.OnUpdate and not sweep.orbitCore.shown,
+    "Reduced motion must stop the orbiting glint")
 local playing=0
 for _, f in ipairs(all) do if type(f.ag)=="table" and f.ag.playing then playing=playing+1 end end
 assert(playing==1, "Reduced motion uses one layer")

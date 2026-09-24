@@ -227,7 +227,7 @@ NS.defaults = {
     configPanelHeight = 620,
     configExperience = "classic",
     configStudioWidth = 1120,
-    configStudioHeight = 790,
+    configStudioHeight = 760,
 
     -- Visibility
     onlyInCombat = false,

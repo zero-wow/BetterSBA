@@ -50,7 +50,8 @@ end
 
 local function StopLayer(layer)
     if not layer then return end
-    if rawget(layer, "orbitAG") then layer.orbitAG:Stop() end
+    layer:SetScript("OnUpdate", nil)
+    if rawget(layer, "orbitCore") then layer.orbitCore:Hide() end
     if layer.ag then layer.ag:Stop() end
     layer:SetAlpha(1)
     layer:SetScale(1)
@@ -85,6 +86,8 @@ local function CreateLayer(parent)
         -- while ResetMotionFeedback is the explicit cancellation path.
         layer:SetAlpha(1)
         layer:SetScale(1)
+        layer:SetScript("OnUpdate", nil)
+        if rawget(layer, "orbitCore") then layer.orbitCore:Hide() end
         layer:Hide()
     end)
     layer.ag = ag
@@ -216,6 +219,7 @@ local function RunSweep(duration, intensity)
     -- pooled streak after Sheen or Orbit may have repositioned it.
     sweep.tex:Hide()
     sweep.edge:ClearAllPoints()
+    sweep.edge:SetTexture(SOLID)
     sweep.edge:SetSize(motion.width * 0.28, 4)
     sweep.edge:SetPoint("CENTER", sweep, "BOTTOM", -motion.width * 0.36, 2)
     sweep.edge:SetRotation(0)
@@ -242,6 +246,7 @@ local function RunSheen(duration, intensity)
 
     sheen.tex:Hide()
     sheen.edge:ClearAllPoints()
+    sheen.edge:SetTexture(SOLID)
     sheen.edge:SetSize(math.max(3, motion.width * 0.10), motion.width * 1.30)
     sheen.edge:SetPoint("CENTER", sheen, "CENTER", -motion.width * 0.58, 0)
     sheen.edge:SetRotation(math.pi / 9)
@@ -283,6 +288,17 @@ local function RunSnap(duration, intensity)
     PlayLayer(glow)
 end
 
+local function OrbitUpdate(self, delta)
+    self._orbitElapsed = math.min(self._orbitDuration, self._orbitElapsed + delta)
+    local angle = self._orbitElapsed / self._orbitDuration * math.pi * 2
+    local x = math.sin(angle) * self._orbitRadius
+    local y = -math.cos(angle) * self._orbitRadius
+    self.edge:ClearAllPoints()
+    self.edge:SetPoint("CENTER", self, "CENTER", x, y)
+    self.orbitCore:ClearAllPoints()
+    self.orbitCore:SetPoint("CENTER", self, "CENTER", x, y)
+end
+
 local function RunOrbit(duration, intensity)
     local r, g, b = GetAccent()
     local spark = motion.layers[1]
@@ -291,16 +307,22 @@ local function RunOrbit(duration, intensity)
 
     spark.tex:Hide()
     spark.edge:ClearAllPoints()
-    spark.edge:SetSize(motion.width * 0.22, 4)
-    spark.edge:SetPoint("CENTER", spark, "BOTTOM", 0, 2)
+    spark.edge:SetTexture(GLOW)
+    spark.edge:SetSize(math.max(16, motion.width * 0.40), math.max(16, motion.width * 0.40))
+    spark.edge:SetPoint("CENTER", spark, "CENTER", 0, -motion.width / 2 + 3)
     spark.edge:SetRotation(0)
-    spark.edge:SetVertexColor(r, g, b, 0.85)
+    spark.edge:SetVertexColor(r, g, b, 1)
     spark.edge:Show()
-    ConfigureLayer(spark, duration, 0, 0.72 * intensity, 0, 1, 0, 0, "IN_OUT")
+    spark.orbitCore:SetVertexColor(r, g, b, 1)
+    spark.orbitCore:ClearAllPoints()
+    spark.orbitCore:SetPoint("CENTER", spark, "CENTER", 0, -motion.width / 2 + 3)
+    spark.orbitCore:Show()
+    ConfigureLayer(spark, duration, 0, 0.95 * intensity, 0, 1, 0, 0, "IN_OUT")
     PlayLayer(spark)
-    spark.orbitRotation:SetDuration(duration)
-    spark.orbitRotation:SetDegrees(320)
-    spark.orbitAG:Play()
+    spark._orbitDuration = duration
+    spark._orbitElapsed = 0
+    spark._orbitRadius = math.max(8, motion.width / 2 - 3)
+    spark:SetScript("OnUpdate", OrbitUpdate)
 
     SetLayerTexture(rim, GetRingTexture(), r, g, b, 0.30 + intensity * 0.20)
     ConfigureLayer(rim, duration, 0, 0.46 * intensity, 0, 1.02, 0, 0, "IN_OUT")
@@ -328,9 +350,11 @@ function NS.InitializeMotionFeedback()
             motion.layers[index] = CreateLayer(host)
         end
         local spark = motion.layers[1]
-        spark.orbitAG = spark.edge:CreateAnimationGroup()
-        spark.orbitRotation = spark.orbitAG:CreateAnimation("Rotation")
-        spark.orbitRotation:SetSmoothing("NONE")
+        spark.orbitCore = spark:CreateTexture(nil, "OVERLAY")
+        spark.orbitCore:SetTexture(SOLID)
+        spark.orbitCore:SetBlendMode("ADD")
+        spark.orbitCore:SetSize(7, 7)
+        spark.orbitCore:Hide()
         motion.host = host
     end
 
@@ -344,7 +368,6 @@ function NS.InitializeMotionFeedback()
     -- Pulse and Echo pass behind the recommendation, keeping the icon and key readable.
     host:SetFrameLevel(math.max(0, button:GetFrameLevel() - 2))
     motion.width = button:GetWidth()
-    motion.layers[1].orbitRotation:SetOrigin("CENTER", 0, motion.width / 2 - 2)
     for _, layer in ipairs(motion.layers) do
         layer.edge:ClearAllPoints()
         layer.edge:SetSize(motion.width * 0.28, 4)
@@ -380,8 +403,9 @@ function NS.PlayMotionFeedback(spellID)
     local behind = math.max(0, buttonLevel - 1)
     motion.host:SetFrameLevel(math.max(0, behind - 1))
     for index, layer in ipairs(motion.layers) do
-        layer:SetFrameLevel((not reduced and (preset == "Sweep" or preset == "Sheen" or preset == "Orbit") and index == 1)
-            and buttonLevel + 2 or behind)
+        local front = not reduced and ((preset == "Sweep" or preset == "Sheen") and index == 1
+            or preset == "Orbit" and (index == 1 or index == 2))
+        layer:SetFrameLevel(front and (index == 1 and buttonLevel + 2 or buttonLevel + 1) or behind)
     end
     if reduced then
         RunReducedFlash(duration, intensity)

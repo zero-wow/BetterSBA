@@ -51,6 +51,29 @@ local function FitText(label, value, width)
     end
 end
 
+local function WrapRouteName(label, measure, value, width)
+    value = tostring(value or "No Build Selected")
+    measure:SetText(value)
+    if measure:GetStringWidth() <= width then label:SetText(value); return end
+    local lines = { "", "" }
+    local current = 1
+    for word in value:gmatch("%S+") do
+        local candidate = lines[current] == "" and word or (lines[current] .. " " .. word)
+        measure:SetText(candidate)
+        if measure:GetStringWidth() > width and lines[current] ~= "" and current == 1 then
+            current = 2
+            candidate = word
+        end
+        lines[current] = candidate
+    end
+    measure:SetText(lines[2])
+    while measure:GetStringWidth() > width and #lines[2] > 1 do
+        lines[2] = lines[2]:sub(1, -2)
+        measure:SetText(lines[2] .. "…")
+    end
+    label:SetText(lines[1] .. "\n" .. lines[2])
+end
+
 local function Surface(parent, x, y, w, h, fill)
     local f = NS.CreateFrame("Frame", nil, parent, "BackdropTemplate")
     f:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
@@ -88,21 +111,26 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
     local row = NS.CreateFrame("Button", nil, parent)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, y)
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -18, y)
-    row:SetHeight(52)
+    row:SetHeight(46)
+    row:EnableMouse(true)
+    row:RegisterForClicks("LeftButtonUp")
     Label(row, name, 12, C.text, copyWidth or 250, "TOPLEFT", row, "TOPLEFT", 0, -5)
     Label(row, note, 10, C.dim, copyWidth or 290, "TOPLEFT", row, "TOPLEFT", 0, -24)
     local track = Surface(row, 0, 0, 42, 22, C.rail)
     track:ClearAllPoints()
     track:SetPoint("RIGHT", row, "RIGHT", 0, 0)
-    local thumb = Paint(track, C.muted, "LEFT", track, 4, 0, 14, 14)
+    track:EnableMouse(false)
+    local stateText = Label(track, "Off", 10, C.dim, 34, "CENTER", track, "CENTER", 0, 0)
+    stateText:SetJustifyH("CENTER")
     row.Refresh = function()
         local on = getter() == true
         track:SetBackdropColor(NS.unpack(on and C.accent or C.rail))
-        thumb:ClearAllPoints()
-        thumb:SetPoint(on and "RIGHT" or "LEFT", track, on and "RIGHT" or "LEFT", on and -4 or 4, 0)
-        thumb:SetVertexColor(NS.unpack(on and C.bright or C.muted))
+        stateText:SetText(on and "On" or "Off")
+        stateText:SetTextColor(NS.unpack(on and C.gutter or C.dim))
     end
     row:SetScript("OnClick", function() setter(not getter()); row.Refresh() end)
+    row._track = track
+    row._stateText = stateText
     row.Refresh()
     return row
 end
@@ -140,13 +168,14 @@ local function BuildGeneralPage(self, page, headline, intro, entries, advancedSe
     Caption(view, page, 26, -27)
     Label(view, headline, 27, C.bright, 610, "TOPLEFT", view, "TOPLEFT", 26, -64)
     Label(view, intro, 12, C.dim, 620, "TOPLEFT", view, "TOPLEFT", 26, -101)
-    local box = Surface(view, 26, -156, 622, 400)
+    local box = Surface(view, 26, -156, 622, 300)
     view._quickBox = box
     Label(box, "Quick Controls", 10, C.accent, 290, "TOPLEFT", box, "TOPLEFT", 18, -19)
-    Paint(box, C.border, "TOPLEFT", box, 18, -43, 585, 1)
+    local rule = Paint(box, C.border, "TOPLEFT", box, 18, -43, 1, 1)
+    rule:SetPoint("TOPRIGHT", box, "TOPRIGHT", -18, -43)
     local refreshers = {}
     for i, entry in ipairs(entries) do
-        local y = -56 - (i - 1) * 72
+        local y = -56 - (i - 1) * 60
         local getter = type(entry[3]) == "function" and entry[3]
             or function() return NS.db[entry[3]] end
         local setter = type(entry[3]) == "function" and entry[4]
@@ -157,7 +186,7 @@ local function BuildGeneralPage(self, page, headline, intro, entries, advancedSe
         local row = Setting(box, entry[1], entry[2], y, getter, setter)
         refreshers[#refreshers + 1] = row.Refresh
     end
-    local more = Action(view, "Open Detailed Settings", 26, -580, 210, 34,
+    local more = Action(view, "Open Detailed Settings", 26, -480, 210, 34,
         function() OpenClassic(advancedSection) end)
     Label(view, "Every setting remains available in Classic Settings.", 11, C.muted, 350,
         "LEFT", more, "RIGHT", 16, 0)
@@ -178,7 +207,15 @@ local function BuildTalentPage(self)
     view._route = route
     Paint(route, C.accent, "TOPLEFT", route, 0, 0, 3, 124)
     Label(route, "Current Route", 10, C.accent, 120, "TOPLEFT", route, "TOPLEFT", 16, -14)
-    local routeName = Label(route, "Choose a Build", 18, C.bright, 365, "TOPLEFT", route, "TOPLEFT", 16, -38)
+    local routeName = Label(route, "No Build Selected", 16, C.bright, 365,
+        "TOPLEFT", route, "TOPLEFT", 16, -37)
+    routeName:SetWordWrap(true)
+    routeName:SetMaxLines(2)
+    routeName:SetHeight(39)
+    local routeNameMeasure = route:CreateFontString(nil, "OVERLAY")
+    routeNameMeasure:SetFont(NS.GetConfigFontPath(), 16, "")
+    routeNameMeasure:SetTextColor(1, 1, 1, 0)
+    routeNameMeasure:SetPoint("TOPLEFT", route, "TOPLEFT", 0, 0)
     view._routeName = routeName
     route:EnableMouse(true)
     route:SetScript("OnEnter", function()
@@ -189,10 +226,10 @@ local function BuildTalentPage(self)
         GameTooltip:Show()
     end)
     route:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    local routeDetail = Label(route, "Select a build for your current specialization.", 10, C.dim,
-        365, "TOPLEFT", route, "TOPLEFT", 16, -71)
-    local routeMeta = Label(route, "Class and spec points are handled together.", 10, C.muted,
-        365, "TOPLEFT", route, "TOPLEFT", 16, -96)
+    local routeDetail = Label(route, "Current specialization", 10, C.dim,
+        365, "TOPLEFT", route, "TOPLEFT", 16, -81)
+    local routeMeta = Label(route, "Only talents available at your level are purchased.", 10, C.muted,
+        365, "TOPLEFT", route, "TOPLEFT", 16, -101)
     local spend = NS.CreateFrame("Button", nil, route)
     spend:SetSize(205, 48)
     spend:SetPoint("TOPRIGHT", route, "TOPRIGHT", -13, -22)
@@ -205,79 +242,112 @@ local function BuildTalentPage(self)
     change:ClearAllPoints()
     change:SetPoint("TOPRIGHT", route, "TOPRIGHT", -51, -85)
 
-    local left = Surface(view, 26, -270, 305, 286)
-    local right = Surface(view, 343, -270, 305, 286)
+    local left = Surface(view, 26, -270, 305, 264)
+    local right = Surface(view, 343, -270, 305, 264)
     view._left, view._right = left, right
     Caption(left, "What Happens Next", 0, 0)
     Caption(right, "Automation & Safety", 0, 0)
-    local state = Label(left, "Choose a Build", 16, C.text, 270, "TOPLEFT", left, "TOPLEFT", 16, -43)
-    local status = Label(left, "", 11, C.dim, 270, "TOPLEFT", left, "TOPLEFT", 16, -75)
+    local state = Label(left, "Route Status", 15, C.text, 270, "TOPLEFT", left, "TOPLEFT", 16, -37)
+    local status = Label(left, "", 11, C.dim, 270, "TOPLEFT", left, "TOPLEFT", 16, -69)
     view._status = status
     status:SetWordWrap(true)
     status:SetMaxLines(3)
-    local next = Label(left, "Next Talent: —", 11, C.cyan, 270, "TOPLEFT", left, "TOPLEFT", 16, -142)
-    Label(left, "Class and spec points spend when legal.", 10, C.dim, 270,
-        "TOPLEFT", left, "TOPLEFT", 16, -195)
-    Label(left, "Hero talents wait for their unlock.", 10, C.dim, 270,
-        "TOPLEFT", left, "TOPLEFT", 16, -222)
-    local auto = Setting(right, "Auto-Spend New Points", "No approval for each rank.", -36,
+    local divider = Paint(left, C.border)
+    divider:ClearAllPoints()
+    divider:SetPoint("TOPLEFT", left, "TOPLEFT", 16, -120)
+    divider:SetPoint("TOPRIGHT", left, "TOPRIGHT", -16, -120)
+    divider:SetHeight(1)
+    local next = Label(left, "Next Talent: —", 11, C.cyan, 270, "TOPLEFT", left, "TOPLEFT", 16, -136)
+    local firstStep = Label(left, "Class & Spec Points", 11, C.text, 230,
+        "TOPLEFT", left, "TOPLEFT", 16, -172)
+    local firstNote = Label(left, "Spend when legal and available.", 10, C.dim, 230,
+        "TOPLEFT", left, "TOPLEFT", 16, -190)
+    local secondStep = Label(left, "Hero Talents", 11, C.text, 230,
+        "TOPLEFT", left, "TOPLEFT", 16, -215)
+    local secondNote = Label(left, "Wait for their level unlock.", 10, C.dim, 230,
+        "TOPLEFT", left, "TOPLEFT", 16, -233)
+    view._stepLabels = { state, status, next, firstStep, firstNote, secondStep, secondNote }
+    local auto = Setting(right, "Auto-Spend New Points", "No approval for each rank.", -33,
         function() return NS.GetTalentLevelingInfo().enabled end,
         function(value)
             local ok, err = NS.SetTalentLevelingEnabled(value)
-            if not ok then self.notice:SetText(err or "Unable to change auto-spend.") end
+            self.notice:SetText(ok and (value and "Auto-Spend is On for this route."
+                or "Auto-Spend is Off for this route.") or (err or "Unable to change Auto-Spend."))
             self:Refresh()
         end, 200)
     view._auto = auto
-    local warn = Setting(right, "Warn If Talents Differ", "Alert before a rebuild.", -99,
+    local warn = Setting(right, "Warn If Talents Differ", "Alert before a rebuild.", -87,
         function() return NS.GetTalentLevelingInfo().warningEnabled end,
         function(value) NS.SetTalentSBAWarningEnabled(value); self:Refresh() end, 200)
-    local autoRebuild = Setting(right, "Auto-Rebuild on Mismatch", "Runs when Auto-Spend is on.", -162,
+    local autoRebuild = Setting(right, "Auto-Rebuild On Mismatch", "Runs when Auto-Spend is on.", -141,
         function() return NS.GetTalentLevelingInfo().autoRespecEnabled end,
         function(value) NS.SetTalentAutoRespecEnabled(value); self:Refresh() end, 200)
     view._autoRebuild = autoRebuild
-    local rebuild = Action(right, "Reset & Rebuild", 18, -237, 133, 32, function()
+    local rebuild = Action(right, "Reset & Rebuild", 18, -221, 133, 30, function()
         local ok, message = NS.RequestTalentSBARespec()
         self.notice:SetText(message or (ok and "Rebuild started." or "Unable to rebuild talents."))
         self:Refresh()
     end)
-    local undo = Action(right, "Undo Respec", 161, -237, 125, 32, function()
+    local undo = Action(right, "Undo Respec", 161, -221, 125, 30, function()
         local ok, message = NS.RequestTalentSBAUndo()
         self.notice:SetText(message or (ok and "Undo started." or "Nothing to undo."))
         self:Refresh()
     end, "quiet")
-    Caption(view, "Build Library", 26, -574)
-    local browse = Action(view, "Browse Builds and Imports", 26, -606, 219, 32,
+    Caption(view, "Build Library", 26, -550)
+    local browse = Action(view, "Browse Builds and Imports", 26, -582, 219, 32,
         function() OpenClassic(5) end)
     view._browse = browse
     Label(view, "Review source and build details before choosing.", 11, C.muted, 325,
         "LEFT", browse, "RIGHT", 14, 0)
 
-    local picker = Surface(view, 26, -128, 425, 240, C.shell)
-    picker:SetFrameLevel(view:GetFrameLevel() + 12)
-    picker:Hide()
-    Label(picker, "Builds for This Spec", 10, C.accent, 260, "TOPLEFT", picker, "TOPLEFT", 14, -12)
+    local pickerOverlay = NS.CreateFrame("Frame", nil, self.content)
+    pickerOverlay:SetAllPoints()
+    pickerOverlay:SetFrameLevel(view:GetFrameLevel() + 12)
+    pickerOverlay:EnableMouse(true)
+    Paint(pickerOverlay, { .02, .025, .045, .84 })
+    pickerOverlay:Hide()
+    local picker = Surface(pickerOverlay, 0, 0, 500, 185, C.card)
+    picker:ClearAllPoints()
+    picker:SetPoint("CENTER", pickerOverlay, "CENTER", 0, 0)
+    picker:SetFrameLevel(pickerOverlay:GetFrameLevel() + 1)
+    picker:EnableMouse(true)
+    Label(picker, "Choose a Build", 18, C.bright, 350, "TOPLEFT", picker, "TOPLEFT", 16, -15)
+    Label(picker, "Builds for your current specialization", 10, C.dim, 400,
+        "TOPLEFT", picker, "TOPLEFT", 16, -39)
+    local pickerMessage = Label(picker, "", 10, C.accent, 460,
+        "TOPLEFT", picker, "TOPLEFT", 16, -117)
+    pickerOverlay:SetScript("OnHide", function()
+        view._selectionError = nil
+        pickerMessage:SetText("")
+    end)
     local rows = {}
     local pickerPage = 1
     for i = 1, 4 do
         local rowIndex = i
-        rows[i] = Action(picker, "", 14, -35 - (i - 1) * 42, 397, 36, function()
+        rows[i] = Action(picker, "", 16, -62 - (i - 1) * 46, 468, 38, function()
             local entry = rows[rowIndex].entry
             if not entry then return end
             local ok, err = NS.SetTalentLevelingTarget(entry.id)
             if ok then
-                picker:Hide()
+                pickerOverlay:Hide()
                 view._selectionError = nil
+                pickerMessage:SetText("")
             else
                 view._selectionError = err or "Unable to choose build."
+                pickerMessage:SetText(view._selectionError)
             end
             self.notice:SetText(ok and ("Selected " .. entry.name .. ".") or (err or "Unable to choose build."))
             self:Refresh()
         end, "quiet")
     end
     view._pickerRows = rows
-    local previous = Action(picker, "Previous", 14, -207, 85, 24, function() pickerPage = math.max(1, pickerPage - 1); picker.Refresh() end)
-    local nextPage = Action(picker, "Next", 326, -207, 85, 24, function() pickerPage = pickerPage + 1; picker.Refresh() end)
-    local pageLabel = Label(picker, "", 10, C.dim, 180, "CENTER", picker, "CENTER", 0, -98)
+    local previous = Action(picker, "Previous", 16, -147, 94, 26,
+        function() pickerPage = math.max(1, pickerPage - 1); picker.Refresh() end)
+    local nextPage = Action(picker, "Next", 122, -147, 74, 26,
+        function() pickerPage = pickerPage + 1; picker.Refresh() end)
+    local pickerClose = Action(picker, "Close", 388, -147, 96, 26,
+        function() pickerOverlay:Hide() end, "quiet")
+    local pageLabel = Label(picker, "", 10, C.dim, 90, "BOTTOM", picker, "BOTTOM", 0, 19)
     pageLabel:SetJustifyH("CENTER")
     picker.Refresh = function()
         local all = NS.GetTalentBuildEntriesForClass(NS.GetTalentBuildClassToken()) or {}
@@ -288,18 +358,35 @@ local function BuildTalentPage(self)
         end
         local pages = math.max(1, math.ceil(#matches / 4))
         pickerPage = math.min(pickerPage, pages)
+        local visibleRows = math.max(1, math.min(4, #matches - (pickerPage - 1) * 4))
+        local extra = (visibleRows - 1) * 46
+        picker:SetHeight(185 + extra)
+        pickerMessage:ClearAllPoints()
+        pickerMessage:SetPoint("TOPLEFT", picker, "TOPLEFT", 16, -117 - extra)
+        for _, control in ipairs({ previous, nextPage, pickerClose }) do
+            control:ClearAllPoints()
+            control:SetPoint("TOPLEFT", picker, "TOPLEFT",
+                control == previous and 16 or (control == nextPage and 122 or 388), -147 - extra)
+        end
         for i, row in ipairs(rows) do
             local entry = matches[(pickerPage - 1) * 4 + i]
             row.entry = entry
             row:SetShown(entry ~= nil)
-            if entry then row._label:SetText(entry.name) end
+            if entry then FitText(row._label, entry.name, row._label:GetWidth()) end
         end
         pageLabel:SetText(pickerPage .. " / " .. pages)
+        if #matches == 0 then pickerMessage:SetText("No builds for this specialization. Open the Build Library to import one.") end
         previous:SetShown(pickerPage > 1)
         nextPage:SetShown(pickerPage < pages)
     end
     change:SetScript("OnClick", function()
-        if picker:IsShown() then picker:Hide() else picker.Refresh(); picker:Show() end
+        if pickerOverlay:IsShown() then
+            pickerOverlay:Hide()
+        else
+            pickerMessage:SetText("")
+            picker.Refresh()
+            pickerOverlay:Show()
+        end
     end)
     spend:SetScript("OnClick", function()
         local ok, message = NS.SpendAllOrRespecTalentPoints()
@@ -307,17 +394,35 @@ local function BuildTalentPage(self)
         self:Refresh()
     end)
     view._spend = spend
-    view._picker = picker
+    view._picker = pickerOverlay
+    view._pickerCard = picker
+    self.pickerOverlay = pickerOverlay
     spend:SetScript("OnEnter", function() art:SetVertexColor(1, 1, 1, .82) end)
     spend:SetScript("OnLeave", function() art:SetVertexColor(1, 1, 1, 1) end)
     view.Refresh = function()
         local info = NS.GetTalentLevelingInfo()
-        FitText(routeName, info.targetName or "Choose a Build", routeName:GetWidth())
+        WrapRouteName(routeName, routeNameMeasure, info.targetName, routeName:GetWidth())
+        change._label:SetText(info.buildID and info.targetName ~= "No Build Selected"
+            and "Change Build" or "Choose a Build")
         routeDetail:SetText(info.specName and ("Active Specialization: " .. info.specName) or "Current specialization")
-        routeMeta:SetText(info.enabled and "Auto-spend is on for this route." or "Hero points wait until they unlock.")
-        state:SetText(info.canSpend and "Points Ready to Spend" or (info.hasMismatch and "Talents Differ From Route" or "Current Status"))
+        routeMeta:SetText(info.enabled and "Auto-Spend: On" or "Auto-Spend: Off")
+        local headline
+        if not info.buildID or info.targetName == "No Build Selected" then
+            headline = "Choose a Build"
+        elseif info.hasMismatch then
+            headline = "Talents Need Rebuilding"
+        elseif info.canSpend then
+            headline = "Point Ready to Spend"
+        elseif info.hasPoints then
+            headline = "Point Waiting for Unlock"
+        elseif not info.settled then
+            headline = "Spending Paused"
+        else
+            headline = "No Unspent Points"
+        end
+        FitText(state, headline, state:GetWidth())
         status:SetText(view._selectionError or info.status or "Choose a build to get started.")
-        next:SetText("Next Talent: " .. (info.nextName or "—"))
+        FitText(next, "Next Talent: " .. (info.nextName or "—"), next:GetWidth())
         auto.Refresh()
         warn.Refresh()
         autoRebuild.Refresh()
@@ -334,7 +439,7 @@ end
 
 function Studio:Create()
     local w = math.max(900, math.min(1300, tonumber(NS.db.configStudioWidth) or 1120))
-    local h = math.max(760, math.min(900, tonumber(NS.db.configStudioHeight) or 790))
+    local h = math.max(740, math.min(900, tonumber(NS.db.configStudioHeight) or 760))
     local f = NS.CreatePanel("BetterSBA_ConfigStudio", NS.UIParent, w, h)
     self.frame = f
     f:SetBackdropColor(NS.unpack(C.shell))
@@ -342,7 +447,7 @@ function Studio:Create()
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetResizable(true)
-    f:SetResizeBounds(900, 760, 1300, 900)
+    f:SetResizeBounds(900, 740, 1300, 900)
     f:SetClampedToScreen(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
@@ -447,6 +552,14 @@ function Studio:Create()
     local motionPresets = { "Pulse", "Echo", "Sweep", "Sheen", "Snap", "Orbit" }
     Label(motion._quickBox, "Motion Preset", 12, C.text, 200,
         "TOPLEFT", motion._quickBox, "TOPLEFT", 18, -184)
+    local motionHint = Label(motion._quickBox, "", 11, C.dim, 550,
+        "TOPLEFT", motion._quickBox, "TOPLEFT", 18, -264)
+    local function PreviewMotion()
+        local played = NS.PreviewMotionFeedback and NS.PreviewMotionFeedback()
+        self.notice:SetText(not played and "Show the BetterSBA button to preview motion."
+            or NS.db.motionReduced and "Reduced Motion is On; preview uses a stationary flash."
+            or ("Previewing " .. (NS.db.motionPreset or "Pulse") .. "."))
+    end
     local preset = Action(motion._quickBox, "", 18, -207, 178, 34, function()
         local current = NS.db.motionPreset
         local nextIndex = 1
@@ -454,16 +567,21 @@ function Studio:Create()
             if name == current then nextIndex = i % #motionPresets + 1; break end
         end
         NS.db.motionPreset = motionPresets[nextIndex]
+        NS.db.castFeedback = "Motion"
         if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
         motion.Refresh()
+        PreviewMotion()
     end)
-    Action(motion._quickBox, "Preview Motion", 208, -207, 140, 34, function()
-        if NS.PreviewMotionFeedback then NS.PreviewMotionFeedback() end
+    local preview = Action(motion._quickBox, "Preview Motion", 208, -207, 140, 34, function()
+        PreviewMotion()
     end, "quiet")
+    motion._preset, motion._previewMotion, motion._hint = preset, preview, motionHint
     local motionRefresh = motion.Refresh
     motion.Refresh = function()
         motionRefresh()
         preset._label:SetText(NS.db.motionPreset or "Pulse")
+        motionHint:SetText(NS.db.motionReduced and "Reduced Motion replaces every preset with a stationary flash."
+            or "Orbit circles the button; Sweep crosses its lower edge.")
     end
     BuildTalentPage(self)
     BuildGeneralPage(self, "Profiles", "Profiles & Visibility",
@@ -471,8 +589,8 @@ function Studio:Create()
             { "Show Minimap Button", "Open settings from the minimap.", "showMinimapButton", function()
                 if NS.SetMinimapVisible then NS.SetMinimapVisible(NS.db.showMinimapButton) end
             end },
-            { "Hide in Vehicle", "Keep the display out of vehicle UI.", "hideInVehicle", function() NS.UpdateNow() end },
-            { "Only in Combat", "Hide the display between fights.", "onlyInCombat", function() NS.UpdateNow() end },
+            { "Hide In Vehicle", "Keep the display out of vehicle UI.", "hideInVehicle", function() NS.UpdateNow() end },
+            { "Only In Combat", "Hide the display between fights.", "onlyInCombat", function() NS.UpdateNow() end },
         }, 9)
     -- The generic quick controls are deliberately a preview of the common
     -- actions; the complete profile manager stays in Classic Settings.
@@ -502,8 +620,15 @@ function Studio:Create()
             local half = math.floor((usable - 12) / 2)
             talents._left:SetWidth(half)
             talents._right:SetWidth(usable - half - 12)
+            talents._stepLabels[1]:SetWidth(half - 32)
+            talents._stepLabels[2]:SetWidth(half - 32)
+            talents._stepLabels[3]:SetWidth(half - 32)
+            for i = 4, #talents._stepLabels do
+                talents._stepLabels[i]:SetWidth(half - 32)
+            end
             talents._right:ClearAllPoints()
             talents._right:SetPoint("TOPLEFT", talents, "TOPLEFT", 26 + half + 12, -270)
+            if talents.Refresh then talents.Refresh() end
         end
         self:ApplyScale()
     end
@@ -525,6 +650,7 @@ end
 
 function Studio:SelectPage(page)
     self.page = self.pages[page] and page or "Overview"
+    if self.page ~= "Talents" and self.pickerOverlay then self.pickerOverlay:Hide() end
     for key, view in pairs(self.pages) do view:SetShown(key == self.page) end
     for key, button in pairs(self.navButtons) do
         local active = key == self.page
@@ -552,6 +678,7 @@ function Studio:Show()
 end
 
 function Studio:Hide()
+    if self.pickerOverlay then self.pickerOverlay:Hide() end
     if self.frame then self.frame:Hide() end
 end
 

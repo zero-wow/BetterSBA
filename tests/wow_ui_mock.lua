@@ -410,7 +410,11 @@ function M.writeSVG(root, path)
                 local color, alpha = cssColor(rawget(node, "_textColor"), {0.9, 0.9, 0.9, 1})
                 local tx = rawget(node, "_justifyH") == "RIGHT" and x + w or (rawget(node, "_justifyH") == "CENTER" and x + w / 2 or x)
                 local anchor = rawget(node, "_justifyH") == "RIGHT" and "end" or (rawget(node, "_justifyH") == "CENTER" and "middle" or "start")
-                lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(tx, y + (font.size or 10), font.size or 10, color, alpha, anchor, escape(visibleText(text)))
+                local lineNumber = 0
+                for line in (visibleText(text) .. "\n"):gmatch("(.-)\n") do
+                    lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(tx, y + (font.size or 10) + lineNumber * math.ceil((font.size or 10) * 1.2), font.size or 10, color, alpha, anchor, escape(line))
+                    lineNumber = lineNumber + 1
+                end
             end
         end
         for _, child in ipairs(rawget(node, "_children") or {}) do visit(child) end

@@ -83,6 +83,7 @@ local function makeHarness(options)
 
     _G.GetBuildInfo = function() return table.unpack(h.client) end
     _G.InCombatLockdown = function() return h.combat == true end
+    _G.UnitIsDeadOrGhost = function() return h.dead == true end
     _G.Enum = { TraitNodeType = { Selection = 2, SubTreeSelection = 3 } }
     _G.C_Spell = { GetSpellName = function(spellID) return "Spell " .. tostring(spellID) end }
     _G.C_ClassTalents = {
@@ -224,6 +225,24 @@ do
         "confirmed full batch must settle with no further eligible ranks")
 end
 
+-- Being dead can make editing temporarily unavailable. Auto-Spend stays on
+-- and resumes after the alive/ghost transition rather than needing a reload.
+do
+    local h = makeHarness()
+    h.dead = true
+    h:selectTarget("A")
+    check(h.NS.SetTalentLevelingEnabled(true), "the route switch must save while editing is unavailable")
+    h:runDue(.25)
+    check(h.purchases == 0 and h.NS.GetTalentLevelingState().enabled
+        and h:info().status:find("until you are alive", 1, true),
+        "temporary edit restrictions must not switch Auto-Spend off")
+    h.dead = false
+    h.NS.OnTalentLevelingEvent("PLAYER_ALIVE")
+    h:runDue(.25)
+    check(h.purchases == 1 and h.commits == 1,
+        "Auto-Spend must resume when the player is alive again")
+end
+
 -- A max-level target can contain hero ranks before the character unlocks
 -- them. Spend the available class point and leave the locked hero rank alone.
 do
@@ -270,7 +289,7 @@ do
     check(h.nodes[7].ranksPurchased == 0 and h.nodes[99].ranksPurchased == 0,
         "locked hero and off-target ranks must stay unpurchased")
     h:confirm()
-    check(h:info().status:find("Waiting for unavailable talents", 1, true),
+    check(h:info().status:find("More in this route unlock later", 1, true),
         "the retained hero choice must remain pending until its tree unlocks")
 end
 

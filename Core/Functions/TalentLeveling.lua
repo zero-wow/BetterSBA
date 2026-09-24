@@ -207,11 +207,17 @@ local function Inspect(options)
         autoRespecEnabled = state.autoRespec == true, canSpend = false,
         warningEnabled = state.warnMismatch == true and NS.IsTalentBuildSystemEnabled(),
         hasMismatch = false, canRespec = false, settled = false,
-        targetName = "Choose a build below", nextName = "—", status = "Choose a leveling target.",
+        targetName = "No Build Selected", nextName = "—",
+        status = "Choose a build for your current specialization to begin.",
         detail = "Auto-spend is saved for this character and specialization.",
     }
     local entry = NS.FindTalentBuildByID(state.buildID)
-    if not entry then return info end
+    if not entry then
+        if state.buildID and state.buildID ~= NS.TALENT_BUILD_CUSTOM_ID then
+            info.status = "The selected build is unavailable. Choose a build again."
+        end
+        return info
+    end
     info.targetName = entry.name
     local evidence = entry.verificationStatus == "source-sba" and "Assist-specific source build. "
         or (entry.verificationStatus == "source-talent" and "Source-published talent export; SBA suitability is unverified. ")
@@ -241,6 +247,9 @@ local function Inspect(options)
     if InCombatLockdown() then return Block("Waiting for combat to end.") end
     if C_Traits.ConfigHasStagedChanges(configID) and not (options.request and options.request.ownsChanges) then
         return Block("Apply or discard your pending talent edits first.")
+    end
+    if UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then
+        return Block("Waiting until you are alive to spend talent points.")
     end
     local editable, editReason = C_ClassTalents.CanEditTalents()
     if not editable then return Block(editReason or "Talents cannot be edited right now.") end
@@ -289,13 +298,16 @@ local function Inspect(options)
         info.canRespec = C_Traits.ResetTree ~= nil and C_Traits.RollbackConfig ~= nil
             and C_Traits.IsReadyForCommit ~= nil
         info.nextAction = "Respec to the chosen SBA build at your current level."
-        return Block("Your learned talents differ from the chosen SBA build.")
+        return Block(info.enabled and info.autoRespecEnabled
+            and "Auto-Rebuild is On. Conflicting talents will be rebuilt when editing is available."
+            or "Your learned talents differ from this route. Use Reset & Rebuild to align them.")
     end
     local currencies, hasPoints = {}, false
     for _, currency in ipairs(C_Traits.GetTreeCurrencyInfo(configID, treeID, false) or {}) do
         currencies[currency.traitCurrencyID] = currency.quantity or 0
         if (currency.quantity or 0) > 0 then hasPoints = true end
     end
+    info.hasPoints = hasPoints
     local missing = false
     for _, target in ipairs(ordered) do
         local node = target.node
@@ -313,7 +325,8 @@ local function Inspect(options)
                 info.nextName, info.canSpend = name, true
                 info.pick = { nodeID = target.nodeID, entryID = entryID, before = node.ranksPurchased,
                     choice = IsChoice(node, configID, entryID) }
-                info.status = info.enabled and "Ready to spend automatically." or "Ready. Auto-spend is off."
+                info.status = info.enabled and "An available point is ready to spend automatically."
+                    or "An available point is ready. Turn on Auto-Spend or click Spend Available Points."
                 info.reason = target.reason or "Fills a legal prerequisite or remaining rank in your chosen build."
                 info.status = info.status .. " " .. info.reason
                 info.prioritySourceURL = target.rule and target.rule.sourceURL
@@ -322,10 +335,12 @@ local function Inspect(options)
         end
     end
     if not missing then
-        return Block(deferred > 0 and "Waiting for unavailable talents in this build to unlock."
-            or "Target build complete.")
+        return Block(deferred > 0 and "Current-level talents are filled. More in this route unlock later."
+            or "Every talent in this route is learned.")
     end
-    return Block(hasPoints and "Waiting for an eligible talent in this build (level, prerequisite, or currency)." or "Waiting for your next talent point.")
+    if hasPoints then return Block("Unspent points are waiting for a level or prerequisite unlock.") end
+    return Block(info.enabled and "No unspent points now. Auto-Spend will use your next point."
+        or "No unspent points now. Turn on Auto-Spend to use future points.")
 end
 
 function NS.GetTalentLevelingInfo()
@@ -977,7 +992,8 @@ function NS.OnTalentLevelingEvent(event, ...)
         local treeID = ...
         local specID = NS.GetTalentBuildCurrentSpecID()
         if not specID or treeID ~= C_ClassTalents.GetTraitTreeForSpec(specID) then return end
-    elseif event ~= "PLAYER_LOGIN" and event ~= "PLAYER_ENTERING_WORLD"
+    elseif event ~= "PLAYER_LOGIN" and event ~= "PLAYER_ALIVE"
+        and event ~= "PLAYER_UNGHOST" and event ~= "PLAYER_ENTERING_WORLD"
         and event ~= "PLAYER_LEVEL_UP" and event ~= "PLAYER_REGEN_ENABLED" then
         return
     end
