@@ -15,8 +15,13 @@ local function object(parent, kind)
     function o:GetAlpha() return self.alpha end
     function o:SetAlpha(a) self.alpha=a end
     function o:GetWidth() return 48 end
-    function o:GetFrameLevel() return 5 end
+    function o:GetFrameLevel() return rawget(self,"frameLevel") or 5 end
     function o:GetFrameStrata() return "MEDIUM" end
+    function o:SetFrameLevel(level) self.frameLevel=level end
+    function o:SetTexture(texture) self.texture=texture end
+    function o:SetSize(width,height) self.width,self.height=width,height end
+    function o:SetPoint(...) self.point={...} end
+    function o:SetOffset(x,y) self.offsetX,self.offsetY=x,y end
     function o:SetScript(k,v) self.scripts[k]=v end
     function o:Play() self.playing=true end
     function o:Stop() self.playing=false end
@@ -44,6 +49,25 @@ for _, preset in ipairs({"Pulse","Echo","Sweep"}) do
     for i=1,100 do assert(ns.PlayMotionFeedback(1)) end
 end
 assert(made==4, "Repeated casts never allocate more frames")
+local host, sweep = all[1], all[2]
+assert(host:GetFrameLevel() < ns.mainButton:GetFrameLevel()
+    and sweep:GetFrameLevel() > ns.mainButton:GetFrameLevel()
+    and all[3]:GetFrameLevel() < ns.mainButton:GetFrameLevel(),
+    "only Sweep's traveling edge should cross above the button")
+assert(sweep.edge.texture == "Interface\\Buttons\\WHITE8X8"
+    and sweep.edge.width == 48 * 0.28 and sweep.edge.height == 4,
+    "Sweep needs a solid narrow streak, not the hollow glow compressed into a line")
+assert(sweep.ag._translate.offsetX == 48 * 0.72,
+    "Sweep glint must travel across the full button width")
+local startCenter = sweep.edge.point[4]
+local finishCenter = startCenter + sweep.ag._translate.offsetX
+assert(startCenter - sweep.edge.width / 2 <= -24
+    and finishCenter + sweep.edge.width / 2 >= 24,
+    "Sweep must enter at the left edge and clear the right edge")
+ns.db.motionPreset="Pulse"
+assert(ns.PlayMotionFeedback(1) and host:GetFrameLevel() < ns.mainButton:GetFrameLevel()
+    and sweep:GetFrameLevel() < ns.mainButton:GetFrameLevel(),
+    "Pulse must restore the quiet behind-button layer order after Sweep")
 ns.db.motionReduced=true
 ns.PlayMotionFeedback(1)
 local playing=0

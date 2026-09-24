@@ -506,19 +506,67 @@ for _, chip in ipairs(sourceChips) do
     rows[math.floor(t)] = true
 end
 local rowCount = 0; for _ in pairs(rows) do rowCount = rowCount + 1 end
-assert(rowCount >= 2, "long source chips must wrap across rows")
+assert(rowCount >= 1, "source chips must be laid out in measured catalog rows")
 
 -- Wrapped filters must push the footer as well as the table/actions. Status
 -- messages and assist controls must have real interior bounds, not clipping.
 local assistPanel = talentState.useForLevelingBtn:GetParent()
+assert(assistPanel:GetHeight() <= 120, "leveling assist must remain compact instead of reserving a mostly empty block")
 local apl, apt, apr, apb = mock.rect(assistPanel)
 for _, control in ipairs({talentState.levelingTarget, talentState.levelingNext, talentState.levelingStatus,
     talentState.useForLevelingBtn, talentState.autoSpendBtn, talentState.spendNextBtn,
     talentState.sbaWarningBtn, talentState.respecSBABtn, talentState.undoRespecBtn, talentState.levelingHint}) do
     local l, t, r, b = mock.rect(control)
     assert(l >= apl + 8 and r <= apr - 8 and t <= apt - 8 and b >= apb + 8,
-        "leveling labels and controls must stay inside an explicit gutter")
+        ("leveling labels and controls must stay inside an explicit gutter (%s: %.0f %.0f %.0f %.0f within %.0f %.0f %.0f %.0f)")
+            :format(rawget(control, "_text") or "control", l, t, r, b, apl, apt, apr, apb))
 end
+local assistActions = {
+    talentState.useForLevelingBtn, talentState.autoSpendBtn, talentState.spendNextBtn,
+    talentState.sbaWarningBtn, talentState.respecSBABtn, talentState.undoRespecBtn,
+}
+for i = 1, #assistActions do
+    local al, at, ar, ab = mock.rect(assistActions[i])
+    for j = i + 1, #assistActions do
+        local bl, bt, br, bb = mock.rect(assistActions[j])
+        assert(ar <= bl or br <= al or ab >= bt or bb >= at,
+            "leveling assist action controls must not overlap")
+    end
+end
+local _, typeTop, _, typeBottom = mock.rect(talentState.typeButtons.all)
+local _, _, _, searchBottom = mock.rect(talentState.searchBox)
+assert(typeTop <= searchBottom - 8,
+    "type filters must start below the search field instead of sharing its label row")
+local _, firstSourceTop, _, firstSourceBottom = mock.rect(sourceChips[1])
+assert(firstSourceTop <= typeBottom - 8 and firstSourceBottom < typeTop,
+    ("source chips must use a dedicated row below the type filters (source %.0f %.0f, type %.0f %.0f)")
+        :format(firstSourceTop, firstSourceBottom, typeTop, typeBottom))
+local _, tableTopAfterSources = mock.rect(talentState.tablePanel)
+local lowestSourceBottom = firstSourceBottom
+for _, chip in ipairs(sourceChips) do
+    local _, _, _, chipBottom = mock.rect(chip)
+    lowestSourceBottom = math.min(lowestSourceBottom, chipBottom)
+end
+assert(tableTopAfterSources <= lowestSourceBottom - 12,
+    "the table must start below every revealed source-chip row with a visible gutter")
+
+local customCatalogRow, offSpecCatalogRow
+for _, row in ipairs(talentState.rowButtons) do
+    local data = rawget(row, "_data")
+    if data and data.id == "CUSTOM" then customCatalogRow = row end
+    if data and data.specID ~= 100 then offSpecCatalogRow = row end
+end
+assert(customCatalogRow and offSpecCatalogRow, "catalog needs Custom and off-spec rows for action gating")
+customCatalogRow:GetScript("OnClick")(customCatalogRow)
+assert(not talentState.useForLevelingBtn._enabled
+    and rawget(talentState.levelingStatus, "_text"):find("Select a current%-spec"),
+    "Custom must not be usable as a leveling target")
+offSpecCatalogRow:GetScript("OnClick")(offSpecCatalogRow)
+assert(not talentState.useForLevelingBtn._enabled
+    and rawget(talentState.behaviorText, "_text"):find("OFF%-SPEC BUILD")
+    and rawget(talentState.levelingStatus, "_text"):find("off%-spec"),
+    "off-spec catalog rows must be plainly identified and unavailable for current-spec leveling")
+selectedCatalogRow:GetScript("OnClick")(selectedCatalogRow)
 local footer = assert(findTextWidget(talentParent,
     "Click a row to inspect it. APPLY BUILD imports the selected full build. LOAD ANYWAY remains for an off-spec selection."))
 local _, tableTop, _, tableBottom = mock.rect(talentState.tablePanel)
@@ -544,6 +592,24 @@ local sl, st, sr, sb = mock.rect(sourcePopup._sourceScroll)
 assert(sl >= spl + 12 and sr <= spr - 12 and st < spt - 80 and sb >= spb + 30,
     "source viewport must leave room for the dialog controls")
 sourcePopup:Hide()
+talentState.selectedRow.verificationStatus = "user-provided"
+local savedSourceURL = talentState.selectedRow.sourceURL
+talentState.selectedRow.sourceURL = ""
+talentState:UpdateDetails()
+assert(rawget(talentState.behaviorText, "_text"):find("user%-provided import", 1),
+    "selected user-provided imports must state their unverified SBA provenance")
+assert(talentState.sourceBtn:IsShown() and rawget(talentState.sourceBtn._text, "_text") == "BUILD NOTES",
+    "user-provided imports without source URLs must expose their build notes")
+talentState.sourceBtn:GetScript("OnClick")(talentState.sourceBtn)
+assert(rawget(sourcePopup._provenance, "_text"):find("User%-provided import", 1),
+    "source popup must distinguish user-provided imports from source-verified catalog builds")
+assert(rawget(sourcePopup._title, "_text"):find("Build Notes", 1, true)
+    and rawget(sourcePopup._editBox, "_text") == "No source URL supplied",
+    "build notes must not imply that an unverified source URL exists")
+sourcePopup:Hide()
+talentState.selectedRow.sourceURL = savedSourceURL
+talentState.selectedRow.verificationStatus = "guide-adapted"
+talentState:UpdateDetails()
 
 -- Fixed-size rows and direct disclosure controls must remain inside their
 -- scroll-content parent. This includes the two 66px trinket rows.
@@ -570,6 +636,7 @@ assert(minHeightPanel:GetWidth() == 640 and minHeightPanel:GetHeight() == 400,
 NS.Config.SelectSection(5)
 assertActiveSectionInScrollRegion(5)
 local compactTalent = assert(newestSection(5), "compact Talent Builds content missing")
+local compactTalentState = assert(NS.BuildTalentBuildsConfigSection(compactTalent))
 local compactAssistTitle = assert(findTextWidget(compactTalent, "LEVELING TARGET"), "compact panel must keep leveling assist visible")
 local compactCatalogTitle = assert(findTextWidget(compactTalent, "TALENT BUILDS"), "compact panel must keep catalog title visible")
 local _, _, _, assistBottom = mock.rect(rawget(compactAssistTitle, "_parent"))
@@ -583,6 +650,55 @@ for _, control in ipairs({compactAlert:GetParent(), compactRespec:GetParent()}) 
     assert(l >= pl + 8 and r <= pr - 8 and t <= pt - 8 and b >= pb + 8,
         "compact SBA warning controls must remain inside the reserved assist block")
 end
+-- The production Talent tab intentionally widens its scroll region. Exercise
+-- the panel's real narrow branch separately so a future host with the minimum
+-- content width keeps catalog chips, details, and actions apart.
+local narrowTalent = ui.createFrame("Frame", nil, ui.uiParent)
+narrowTalent:SetSize(640, 1200)
+narrowTalent._contentWidth, narrowTalent._sectionColor, narrowTalent._subsections = 640, color(), {}
+narrowTalent._sectionColorDim, narrowTalent._sectionColorBright = color(), color()
+local narrowTalentState = assert(NS.BuildTalentBuildsConfigSection(narrowTalent))
+assert(narrowTalentState.compactCatalog, "minimum-width Talent Builds must stack the details panel below the catalog table")
+local compactSources, compactRows = {}, {}
+for _, chip in ipairs(narrowTalentState.sourceButtons) do
+    if chip:IsShown() then
+        compactSources[#compactSources + 1] = chip
+        local _, top = mock.rect(chip)
+        compactRows[math.floor(top)] = true
+    end
+end
+local compactRowCount = 0; for _ in pairs(compactRows) do compactRowCount = compactRowCount + 1 end
+assert(#compactSources == 6 and compactRowCount >= 2,
+    ("long source chips must wrap at the minimum config width (%d chips, %d rows)"):format(#compactSources, compactRowCount))
+local lowestCompactChipBottom
+for _, chip in ipairs(compactSources) do
+    local _, _, _, bottom = mock.rect(chip)
+    lowestCompactChipBottom = lowestCompactChipBottom and math.min(lowestCompactChipBottom, bottom) or bottom
+end
+local _, compactTableTop, _, compactTableBottom = mock.rect(narrowTalentState.tablePanel)
+local _, compactDetailsTop = mock.rect(narrowTalentState.detailsPanel)
+assert(compactTableTop <= lowestCompactChipBottom - 12,
+    "wrapped compact source rows must reserve a gutter before the table header")
+assert(compactDetailsTop <= compactTableBottom - 8,
+    "compact details panel must start below the table instead of compressing its columns")
+local _, compactSourceBottom = mock.rect(narrowTalentState.sourceBtn)
+local _, compactActionsTop = mock.rect(narrowTalentState.actionsRule)
+assert(compactActionsTop <= compactSourceBottom - 8,
+    "compact catalog actions must follow the details/source area without overlap")
+local savedStatus, savedDetail = leveling.status, leveling.detail
+leveling.status = string.rep("A long current-level talent status that must stay bounded in the compact assistant. ", 4)
+leveling.detail = string.rep("Unverified source and prerequisite ordering details remain available from the assistant tooltip. ", 4)
+narrowTalentState:UpdateLevelingAssist()
+local narrowStatusText = rawget(narrowTalentState.levelingStatus, "_text")
+assert(not narrowStatusText:find("\n", 1, true) and #narrowStatusText <= 100
+    and table.concat(narrowTalentState.levelingTooltip, " "):find("Unverified source", 1, true),
+    "compact assistant must summarize long provenance in its bounded status line and retain full details in its tooltip")
+local nl, nt, nr, nb = mock.rect(narrowTalentState.levelingStatus)
+local npl, npt, npr, npb = mock.rect(narrowTalentState.useForLevelingBtn:GetParent())
+assert(nl >= npl + 8 and nr <= npr - 8 and nt <= npt - 8 and nb >= npb + 8,
+    "long compact assistant status must remain inside its allocated bounds")
+leveling.status, leveling.detail = savedStatus, savedDetail
+narrowTalentState:UpdateLevelingAssist()
 
 -- A page must never be left transparent when the user closes/reopens while
 -- transition settings are enabled. The shell no longer fades whole content.

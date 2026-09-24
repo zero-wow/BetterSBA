@@ -206,6 +206,7 @@ local function Inspect(options)
         or (entry.verificationStatus == "source-compatible" and "Source-recommended SBA-compatible build. ")
         or (entry.verificationStatus == "guide-adapted" and "Guide-adapted SBA build. ")
         or (entry.verificationStatus == "guide-inferred" and "Guide-discussed SBA spec; this exact import is not SBA-verified. ")
+        or (entry.verificationStatus == "user-provided" and "Player-supplied SBA target; not independently performance-verified. ")
         or "SBA suitability unverified. "
     info.detail = evidence .. (entry.patch and entry.patch ~= "" and ("Source patch: " .. entry.patch) or "Source patch unverified")
         .. ". " .. (entry.levelingOrder and "Source priority; legal prerequisites first." or "Follows the build in prerequisite order; not an SBA-tested leveling order.")

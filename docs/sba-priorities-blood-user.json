@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "checkedAt": "2026-09-24",
+  "patch": "12.1.0",
+  "scope": "Guide-informed next-point weights for the two user-supplied Blood Death Knight SBA targets; legal game prerequisites and target membership remain authoritative.",
+  "priorityMeaning": "All numeric weights are BetterSBA inferences from the source's core rotation and survival guidance, not a publisher leveling order or a measured SBA optimum.",
+  "targets": [
+    {
+      "specID": 250,
+      "specName": "Blood",
+      "classToken": "DEATHKNIGHT",
+      "buildIDs": [
+        "USER-SBA-250-LEVELING-20260924",
+        "USER-SBA-250-RAIDS-20260924"
+      ],
+      "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+      "notes": "Only matching purchased talents in the selected import receive these weights. Survival cooldown timing remains a player decision.",
+      "priorities": [
+        { "spellID": 206930, "name": "Heart Strike", "priority": 100, "reason": "Build Runic Power for Death Strike.", "evidenceType": "inference", "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode" },
+        { "spellID": 195182, "name": "Marrowrend", "priority": 95, "reason": "Maintain Bone Shield for survival.", "evidenceType": "inference", "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode" },
+        { "spellID": 50842, "name": "Blood Boil", "priority": 90, "reason": "Apply Blood Plague and use rotational charges.", "evidenceType": "inference", "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode" },
+        { "spellID": 49028, "name": "Dancing Rune Weapon", "priority": 85, "reason": "Support damage, parry, and resource generation.", "evidenceType": "inference", "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode" },
+        { "spellID": 55233, "name": "Vampiric Blood", "priority": 80, "reason": "Keep a major survival cooldown available.", "evidenceType": "inference", "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode" },
+        { "spellID": 273946, "name": "Hemostasis", "priority": 75, "reason": "Strengthen Death Strike through the core rotation.", "evidenceType": "inference", "sourceURL": "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode" }
+      ]
+    }
+  ]
+}

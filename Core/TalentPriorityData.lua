@@ -189,6 +189,45 @@ NS.TALENT_SBA_PRIORITIES = {
             },
         },
     },
+    [250] = {
+        patch = "12.1",
+        buildIDs = {
+            ["USER-SBA-250-LEVELING-20260924"] = true,
+            ["USER-SBA-250-RAIDS-20260924"] = true,
+        },
+        spells = {
+            [206930] = {
+                name = "Heart Strike", priority = 100,
+                reason = "Build Runic Power for Death Strike.",
+                sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+            },
+            [195182] = {
+                name = "Marrowrend", priority = 95,
+                reason = "Maintain Bone Shield for survival.",
+                sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+            },
+            [50842] = {
+                name = "Blood Boil", priority = 90,
+                reason = "Apply Blood Plague and use rotational charges.",
+                sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+            },
+            [49028] = {
+                name = "Dancing Rune Weapon", priority = 85,
+                reason = "Support damage, parry, and resource generation.",
+                sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+            },
+            [55233] = {
+                name = "Vampiric Blood", priority = 80,
+                reason = "Keep a major survival cooldown available.",
+                sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+            },
+            [273946] = {
+                name = "Hemostasis", priority = 75,
+                reason = "Strengthen Death Strike through the core rotation.",
+                sourceURL = "https://www.icy-veins.com/wow/blood-death-knight-pve-tank-easy-mode",
+            },
+        },
+    },
     [251] = {
         patch = "12.1",
         buildIDs = {

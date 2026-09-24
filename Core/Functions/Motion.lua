@@ -8,6 +8,7 @@ local ASSET_ROOT = "Interface\\AddOns\\BetterSBA\\IMG\\Button\\"
 local ROUNDED_RING = ASSET_ROOT .. "RoundedRing"
 local SQUARE_RING = ASSET_ROOT .. "SquareRing"
 local GLOW = ASSET_ROOT .. "Glow"
+local SOLID = "Interface\\Buttons\\WHITE8X8"
 
 local MAX_LAYERS = 3
 local FALLBACK_ACCENT = { 0.30, 0.78, 1.00 }
@@ -68,7 +69,9 @@ local function CreateLayer(parent)
     layer.mask:SetTexture(ASSET_ROOT .. "RoundedMask", "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
     layer.mask:SetAllPoints(layer.tex)
     layer.edge = layer:CreateTexture(nil, "OVERLAY")
-    layer.edge:SetTexture(GLOW)
+    -- A solid streak remains visible when compressed to a few pixels high.
+    -- The hollow Glow asset becomes almost transparent at that aspect ratio.
+    layer.edge:SetTexture(SOLID)
     layer.edge:SetBlendMode("ADD")
     layer.edge:Hide()
 
@@ -211,10 +214,10 @@ local function RunSweep(duration, intensity)
     -- A short light moves along the lower edge, then dissolves. Its geometry
     -- is prepared with the pool; a cast only changes animation parameters.
     sweep.tex:Hide()
-    sweep.edge:SetVertexColor(r, g, b, 0.90)
+    sweep.edge:SetVertexColor(r, g, b, 1)
     sweep.edge:Show()
-    ConfigureLayer(sweep, duration, 0, 0.85 * intensity, 0, 1,
-        motion.width * 0.45, 0, "IN_OUT")
+    ConfigureLayer(sweep, duration, 0, 0.95 * intensity, 0, 1,
+        motion.width * 0.72, 0, "IN_OUT")
     PlayLayer(sweep)
 
     SetLayerTexture(rim, GetRingTexture(), r, g, b, 0.30 + intensity * 0.20)
@@ -251,13 +254,13 @@ function NS.InitializeMotionFeedback()
     host:SetPoint("TOPLEFT", button, "TOPLEFT", -2, 2)
     host:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
     host:SetFrameStrata(button:GetFrameStrata())
-    -- Echoes pass behind the recommendation, keeping the icon and key readable.
+    -- Pulse and Echo pass behind the recommendation, keeping the icon and key readable.
     host:SetFrameLevel(math.max(0, button:GetFrameLevel() - 2))
     motion.width = button:GetWidth()
     for _, layer in ipairs(motion.layers) do
         layer.edge:ClearAllPoints()
-        layer.edge:SetSize(motion.width * 0.55, 5)
-        layer.edge:SetPoint("CENTER", layer, "BOTTOM", -motion.width * 0.22, -2)
+        layer.edge:SetSize(motion.width * 0.28, 4)
+        layer.edge:SetPoint("CENTER", layer, "BOTTOM", -motion.width * 0.36, 2)
     end
     host:Show()
     motion.ready = true
@@ -284,6 +287,15 @@ function NS.PlayMotionFeedback(spellID)
     NS.ResetMotionFeedback()
     motion.host:SetAlpha(NS.mainButton:GetAlpha())
     local preset, duration, intensity, reduced = GetSettings()
+    -- Only Sweep's narrow edge glint crosses above the icon. Its soft rim and
+    -- the other presets stay behind, so cast feedback does not cover the spell.
+    local buttonLevel = NS.mainButton:GetFrameLevel()
+    local behind = math.max(0, buttonLevel - 1)
+    motion.host:SetFrameLevel(math.max(0, behind - 1))
+    for index, layer in ipairs(motion.layers) do
+        layer:SetFrameLevel((not reduced and preset == "Sweep" and index == 1)
+            and buttonLevel + 2 or behind)
+    end
     if reduced then
         RunReducedFlash(duration, intensity)
     elseif preset == "Echo" then

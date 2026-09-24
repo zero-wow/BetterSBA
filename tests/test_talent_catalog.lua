@@ -28,14 +28,20 @@ local classes = {
 }
 local classBySpec = {}
 for class, specs in pairs(classes) do for _, id in ipairs(specs) do classBySpec[id] = class end end
-local ids, count, inferred, legacy = {}, 0, 0, 0
+local ids, count, inferred, supplied, legacy = {}, 0, 0, 0, 0
 for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
     assert(not ids[entry.id], "duplicate catalog ID: " .. entry.id)
     ids[entry.id] = entry
     local version, spec = header(entry.importString)
     assert(version == 2 and spec == entry.specID, "export header/spec mismatch: " .. entry.id)
     assert(classBySpec[spec] == entry.classToken, "class/spec mismatch: " .. entry.id)
-    if entry.verificationStatus == "source-sba" or entry.verificationStatus == "source-compatible"
+    if entry.verificationStatus == "user-provided" then
+        assert(entry.notes and entry.notes ~= "", "supplied target needs its limitations recorded")
+        assert(entry.checkedAt and entry.checkedAt:match("^%d%d%d%d%-%d%d%-%d%d$"),
+            "supplied target needs a catalog review date")
+        assert(entry.rating == "", "a player-supplied target is not a comparative ranking")
+        supplied = supplied + 1
+    elseif entry.verificationStatus == "source-sba" or entry.verificationStatus == "source-compatible"
         or entry.verificationStatus == "guide-adapted" or entry.verificationStatus == "guide-inferred" then
         assert(entry.sourceURL:match("^https://"), "reviewed entry needs its exact guide URL")
         assert(entry.patch ~= "" and entry.checkedAt:match("^%d%d%d%d%-%d%d%-%d%d$"), "review metadata missing")
@@ -54,7 +60,7 @@ for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
 end
 assert(legacy == 6, "preserve the six existing Druid imports")
 assert(count == 9 and inferred == 14, "reviewed and inferred catalog coverage changed; update the audit alongside the data")
-print(("talent catalog: %d source-supported, %d guide-inferred, and %d legacy exports have valid identities and provenance"):format(count, inferred, legacy))
+print(("talent catalog: %d source-supported, %d guide-inferred, %d user-provided, and %d legacy exports have valid identities and provenance"):format(count, inferred, supplied, legacy))
 
 local rules, profiles = 0, 0
 for spec, guidance in pairs(NS.TALENT_SBA_PRIORITIES) do
@@ -76,7 +82,7 @@ for spec, guidance in pairs(NS.TALENT_SBA_PRIORITIES) do
     end
     profiles = profiles + 1
 end
-assert(profiles == 10 and rules == 72, "reviewed priority coverage changed; update the audit alongside the data")
+assert(profiles == 11 and rules == 78, "reviewed priority coverage changed; update the audit alongside the data")
 
 -- This project adaptation changes only the documented choice bit, leaving
 -- the author's remaining export exactly intact. This is not a DPS assertion.
