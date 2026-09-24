@@ -5,6 +5,28 @@ local ADDON_NAME, NS = ...
 local button
 local refreshScheduled
 local eventFrame = CreateFrame("Frame")
+local buttonArt = "Interface\\AddOns\\BetterSBA\\IMG\\Button\\TalentSpendAll"
+
+local function SkinButton(control)
+    local states = {
+        { "SetNormalTexture", "GetNormalTexture", 1, 1, 1, 1 },
+        { "SetPushedTexture", "GetPushedTexture", 0.72, 0.76, 0.92, 1 },
+        { "SetDisabledTexture", "GetDisabledTexture", 0.45, 0.48, 0.55, 0.7 },
+        { "SetHighlightTexture", "GetHighlightTexture", 0.5, 0.7, 1, 0.32 },
+    }
+    for _, state in ipairs(states) do
+        control[state[1]](control, buttonArt)
+        local texture = control[state[2]](control)
+        -- The power-of-two asset keeps its artwork in the centered 76px band.
+        texture:SetTexCoord(0, 1, 26 / 128, 102 / 128)
+        texture:SetVertexColor(state[3], state[4], state[5], state[6])
+    end
+    local label = control:GetFontString()
+    if label then
+        label:ClearAllPoints()
+        label:SetPoint("CENTER", control, "CENTER", 7, 0)
+    end
+end
 
 local function SpendInfo()
     local talents = button and button:GetParent()
@@ -26,7 +48,10 @@ end
 local function RefreshButton()
     if not button or not button:IsShown() then return end
     local info = SpendInfo()
-    button:SetAlpha(info.canSpend and 1 or 0.55)
+    button._mode = info.hasMismatch and info.canRespec and "respec" or "spend"
+    local actionable = info.canSpend or button._mode == "respec"
+    button:SetEnabled(actionable)
+    button:SetAlpha(actionable and 1 or 0.7)
     button._status = info.status or "Choose an SBA target in /bs > Talents."
     button._target = info.targetName
 end
@@ -56,12 +81,14 @@ local function AttachButton()
     button:SetPoint("RIGHT", apply, "LEFT", -16, 0)
     button:SetFrameLevel(math.max(talents:GetFrameLevel() + 1, apply:GetFrameLevel() + 1))
     button:SetText("SBA: SPEND ALL")
+    button._altText = "SBA: Spend all available talent points toward your selected build"
+    SkinButton(button)
     button:SetScript("OnClick", function()
         local info = SpendInfo()
         local message
-        if info.canSpend then
+        if info.canSpend or (info.hasMismatch and info.canRespec) then
             local _
-            _, message = NS.SpendAllTalentPoints()
+            _, message = NS.SpendAllOrRespecTalentPoints()
         else
             message = info.status
         end
@@ -72,9 +99,12 @@ local function AttachButton()
         RefreshButton()
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Spend all points toward the selected SBA build")
+        GameTooltip:SetText(self._altText)
         if self._target then GameTooltip:AddLine(self._target, 1, 1, 1, true) end
-        GameTooltip:AddLine("Fills every currently legal class, specialization, and hero rank in one commit. Existing talents are not reset.",
+        local action = self._mode == "respec"
+            and "Resets conflicting talents, then spends all points available at your level toward this build. Undo Respec can restore the prior allocation after WoW confirms it."
+            or "Fills every currently legal class, specialization, and hero rank in one commit."
+        GameTooltip:AddLine(action,
             0.75, 0.85, 0.95, true)
         GameTooltip:AddLine(self._status or "", 1, 0.75, 0.45, true)
         GameTooltip:Show()

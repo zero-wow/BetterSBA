@@ -770,6 +770,17 @@ function NS.RequestTalentSBARespec()
     return true, "Applying " .. tostring(result) .. " talent ranks to " .. info.targetName .. "."
 end
 
+function NS.SpendAllOrRespecTalentPoints()
+    local info = NS.GetTalentSpendAllInfo()
+    if info.hasMismatch and info.canRespec then
+        -- A full import can contain more points than this character has.
+        -- Rebuild through the live tree so each class, spec, and hero purchase
+        -- respects the current level and the confirmed allocation can be undone.
+        return NS.RequestTalentSBARespec()
+    end
+    return NS.SpendAllTalentPoints()
+end
+
 function NS.RequestTalentSBAUndo()
     local availability = NS.GetTalentSBAUndoInfo()
     if not availability.canUndo then return false, availability.status end

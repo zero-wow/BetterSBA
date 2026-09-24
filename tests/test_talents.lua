@@ -204,6 +204,23 @@ assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "excess-ranks" 
 encodedContent, encodedBits = { 1, 1, 1, 1, 0 }, 10
 rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "partial-tier" }, 42))
 assert(#rows == 1 and rows[1].selectionEntryID == 8001 and rows[1].ranksPurchased == 1)
+
+-- Blood's supplied San'layn export purchases the hero-tree selector. Current
+-- talent data can omit maxRanks for SubTreeSelection; that is one paid choice,
+-- not an invalid zero-rank node. Accept a full-rank partial encoding too,
+-- matching Blizzard's permissive import behavior.
+encodedContent, encodedBits = { 1, 1, 0, 1, 0 }, 6
+C_Traits.GetNodeInfo = function()
+    return { type = Enum.TraitNodeType.SubTreeSelection, entryIDs = { 8001, 8002 } }
+end
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "hero-choice" }, 42))
+assert(#rows == 1 and rows[1].ranksPurchased == 1 and rows[1].selectionEntryID == 8001,
+    "a purchased hero-tree choice with omitted maxRanks must become one spendable rank")
+encodedContent, encodedBits = { 1, 1, 1, 1, 1, 0 }, 12
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "full-partial" }, 42))
+assert(#rows == 1 and rows[1].ranksPurchased == 1,
+    "a valid explicit full rank must not be rejected only for using partial-rank encoding")
+
 encodedContent, encodedBits = nil, nil
 C_Traits.GetNodeInfo = function() return { type = Enum.TraitNodeType.Selection, entryIDs = { 8001, 8002 }, maxRanks = 1 } end
 assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "changed-node-type" }, 42) == nil,

@@ -213,7 +213,7 @@ do
     h.useBudgets = true
     h:selectTarget("A")
     check(h.NS.GetTalentSpendAllInfo().canSpend, "spend-all should enable for a legal selected target")
-    local ok, message = h.NS.SpendAllTalentPoints()
+    local ok, message = h.NS.SpendAllOrRespecTalentPoints()
     check(ok and message:find("3 talent ranks", 1, true), "spend-all must report the full batch")
     check(h.purchases == 3 and h.commits == 1 and h.resets == 0 and h.imports == 0,
         "spend-all must fill class/spec/hero targets with one commit and no reset or import")
@@ -586,10 +586,10 @@ do
         [201] = { priority = 90, name = "Core", reason = "Core priority." },
     } } }
     h.NS.SetTalentLevelingEnabled(true)
-    local ok, message = h.NS.RequestTalentSBARespec()
+    local ok, message = h.NS.SpendAllOrRespecTalentPoints()
     check(ok, message)
     check(h.resets == 1 and h.commits == 1 and h.purchases == 1 and h.purchaseOrder[1] == 2,
-        "current-level respec must spend only the refunded point using guide priorities and commit once")
+        "spend-all fallback must reset conflicts, spend only the refunded point using guide priorities, and commit once")
     check(h.nodes[99].ranksPurchased == 0 and h.nodes[1].ranksPurchased == 0 and h.currencies[10][1].quantity == 0,
         "respec must remove conflicting allocation without overspending the current level")
     check(not h.NS.RequestTalentSBARespec() and not h.NS.SpendNextTalentPoint(), "pending respec must prevent overlapping mutations")

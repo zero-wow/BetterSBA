@@ -320,12 +320,17 @@ local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent)
             local nodeID = treeNodes[i]
             local node = C_Traits.GetNodeInfo(configID, nodeID)
             if not node then return nil, "Unable to read node info" end
+            -- Hero-tree selection nodes represent one purchased choice, but
+            -- their node info can omit maxRanks. Blizzard's serializer still
+            -- records the choice as purchased; treat that selector as one rank.
             local maxRanks = node.maxRanks
+            if node.type == Enum.TraitNodeType.SubTreeSelection and (maxRanks == nil or maxRanks == 0) then
+                maxRanks = 1
+            end
             local ranks = encoded.isPartiallyRanked and encoded.partialRanksPurchased or maxRanks
             if type(maxRanks) ~= "number" or maxRanks < 1 or type(ranks) ~= "number"
-                or ranks % 1 ~= 0 or ranks < 1 or ranks > maxRanks
-                or (encoded.isPartiallyRanked and ranks >= maxRanks) then
-                return nil, "Invalid purchased rank count"
+                or ranks % 1 ~= 0 or ranks < 1 or ranks > maxRanks then
+                return nil, "Invalid purchased rank count for talent node " .. tostring(nodeID)
             end
             local choice = node.type == Enum.TraitNodeType.Selection or node.type == Enum.TraitNodeType.SubTreeSelection
             if encoded.isChoiceNode ~= choice then return nil, "Build node type does not match this talent tree" end
