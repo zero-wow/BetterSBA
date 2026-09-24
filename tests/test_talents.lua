@@ -224,6 +224,17 @@ end
 rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "hero-choice" }, 42))
 assert(#rows == 1 and rows[1].ranksPurchased == 1 and rows[1].selectionEntryID == 8001,
     "a purchased hero-tree choice with omitted maxRanks must become one spendable rank")
+-- A locked hero selector can report zero capacity through the current config
+-- even though the max-level export contains a valid one-rank target.
+C_Traits.GetNodeInfo = function()
+    return { type = 0, entryIDs = { 8001, 8002 }, maxRanks = 0 }
+end
+C_Traits.GetEntryInfo = function(_, entryID)
+    return { maxRanks = 1, subTreeID = entryID == 8001 and 555 or 556 }
+end
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "locked-hero-choice" }, 42))
+assert(#rows == 1 and rows[1].ranksPurchased == 1 and rows[1].selectionEntryID == 8001,
+    "a level-locked hero selector must remain a future target instead of blocking leveling")
 encodedContent, encodedBits = { 1, 1, 1, 1, 1, 0 }, 12
 rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "full-partial" }, 42))
 assert(#rows == 1 and rows[1].ranksPurchased == 1,

@@ -320,22 +320,28 @@ local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent)
             local nodeID = treeNodes[i]
             local node = C_Traits.GetNodeInfo(configID, nodeID)
             if not node then return nil, "Unable to read node info" end
-            -- Hero-tree selection nodes represent one purchased choice, but
-            -- their node info can omit maxRanks. Blizzard's serializer still
-            -- records the choice as purchased; treat that selector as one rank.
-            local maxRanks = node.maxRanks
-            if node.type == Enum.TraitNodeType.SubTreeSelection and (maxRanks == nil or maxRanks == 0) then
-                maxRanks = 1
-            end
+            local entries = node.entryIDs
+            if not entries or #entries == 0 then return nil, "Talent node has no entries" end
+            local selectedEntryID = encoded.isChoiceNode and entries[encoded.choiceNodeSelection] or entries[1]
+            if encoded.isChoiceNode and not selectedEntryID then return nil, "Invalid choice-node selection" end
+            local entryInfo = selectedEntryID and C_Traits.GetEntryInfo and C_Traits.GetEntryInfo(configID, selectedEntryID)
+            -- The live hero selector may report no spendable maxRanks while an
+            -- inactive subtree is displayed. Its entry's subTreeID identifies
+            -- the one-rank selection even if the node type is not yet stable.
+            local isSubTreeChoice = node.type == Enum.TraitNodeType.SubTreeSelection
+                or (encoded.isChoiceNode and entryInfo and entryInfo.subTreeID ~= nil)
+            local maxRanks = isSubTreeChoice and 1 or node.maxRanks
+            local missingChoiceRanks = encoded.isChoiceNode
+                and (type(maxRanks) ~= "number" or maxRanks < 1)
+            if missingChoiceRanks then maxRanks = 1 end
             local ranks = encoded.isPartiallyRanked and encoded.partialRanksPurchased or maxRanks
             if type(maxRanks) ~= "number" or maxRanks < 1 or type(ranks) ~= "number"
                 or ranks % 1 ~= 0 or ranks < 1 or ranks > maxRanks then
                 return nil, "Invalid purchased rank count for talent node " .. tostring(nodeID)
+                    .. " (import " .. tostring(ranks) .. ", capacity " .. tostring(maxRanks) .. ")"
             end
-            local choice = node.type == Enum.TraitNodeType.Selection or node.type == Enum.TraitNodeType.SubTreeSelection
+            local choice = node.type == Enum.TraitNodeType.Selection or isSubTreeChoice or missingChoiceRanks
             if encoded.isChoiceNode ~= choice then return nil, "Build node type does not match this talent tree" end
-            local entries = node.entryIDs
-            if not entries or #entries == 0 then return nil, "Talent node has no entries" end
             if Enum.TraitNodeType.Tiered and node.type == Enum.TraitNodeType.Tiered then
                 if not C_Traits.GetEntryInfo then return nil, "Tiered talent API unavailable" end
                 local remaining = ranks
@@ -353,9 +359,7 @@ local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent)
                 end
                 if remaining ~= 0 then return nil, "Tiered talent rank count exceeds its entries" end
             else
-                local entryID = choice and entries[encoded.choiceNodeSelection] or entries[1]
-                if choice and not entries[encoded.choiceNodeSelection] then return nil, "Invalid choice-node selection" end
-                results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = ranks, selectionEntryID = entryID }
+                results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = ranks, selectionEntryID = selectedEntryID }
             end
         end
     end

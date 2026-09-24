@@ -224,6 +224,27 @@ do
         "confirmed full batch must settle with no further eligible ranks")
 end
 
+-- A max-level target can contain hero ranks before the character unlocks
+-- them. Spend the available class point and leave the locked hero rank alone.
+do
+    local h = makeHarness({ rows = {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 7, ranksPurchased = 1, selectionEntryID = 701 },
+    }, treeNodes = { 1, 7 } })
+    h.nodes[7] = { ranksPurchased = 0, canPurchaseRank = false, isAvailable = false,
+        posY = 3, type = Enum.TraitNodeType.SubTreeSelection, entryIDs = { 701, 702 } }
+    h.costs[7] = { { ID = 3, amount = 1 } }
+    h.currencies[10] = { { traitCurrencyID = 1, quantity = 1 }, { traitCurrencyID = 3, quantity = 0 } }
+    h:selectTarget("A")
+    check(h:info().pick.nodeID == 1, "a locked hero choice must not block an available class talent")
+    local ok = h.NS.SpendAllOrRespecTalentPoints()
+    check(ok and h.purchases == 1 and h.purchaseOrder[1] == 1 and h.selections == 0,
+        "spend-all must never select or purchase a level-locked hero node")
+    h:confirm()
+    check(not h:info().canSpend and h.nodes[7].ranksPurchased == 0,
+        "the locked hero talent remains a future target after the class point commits")
+end
+
 -- A rejected rank must roll back the entire staged batch; an incompatible
 -- current allocation must be rejected before the first purchase.
 do

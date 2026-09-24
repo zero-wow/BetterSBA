@@ -66,8 +66,13 @@ local function APIsReady()
         and C_Traits.SetSelection and C_Traits.ConfigHasStagedChanges
 end
 
-local function IsChoice(node)
-    return node.type == Enum.TraitNodeType.Selection or node.type == Enum.TraitNodeType.SubTreeSelection
+local function IsChoice(node, configID, entryID)
+    if node.type == Enum.TraitNodeType.Selection or node.type == Enum.TraitNodeType.SubTreeSelection then
+        return true
+    end
+    entryID = entryID or (node.activeEntry and node.activeEntry.entryID) or (node.entryIDs and node.entryIDs[1])
+    local entry = entryID and C_Traits.GetEntryInfo(configID, entryID)
+    return entry and entry.subTreeID ~= nil or false
 end
 
 local function GetGuidance(specID, buildID)
@@ -251,7 +256,7 @@ local function Inspect(options)
         if node and (node.ranksPurchased or 0) > 0 then
             local target = map[nodeID]
             if not target or node.ranksPurchased > target.ranks or
-                (IsChoice(node) and (not node.activeEntry or node.activeEntry.entryID ~= target.entries[1].entryID)) then
+                (IsChoice(node, configID) and (not node.activeEntry or node.activeEntry.entryID ~= target.entries[1].entryID)) then
                 differences[#differences + 1] = tostring(nodeID) .. ":" .. tostring(node.ranksPurchased)
                     .. ":" .. tostring(node.activeEntry and node.activeEntry.entryID or 0)
                 local currentEntry = node.activeEntry and node.activeEntry.entryID or (node.entryIDs and node.entryIDs[1])
@@ -301,7 +306,8 @@ local function Inspect(options)
                 and C_Traits.CanPurchaseRank(configID, target.nodeID, entryID)
                 and CanAfford(configID, target.nodeID, currencies) then
                 info.nextName, info.canSpend = name, true
-                info.pick = { nodeID = target.nodeID, entryID = entryID, before = node.ranksPurchased, choice = IsChoice(node) }
+                info.pick = { nodeID = target.nodeID, entryID = entryID, before = node.ranksPurchased,
+                    choice = IsChoice(node, configID, entryID) }
                 info.status = info.enabled and "Ready to spend automatically." or "Ready. Auto-spend is off."
                 info.reason = target.reason or "Fills a legal prerequisite or remaining rank in your chosen build."
                 info.status = info.status .. " " .. info.reason
@@ -447,7 +453,7 @@ local function ReadAllocation(configID, treeID)
         local node = C_Traits.GetNodeInfo(configID, nodeID)
         if not node or type(node.ranksPurchased) ~= "number" then return nil end
         allocation[nodeID] = { ranks = node.ranksPurchased,
-            entryID = node.ranksPurchased > 0 and IsChoice(node) and node.activeEntry and node.activeEntry.entryID or nil }
+            entryID = node.ranksPurchased > 0 and IsChoice(node, configID) and node.activeEntry and node.activeEntry.entryID or nil }
     end
     return allocation
 end
@@ -821,7 +827,7 @@ function NS.RequestTalentSBAUndo()
                 assert(node and type(node.ranksPurchased) == "number", "The talent tree changed during undo.")
                 assert(node.ranksPurchased <= desired.ranks, "A staged talent exceeds the original allocation.")
                 if node.ranksPurchased < desired.ranks then
-                    local choice = IsChoice(node)
+                    local choice = IsChoice(node, request.configID)
                     local entryID = choice and desired.entryID
                         or (node.nextEntry and node.nextEntry.entryID)
                         or (node.entryIDs and node.entryIDs[1])
