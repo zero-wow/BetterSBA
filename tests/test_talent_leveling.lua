@@ -108,6 +108,9 @@ local function makeHarness(options)
         end,
         PurchaseRank = function(_, nodeID)
             local node = h.nodes[nodeID]
+            if not h.staged then
+                h.beforeStage = { nodes = copy(h.nodes), currencies = copy(h.currencies), staged = h.staged }
+            end
             h.purchases = h.purchases + 1
             h.purchaseOrder[#h.purchaseOrder + 1] = nodeID
             node.ranksPurchased = node.ranksPurchased + 1
@@ -123,6 +126,9 @@ local function makeHarness(options)
             return h.failPurchaseAt ~= h.purchases
         end,
         SetSelection = function(_, nodeID, entryID)
+            if not h.staged then
+                h.beforeStage = { nodes = copy(h.nodes), currencies = copy(h.currencies), staged = h.staged }
+            end
             h.selections = h.selections + 1
             h.nodes[nodeID].activeEntry = { entryID = entryID }
             h.staged = true
@@ -151,6 +157,8 @@ local function makeHarness(options)
             check(configID == 1, "rollback must target only the configuration owned by the request")
             if h.beforeReset then
                 h.nodes, h.currencies, h.staged = copy(h.beforeReset.nodes), copy(h.beforeReset.currencies), h.beforeReset.staged
+            elseif h.beforeStage then
+                h.nodes, h.currencies, h.staged = copy(h.beforeStage.nodes), copy(h.beforeStage.currencies), h.beforeStage.staged
             end
             return h.rollbackSucceeds ~= false
         end,
@@ -183,6 +191,70 @@ local function makeHarness(options)
     h.NS = NS
     assert(loadfile("Core/Functions/TalentLeveling.lua"))("BetterSBA", NS)
     return h
+end
+
+-- The tree-window action buys every legal rank in the selected target across
+-- separate class/spec/hero currencies, then sends exactly one commit.
+do
+    local h = makeHarness({ rows = {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 2, ranksPurchased = 1, selectionEntryID = 201 },
+        { nodeID = 3, ranksPurchased = 1, selectionEntryID = 301 },
+    }, treeNodes = { 1, 2, 3 } })
+    h.nodes[3] = { ranksPurchased = 0, canPurchaseRank = true, isAvailable = true, posY = 3, posX = 1, type = 1 }
+    h.costs[1] = { { ID = 1, amount = 1 } }
+    h.costs[2] = { { ID = 2, amount = 1 } }
+    h.costs[3] = { { ID = 3, amount = 1 } }
+    h.currencies[10] = {
+        { traitCurrencyID = 1, quantity = 1 },
+        { traitCurrencyID = 2, quantity = 1 },
+        { traitCurrencyID = 3, quantity = 1 },
+    }
+    h.useBudgets = true
+    h:selectTarget("A")
+    check(h.NS.GetTalentSpendAllInfo().canSpend, "spend-all should enable for a legal selected target")
+    local ok, message = h.NS.SpendAllTalentPoints()
+    check(ok and message:find("3 talent ranks", 1, true), "spend-all must report the full batch")
+    check(h.purchases == 3 and h.commits == 1 and h.resets == 0 and h.imports == 0,
+        "spend-all must fill class/spec/hero targets with one commit and no reset or import")
+    check(not h.NS.SpendAllTalentPoints() and h.purchases == 3,
+        "a pending batch must block duplicate clicks")
+    h:confirm()
+    check(not h.NS.IsTalentLevelingBusy() and not h.NS.GetTalentSpendAllInfo().canSpend,
+        "confirmed full batch must settle with no further eligible ranks")
+end
+
+-- A rejected rank must roll back the entire staged batch; an incompatible
+-- current allocation must be rejected before the first purchase.
+do
+    local h = makeHarness()
+    h.currencies[10][1].quantity = 2
+    h.useBudgets = true
+    h:selectTarget("A")
+    h.failPurchaseAt = 2
+    local ok = h.NS.SpendAllTalentPoints()
+    check(not ok and h.purchases == 2 and h.commits == 0 and h.rollbacks == 1,
+        "partial spend-all failure must roll back without committing")
+    check(h.nodes[1].ranksPurchased == 0 and h.nodes[2].ranksPurchased == 0
+        and h.currencies[10][1].quantity == 2 and not h.staged,
+        "failed batch must restore the exact pre-click allocation and currencies")
+
+    local changed = makeHarness()
+    changed.currencies[10][1].quantity = 2
+    changed.useBudgets = true
+    changed:selectTarget("A")
+    changed.onPurchase = function() changed.editable = false end
+    check(not changed.NS.SpendAllTalentPoints() and changed.commits == 0 and changed.rollbacks == 1,
+        "a mid-batch editability change must roll back instead of committing only part of the plan")
+
+    local conflict = makeHarness()
+    conflict.nodes[1].ranksPurchased = 1
+    conflict.nodes[1].activeEntry = { entryID = 999 }
+    conflict.nodes[1].type = Enum.TraitNodeType.Selection
+    conflict:selectTarget("A")
+    check(not conflict.NS.GetTalentSpendAllInfo().canSpend and not conflict.NS.SpendAllTalentPoints()
+        and conflict.purchases == 0,
+        "conflicting learned choices must block the bulk action without resetting")
 end
 
 -- Explicit target selection and enabled auto-spend stage one rank and commit

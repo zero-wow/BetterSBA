@@ -11,6 +11,7 @@ local COMMIT_TIMEOUT = 10
 
 local function Refresh()
     if NS.RefreshTalentBuildPanels then NS.RefreshTalentBuildPanels() end
+    if NS.RefreshTalentTreeSpendAllButton then NS.RefreshTalentTreeSpendAllButton() end
 end
 
 local function ClientStamp()
@@ -323,6 +324,18 @@ function NS.GetTalentLevelingInfo()
         detail = "Open Blizzard's talent window and try again." }
 end
 
+function NS.GetTalentSpendAllInfo()
+    -- An explicit click may retry after a previous automatic pass failed;
+    -- all other compatibility, conflict, combat and staged-edit gates remain.
+    local ok, info = pcall(Inspect, { assessment = true })
+    if not ok then return { canSpend = false, status = "Talent data is unavailable; try again when the tree settles." } end
+    if not C_Traits or not C_Traits.RollbackConfig or not C_Traits.IsReadyForCommit then
+        info.canSpend = false
+        info.status = "Safe batch talent commits are unavailable on this client."
+    end
+    return info
+end
+
 function NS.GetTalentSBAAssessment()
     local ok, info = pcall(Inspect, { assessment = true })
     if not ok then info = NS.GetTalentLevelingInfo() end
@@ -501,10 +514,11 @@ local function Fail(request, text)
     pending = nil
     if request.ownsChanges and not request.commitAccepted then
         local ok, restored = pcall(C_Traits.RollbackConfig, request.configID)
-        if not ok or not restored then text = text .. " WoW could not roll back the staged respec; review pending talents." end
+        if not ok or not restored then text = text .. " WoW could not roll back staged talents; review pending talents." end
     end
     faults[request.specID] = text .. (request.restore and " Review pending talents, then retry undo."
         or request.respec and " Review pending talents, then retry the respec."
+        or request.bulk and " Review pending talents, then retry SPEND ALL."
         or " Review pending talents, then toggle auto-spend off/on to retry.")
     if request.respec or request.restore then NotifyWarning(NS.GetTalentSBAAssessment(), true) end
     Refresh()
@@ -519,7 +533,7 @@ local function Finish(request)
     end
     if C_Traits.ConfigHasStagedChanges(request.configID) then return false end
     local confirmed
-    if request.respec or request.restore then
+    if request.respec or request.restore or request.bulk then
         confirmed = AllocationMatches(request)
     else
         local node = C_Traits.GetNodeInfo(request.configID, request.pick.nodeID)
@@ -549,6 +563,70 @@ local function Finish(request)
     if request.automatic or request.respec then NS.ScheduleTalentLevelingCheck() end
     Refresh()
     return true
+end
+
+function NS.SpendAllTalentPoints()
+    local info = NS.GetTalentSpendAllInfo()
+    if not info.canSpend then return false, info.status end
+    local request = NewRequest(info)
+    request.bulk = true
+    faults[request.specID] = nil
+    pending = request -- Own only ranks staged by this click; block other spenders.
+    local ok, result = pcall(function()
+        assert(RequestMatches(request), "The active talent configuration changed.")
+        assert(not C_Traits.ConfigHasStagedChanges(request.configID), "Apply or discard your pending talent edits first.")
+        local purchased = 0
+        for _ = 1, MAX_CHAIN do
+            assert(RequestMatches(request), "The active talent configuration changed.")
+            local nextInfo = Inspect({ request = request })
+            if not nextInfo.canSpend then
+                assert(nextInfo.settled and not nextInfo.hasMismatch, nextInfo.status or "Talent data changed.")
+                break
+            end
+            local pick = nextInfo.pick
+            local node = C_Traits.GetNodeInfo(request.configID, pick.nodeID)
+            assert(node and node.ranksPurchased == pick.before, "The staged allocation changed unexpectedly.")
+            request.ownsChanges = true
+            if pick.choice and (not node.activeEntry or node.activeEntry.entryID ~= pick.entryID) then
+                assert(C_Traits.SetSelection(request.configID, pick.nodeID, pick.entryID) ~= false,
+                    "Unable to select a target talent.")
+            end
+            assert(C_Traits.PurchaseRank(request.configID, pick.nodeID) ~= false,
+                "Unable to buy a target talent.")
+            node = C_Traits.GetNodeInfo(request.configID, pick.nodeID)
+            assert(node and node.ranksPurchased == pick.before + 1
+                and (not pick.choice or (node.activeEntry and node.activeEntry.entryID == pick.entryID)),
+                "Unable to verify a staged talent rank.")
+            purchased = purchased + 1
+        end
+        assert(purchased > 0, "No eligible talent ranks can be allocated to this target.")
+        local finalInfo = Inspect({ request = request })
+        assert(finalInfo.settled and not finalInfo.hasMismatch, finalInfo.status or "Talent data changed.")
+        assert(not finalInfo.canSpend, "Talent pass limit reached before all available points were staged.")
+        request.expected = ReadAllocation(request.configID, request.treeID)
+        assert(request.expected and AllocationMatches(request), "Unable to verify the staged talent plan.")
+        assert(C_Traits.IsReadyForCommit(request.configID), "WoW did not accept the staged talent plan.")
+        return purchased
+    end)
+    if not ok then
+        local message = tostring(result):gsub("^.-:%d+: ", "")
+        return false, Fail(request, message)
+    end
+    request.commitSent = true
+    local called, success = pcall(C_ClassTalents.CommitConfig)
+    if not called or not success then return false, Fail(request, "WoW could not apply the staged talents.") end
+    request.commitAccepted = true
+    if pending == request then
+        NS.C_Timer_After(COMMIT_TIMEOUT, function()
+            if pending == request and not Finish(request) then
+                Fail(request, "Timed out waiting for WoW to confirm the talent plan.")
+            end
+        end)
+        NS.ScheduleTalentLevelingCheck()
+    end
+    Refresh()
+    return true, "Applying " .. tostring(result) .. (result == 1 and " talent rank" or " talent ranks")
+        .. " to " .. info.targetName .. "."
 end
 
 function NS.SpendNextTalentPoint(automatic)

@@ -178,6 +178,8 @@ The panel is organized into nine sections:
 
 Open **/bs → Talents**, select a build for your current specialization, click **USE FOR LEVELING**, and turn **AUTO-SPEND** on. BetterSBA spends and applies available points toward that build without asking for approval for each point. The setting and target are saved separately for each character and specialization. With auto-spend off, **SPEND NEXT** applies one available rank.
 
+The Blizzard talent window also shows **SBA: SPEND ALL** beside Apply. Once a current-spec leveling target is selected, one click spends every currently legal class, specialization, and available hero point toward it, then commits the batch once. It does not reset talents or use points outside the target. Combat, conflicting learned talents, pending edits, and a changed target/tree stop the action with a reason.
+
 **AUTO-SPEND** adds points to the current allocation without resetting talents or changing specialization. It waits during combat, while another build is importing, or while you have uncommitted talent edits. Conflicting learned talents pause the assistant with a status message. Changed client builds, tree hashes, or target exports require reselecting the target. Failed or unconfirmed commits stop the pass; review pending talents before toggling auto-spend to retry.
 
 The optional **mismatch warning** compares your learned talents with the chosen SBA target and names learned talents, extra ranks, or choices that conflict. Enable it separately for each character and specialization. A mismatch means the allocations differ; it does not prove your current talents are bad or that the target performs better. Turning the warning on does not reset anything.
