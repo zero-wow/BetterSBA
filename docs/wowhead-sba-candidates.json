@@ -1,0 +1,1666 @@
+{
+  "checkedOn": "2026-09-24",
+  "scope": "All 40 current Wowhead class/spec basics guides plus 81 linked rotation/talent guide URLs. Dvalin public descriptions checked for 13 SBA videos.",
+  "policy": "Only candidates are supported for SBA-compatible labeling. Coverage imports are generic starter builds retained for research, not automatically catalog eligible. None is claimed optimal, simulation-verified, or tested in game.",
+  "dedicatedSbaOptimizedCandidates": [],
+  "candidates": [
+    {
+      "id": "WH-SBA-COMPATIBLE-63-20260812",
+      "classToken": "MAGE",
+      "specID": 63,
+      "name": "Fire Mage - Sunfury (SBA-compatible)",
+      "author": "Preheat",
+      "source": "Wowhead",
+      "catalogSource": "Wowhead",
+      "sourceURL": "https://www.wowhead.com/guide/classes/mage/fire/basics",
+      "patch": "12.1.0",
+      "sourceUpdated": "2026-08-12",
+      "checkedOn": "2026-09-24",
+      "heroTree": "Sunfury",
+      "content": "Raid and Mythic+ starter",
+      "verificationStatus": "source-compatible",
+      "sbaOptimized": false,
+      "importString": "C8DAAAAAAAAAAAAAAAAAAAAAAYGGLzMzswMzIzMzAAAwAAmZmmltlZAA2MzM2mZmZGLAAAAAYxMjZAAgZMmZmZMzsMAMzQGjBMDjB",
+      "importHeader": {
+        "serializationVersion": 2,
+        "specID": 63,
+        "valid": true,
+        "matchesPageSpec": true
+      },
+      "evidenceSummary": "The author discusses the displayed beginner build with SBA, using targeted Flamestrike and requiring manual Combustion.",
+      "notes": "Author-recommended SBA-compatible starter; not an SBA optimization result. Manually use Combustion, trinkets, racials and other items.",
+      "treeCompatibility": "Not checked in-game; validate against the live talent tree before spending."
+    },
+    {
+      "id": "WH-SBA-COMPATIBLE-251-20260812",
+      "classToken": "DEATHKNIGHT",
+      "specID": 251,
+      "name": "Frost Death Knight - Deathbringer (SBA-compatible)",
+      "author": "khazakdk",
+      "source": "Wowhead",
+      "catalogSource": "Wowhead",
+      "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/frost/basics",
+      "patch": "12.1.0",
+      "sourceUpdated": "2026-08-12",
+      "checkedOn": "2026-09-24",
+      "heroTree": "Deathbringer",
+      "content": "General beginner PvE",
+      "verificationStatus": "source-compatible",
+      "sbaOptimized": false,
+      "importString": "CsPAAAAAAAAAAAAAAAAAAAAAAMDwMmZmZAzmZmZmZxMjmZMzAzMGMmZmZmZmZAAAAAAAAAYMbDMgFwywEyYBzMzMzADADzMAzAD",
+      "importHeader": {
+        "serializationVersion": 2,
+        "specID": 251,
+        "valid": true,
+        "matchesPageSpec": true
+      },
+      "evidenceSummary": "The author directly endorses using the displayed beginner build with the assisted highlight and single-button tools.",
+      "notes": "Author-recommended SBA-compatible starter; not an SBA optimization result. The beginner build omits some capstone choices to simplify its rotation.",
+      "treeCompatibility": "Not checked in-game; validate against the live talent tree before spending."
+    },
+    {
+      "id": "WH-SBA-COMPATIBLE-253-20260812",
+      "classToken": "HUNTER",
+      "specID": 253,
+      "name": "Beast Mastery Hunter - Pack Leader (SBA-compatible)",
+      "author": "Tarlo",
+      "source": "Wowhead",
+      "catalogSource": "Wowhead",
+      "sourceURL": "https://www.wowhead.com/guide/classes/hunter/beast-mastery/basics",
+      "patch": "12.1.0",
+      "sourceUpdated": "2026-08-12",
+      "checkedOn": "2026-09-24",
+      "heroTree": "Pack Leader",
+      "content": "Open world, delves and Mythic+",
+      "verificationStatus": "source-compatible",
+      "sbaOptimized": false,
+      "importString": "C0PAAAAAAAAAAAAAAAAAAAAAAAMmxwCsAzwQDbAAYGPwMzsMzwMzMjZGMzYmhZmZGzwMzwYmhx0MAAAAAAAAYMmBYmNCWmZBsNAM",
+      "importHeader": {
+        "serializationVersion": 2,
+        "specID": 253,
+        "valid": true,
+        "matchesPageSpec": true
+      },
+      "evidenceSummary": "The author specifically recommends Pack Leader when using the assistant, matching the embedded beginner import.",
+      "notes": "Author-recommended SBA-compatible starter; not an SBA optimization result. Manually handle items, utility and pet management. The author notes SBA misses minor optimizations.",
+      "treeCompatibility": "Not checked in-game; validate against the live talent tree before spending."
+    },
+    {
+      "id": "WH-SBA-COMPATIBLE-258-20260812",
+      "classToken": "PRIEST",
+      "specID": 258,
+      "name": "Shadow Priest - Voidweaver (SBA-compatible)",
+      "author": "EllipsisPriest",
+      "source": "Wowhead",
+      "catalogSource": "Wowhead",
+      "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/basics",
+      "patch": "12.1.0",
+      "sourceUpdated": "2026-08-12",
+      "checkedOn": "2026-09-24",
+      "heroTree": "Voidweaver",
+      "content": "General beginner PvE",
+      "verificationStatus": "source-compatible",
+      "sbaOptimized": false,
+      "importString": "CIQAAAAAAAAAAAAAAAAAAAAAAMMjZGAAAAAAAAAAAgxDMLmxgZMzsMzwMsMzMmZmxCyMWQjBmZmBACwsNbLgZjBYmBZMzMjZbmZwMDmJGA",
+      "importHeader": {
+        "serializationVersion": 2,
+        "specID": 258,
+        "valid": true,
+        "matchesPageSpec": true
+      },
+      "evidenceSummary": "The author explicitly says the displayed beginner build works with the assistant except for manual Power Infusion.",
+      "notes": "Author-recommended SBA-compatible starter; not an SBA optimization result. Use Power Infusion manually and manage utility, defensives and items yourself.",
+      "treeCompatibility": "Not checked in-game; validate against the live talent tree before spending."
+    },
+    {
+      "id": "WH-SBA-COMPATIBLE-268-20260812",
+      "classToken": "MONK",
+      "specID": 268,
+      "name": "Brewmaster Monk - Master of Harmony (SBA-compatible)",
+      "author": "Sinzhu",
+      "source": "Wowhead",
+      "catalogSource": "Wowhead",
+      "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/basics",
+      "patch": "12.1.0",
+      "sourceUpdated": "2026-08-12",
+      "checkedOn": "2026-09-24",
+      "heroTree": "Master of Harmony",
+      "content": "Beginner PvE; strongest assistant fit in single target",
+      "verificationStatus": "source-compatible",
+      "sbaOptimized": false,
+      "importString": "CwQAAAAAAAAAAAAAAAAAAAAAAAAAAgZZzYGzYWmxmxMjBAAAAAAYZBjYmBmhxmZwMzMDzyYmxY5BYZzy2sNMLAAwysMtMbzsMAAQAMsAmZATjBMAgB",
+      "importHeader": {
+        "serializationVersion": 2,
+        "specID": 268,
+        "valid": true,
+        "matchesPageSpec": true
+      },
+      "evidenceSummary": "The author advises retaining Blackout Combo when using the assistant, tying the suggested talent choice to the embedded beginner build.",
+      "notes": "Author-recommended SBA-compatible starter; not an SBA optimization result. Defensive abilities still need manual use. The guide reports weaker SBA behavior in AoE.",
+      "treeCompatibility": "Not checked in-game; validate against the live talent tree before spending."
+    }
+  ],
+  "coverage": [
+    {
+      "classToken": "DEATHKNIGHT",
+      "specID": 250,
+      "slug": "death-knight-blood",
+      "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/blood/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CoPAAAAAAAAAAAAAAAAAAAAAAwYWGzMmxMjhZZmZmmZxYmxMmBAAAAmZmZmZmZYGjZAYMzMzAAAMmtBGwSwywEYYBwMMAAMzAYYA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 250,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/blood/rotation-cooldowns-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/blood/talent-builds-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DEATHKNIGHT",
+      "specID": 251,
+      "slug": "death-knight-frost",
+      "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/frost/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CsPAAAAAAAAAAAAAAAAAAAAAAMDwMmZmZAzmZmZmZxMjmZMzAzMGMmZmZmZmZAAAAAAAAAYMbDMgFwywEyYBzMzMzADADzMAzAD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 251,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "source-compatible",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/frost/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/frost/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DEATHKNIGHT",
+      "specID": 252,
+      "slug": "death-knight-unholy",
+      "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/unholy/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CwPAAAAAAAAAAAAAAAAAAAAAAAwMjZMDDz2MzMTzmZmZMjBAAAAAAAgZGzYAwywMz2MzYmZAbmNDDZgZjhGLYAzAwYmZYAmZmxYA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 252,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/unholy/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/death-knight/unholy/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DEMONHUNTER",
+      "specID": 577,
+      "slug": "demon-hunter-havoc",
+      "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/havoc/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CEkAAAAAAAAAAAAAAAAAAAAAAYmZGzMz2MmZmxMzkxMDAAAAAAYWMmlZYmBzMYmxYZmxYWGYZWMjhZTTjZmxwGAAAAAAAAzMYAAAAYA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 577,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/havoc/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 1
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/havoc/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DEMONHUNTER",
+      "specID": 581,
+      "slug": "demon-hunter-vengeance",
+      "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/vengeance/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CUkAAAAAAAAAAAAAAAAAAAAAAAAYMzMjZmZkZmZYYmZGDzYmxMmZmxwMmZsNzMGDAAAAAAAEwMzYDAAAADGzMzMLtNzMDAMAAAAG"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 581,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/vengeance/talent-builds-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/vengeance/rotation-cooldowns-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DEMONHUNTER",
+      "specID": 1480,
+      "slug": "demon-hunter-devourer",
+      "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/devourer/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CgcBAAAAAAAAAAAAAAAAAAAAAAA2MmZmZmZmxwMAAAAAAAegxsNYGAAAAAAAAmxMMzMzMjZmZYmFzYsILMzMzs12MzMAmxAQgZMYMD",
+        "CgcBAAAAAAAAAAAAAAAAAAAAAAA2MmZmZmZmxwMAAAAAAAegxsNYGAAAAAAAAmxMMzMzMzMzMDzsYGjFZhZmZmt2mZmBwMGACMjBDD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 1480,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 1480,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/devourer/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/demon-hunter/devourer/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DRUID",
+      "specID": 102,
+      "slug": "druid-balance",
+      "sourceURL": "https://www.wowhead.com/guide/classes/druid/balance/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CYGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWoMbZMmZgxsMzMzMYwwyMbzYGzMLjlZMzYY2wAgBYZZshpZmlRAAAA2MzMzMYzYYMDgZGAYA",
+        "CYGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWoMbNjxMDwsMzMzMY8AjZMzyMLmZGLjlZWGjBLYAwYZbmBjZbEYCAAAwiZmZmBbGGjBAgZGYA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 102,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 102,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/balance/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/balance/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DRUID",
+      "specID": 103,
+      "slug": "druid-feral",
+      "sourceURL": "https://www.wowhead.com/guide/classes/druid/feral/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CcGAAAAAAAAAAAAAAAAAAAAAAAAAAAAwYMjxYmZMmtFWGbzMzYmZAAAAYJY2gxMjaGzCzMzYMzMAAAAAAAGAAAABAz2MLNLzssBmZAWMzwAAYmBAD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 103,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/feral/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/feral/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DRUID",
+      "specID": 104,
+      "slug": "druid-guardian",
+      "sourceURL": "https://www.wowhead.com/guide/classes/druid/guardian/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CgGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgZmxsMPwYMzmZZGMWGY2gRT0MzsMzMzMGzYGAAAAAwMWmBAAAgamlZZmZGAALYmBYxMYAbW2GAMzGMA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 104,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/guardian/rotation-cooldowns-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/guardian/talent-builds-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "DRUID",
+      "specID": 105,
+      "slug": "druid-restoration",
+      "sourceURL": "https://www.wowhead.com/guide/classes/druid/restoration/basics",
+      "updated": "2026-08-15",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CkGAAAAAAAAAAAAAAAAAAAAAAMjxMmtZMzMmthHgZsZswMAAAAAAAAAAYbQzGjpZGYMLjZmZYYGAAAAAAAGDYbZsgpZmlBAAIgFmZmZYmBGNDAmZAAD",
+        "CkGAAAAAAAAAAAAAAAAAAAAAAMMmxsNjZmxsN8AMjNmFbzAAAAAAAAAAgNoZbMmmB8AmlxMzMMMDAAAAADAYmBAgAAAmtZ2aWmZxGzMzMMzAjmBAYmBgB"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 105,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 105,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/restoration/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/druid/restoration/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "EVOKER",
+      "specID": 1467,
+      "slug": "evoker-devastation",
+      "sourceURL": "https://www.wowhead.com/guide/classes/evoker/devastation/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CsbBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAzMDMDzYmBMYMTjZmpZMWmxMzMz8AzMzAmxMzYmZZmZgBGDWglxox2AyMIYDDMzghB"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 1467,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/evoker/devastation/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/evoker/devastation/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "EVOKER",
+      "specID": 1468,
+      "slug": "evoker-preservation",
+      "sourceURL": "https://www.wowhead.com/guide/classes/evoker/preservation/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CwbBAAAAAAAAAAAAAAAAAAAAAAAAAAAYmZ2WGYYm5BmFjZGzyMGAAwMGzwMmRmxAAAAMzMTmZMzMbjZAwAjZswCMwMaohhFYMzAYGA",
+        "CwbBAAAAAAAAAAAAAAAAAAAAAAAAAAAegZmZ2WGYYmxsZGjx2wAAAzYmZmZMMTMmBAAA2mZmJjZmZGjZAAYMjNWgBmRDNMsAzMzAwA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 1468,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 1468,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/evoker/preservation/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/evoker/preservation/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "EVOKER",
+      "specID": 1473,
+      "slug": "evoker-augmentation",
+      "sourceURL": "https://www.wowhead.com/guide/classes/evoker/augmentation/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CEcBAAAAAAAAAAAAAAAAAAAAAMMzMbjZGMDzMLzYmZMzGAAAAAAAAmhZGYM1YmZGAAAAMzMjxMz2YmBmZzYwCsMGGbDgZiYDjZwMDgB"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 1473,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/evoker/augmentation/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/evoker/augmentation/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "HUNTER",
+      "specID": 253,
+      "slug": "hunter-beast-mastery",
+      "sourceURL": "https://www.wowhead.com/guide/classes/hunter/beast-mastery/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C0PAAAAAAAAAAAAAAAAAAAAAAAMmxwCsAzwQDbAAYGPwMzsMzwMzMjZGMzYmhZmZGzwMzwYmhx0MAAAAAAAAYMmBYmNCWmZBsNAM"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 253,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "source-compatible",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/hunter/beast-mastery/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/hunter/beast-mastery/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "HUNTER",
+      "specID": 254,
+      "slug": "hunter-marksmanship",
+      "sourceURL": "https://www.wowhead.com/guide/classes/hunter/marksmanship/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C4PAAAAAAAAAAAAAAAAAAAAAAwCMwMGzYZAMD2AAAAAAAAAzYGzwMmZGzgx0MGM2WmZmZmZmZmFMLDmBAAMzMDDgZajZxAsxMbzYA",
+        "C4PAAAAAAAAAAAAAAAAAAAAAAwGMwMGzYZAMD2AAAAAAAAAzYmZGbzYmZMDLjpZMYW22mZmZmZmZmFmZZYGAAAPwYMAMTbgBYjZ2mxA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 254,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 254,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/hunter/marksmanship/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 2
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/hunter/marksmanship/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "HUNTER",
+      "specID": 255,
+      "slug": "hunter-survival",
+      "sourceURL": "https://www.wowhead.com/guide/classes/hunter/survival/basics",
+      "updated": "2026-08-17",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C8PAAAAAAAAAAAAAAAAAAAAAAMgxMG2ILwMM0gFzMzMzMWGAAAAAAmZmZmhZMmxMYMNDAAAwAgHYssMzYhZmZGzMGwMbAYMmZWMAA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 255,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/hunter/survival/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 1
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/hunter/survival/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/HUNTER/SURVIVAL/talent-builds-pve-DPS",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "MAGE",
+      "specID": 62,
+      "slug": "mage-arcane",
+      "sourceURL": "https://www.wowhead.com/guide/classes/mage/arcane/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C4DAAAAAAAAAAAAAAAAAAAAAAYGGLzMzswMDamZGAAAGAAEwMzMLLzMxCAAwMzMsZZmZmlZMGzMzwCzYmZGAgBAAYmZBAMDAGmZG"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 62,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/mage/arcane/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/mage/arcane/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 1
+        }
+      ]
+    },
+    {
+      "classToken": "MAGE",
+      "specID": 63,
+      "slug": "mage-fire",
+      "sourceURL": "https://www.wowhead.com/guide/classes/mage/fire/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C8DAAAAAAAAAAAAAAAAAAAAAAYGGLzMzswMzIzMzAAAwAAmZmmltlZAA2MzM2mZmZGLAAAAAYxMjZAAgZMmZmZMzsMAMzQGjBMDjB"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 63,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "source-compatible",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/mage/fire/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/mage/fire/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "MAGE",
+      "specID": 64,
+      "slug": "mage-frost",
+      "sourceURL": "https://www.wowhead.com/guide/classes/mage/frost/basics",
+      "updated": "2026-06-18",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CAEAAAAAAAAAAAAAAAAAAAAAAMzwYZmZmFMzEzMmZmZmZWMzMjZMDAAAMzMzyyMTbAAwCAAAYBgtlxMzMY2GGzwCAAAzsBMTGDYGMMA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 64,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/mage/frost/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/mage/frost/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "MONK",
+      "specID": 268,
+      "slug": "monk-brewmaster",
+      "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CwQAAAAAAAAAAAAAAAAAAAAAAAAAAgZZzYGzYWmxmxMjBAAAAAAYZBjYmBmhxmZwMzMDzyYmxY5BYZzy2sNMLAAwysMtMbzsMAAQAMsAmZATjBMAgB"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 268,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "source-compatible",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/rotation-cooldowns-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/talent-builds-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "MONK",
+      "specID": 269,
+      "slug": "monk-windwalker",
+      "sourceURL": "https://www.wowhead.com/guide/classes/monk/windwalker/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C0QAAAAAAAAAAAAAAAAAAAAAAMzMD2GGsMzMbzAAAAAAAAAAAAsMMCzYbYAzYYmZmhZZYGmlZCAYzMbzMMmZGAAbAwsMLNzMzCAGYmBAWGDxAG"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 269,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/windwalker/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/windwalker/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "MONK",
+      "specID": 270,
+      "slug": "monk-mistweaver",
+      "sourceURL": "https://www.wowhead.com/guide/classes/monk/mistweaver/basics",
+      "updated": "2026-09-05",
+      "patch": "12.1.0",
+      "importStrings": [
+        "C4QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghx2YZYzixMzyyM2wYGmZZZbmxCzoZMDYwgxYmZmhZbMGsYCAAAAgAsYZmlZbmBAAGwAMDYMMWkxMA",
+        "C4QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAghxyMLjZx2MmZsZsZZGzs9AzstsMzYhhmxMgBDYWmZmZY2wMMLzEAAAAABYx2Mbz2MDAAMAAzAGDsIjZA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 270,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 270,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/mistweaver/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/mistweaver/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "PALADIN",
+      "specID": 65,
+      "slug": "paladin-holy",
+      "sourceURL": "https://www.wowhead.com/guide/classes/paladin/holy/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CEEAAAAAAAAAAAAAAAAAAAAAAAAAALAwMAAwyMzMjZ2mZmNYMsM2MziZaihxMzwY2yAwAG2AbsMjZWmtZmZrBAAAYBA2MMmxMMDAgZGmxY0A"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 65,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/paladin/holy/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/paladin/holy/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "PALADIN",
+      "specID": 66,
+      "slug": "paladin-protection",
+      "sourceURL": "https://www.wowhead.com/guide/classes/paladin/protection/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CIEAAAAAAAAAAAAAAAAAAAAAAsNzYWmZYGzM2WGDLzithBAYAAAAAAQamZxMmZGjZrNAMgBMYbAAgZm2mZWmBAYzyGzYAMmhxAAsNDwMDyYD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 66,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/paladin/protection/rotation-cooldowns-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/paladin/protection/talent-builds-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "PALADIN",
+      "specID": 70,
+      "slug": "paladin-retribution",
+      "sourceURL": "https://www.wowhead.com/guide/classes/paladin/retribution/basics",
+      "updated": "2026-08-25",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CYEAAAAAAAAAAAAAAAAAAAAAAAAAAAANbbzMzyYmZGAAAAAAzUGzwMjtxsNMz2MGjxwMWYDAAIzMtNzsNDAYDwAgxMMDmxMzG2mBDjZMYA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 70,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/paladin/retribution/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/paladin/retribution/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "PRIEST",
+      "specID": 256,
+      "slug": "priest-discipline",
+      "sourceURL": "https://www.wowhead.com/guide/classes/priest/discipline/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CAQAAAAAAAAAAAAAAAAAAAAAAADsMGWmZmBDmZbmtZmZmxMDAAAAAAAAAgZYZGMzMDmxMgpZamBYmNMEGzyAMGsAAAjxMjBzAMzMTwA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 256,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/discipline/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/discipline/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "PRIEST",
+      "specID": 257,
+      "slug": "priest-holy",
+      "sourceURL": "https://www.wowhead.com/guide/classes/priest/holy/basics",
+      "updated": "2026-08-27",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CEQAAAAAAAAAAAAAAAAAAAAAAADAAAAAAYBmZWGzMmZMMDzsMzYGAAAAzYWmBzMzwMMDgZqBwMbYIMmlBYMwiZmZBQzYMGDzMAzMzAD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 257,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/holy/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/holy/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "PRIEST",
+      "specID": 258,
+      "slug": "priest-shadow",
+      "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CIQAAAAAAAAAAAAAAAAAAAAAAMMjZGAAAAAAAAAAAgxDMLmxgZMzsMzwMsMzMmZmxCyMWQjBmZmBACwsNbLgZjBYmBZMzMjZbmZwMDmJGA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 258,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "source-compatible",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "ROGUE",
+      "specID": 259,
+      "slug": "rogue-assassination",
+      "sourceURL": "https://www.wowhead.com/guide/classes/rogue/assassination/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [],
+      "readOK": true,
+      "importHeaderChecks": [],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/rogue/assassination/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/rogue/assassination/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "ROGUE",
+      "specID": 260,
+      "slug": "rogue-outlaw",
+      "sourceURL": "https://www.wowhead.com/guide/classes/rogue/outlaw/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CQQAAAAAAAAAAAAAAAAAAAAAAAgBjxYGzMbzMzMGPgZhZmZWmWGsNDAAAAAY22mZmZmZmZmxMzsNAAAAMAGYDmxoxsBYbCLMAYmZgB"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 260,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/rogue/outlaw/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/rogue/outlaw/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "ROGUE",
+      "specID": 261,
+      "slug": "rogue-subtlety",
+      "sourceURL": "https://www.wowhead.com/guide/classes/rogue/subtlety/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CUQAAAAAAAAAAAAAAAAAAAAAAAgx2MAAAAAwsMGLTMbbjxMDDzMzMzw8AbzYGbbzMzMzMjBjZ2GAAAAGMGwY2MMwAziWoFbYGwMDmxA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 261,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/rogue/subtlety/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/rogue/subtlety/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "SHAMAN",
+      "specID": 262,
+      "slug": "shaman-elemental",
+      "sourceURL": "https://www.wowhead.com/guide/classes/shaman/elemental/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CYQAAAAAAAAAAAAAAAAAAAAAAAAAAAzMbLzMmZmZZbZMMjBAAAAsYmNYADY2YCZWAgZZmZGjtFTYmZZsMzMzYYZWmxiZGmZZAADAMzYYYA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 262,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/shaman/elemental/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/shaman/elemental/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "SHAMAN",
+      "specID": 263,
+      "slug": "shaman-enhancement",
+      "sourceURL": "https://www.wowhead.com/guide/classes/shaman/enhancement/basics",
+      "updated": "2026-08-22",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CcQAAAAAAAAAAAAAAAAAAAAAAMzMzgZmZmZmhZmZAAAAAAAAA2AsZGDLkFYGGawCAzyMmZGLLzAzMbsMzMzwwYGAgZYMzYmJwMDGMGA",
+        "CcQAAAAAAAAAAAAAAAAAAAAAAMzMzgZmZmZmhZmZAAAAAAAAA2AsZGDbkFYGGawCAzyMmxYZxYjZmtxyMzMzgFmBAYGGzMMTgZGMYMA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 263,
+          "valid": true,
+          "matchesPageSpec": true
+        },
+        {
+          "serializationVersion": 2,
+          "specID": 263,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/shaman/enhancement/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/shaman/enhancement/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "SHAMAN",
+      "specID": 264,
+      "slug": "shaman-restoration",
+      "sourceURL": "https://www.wowhead.com/guide/classes/shaman/restoration/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CgQAAAAAAAAAAAAAAAAAAAAAAAAAAgBAAAAzMzsssNjZGjZGzMDjFYDmxmGbDIzAbmhZw2YMTz2yMzmZMLsYegZGzwsMAAAwMzgZGAYwM"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 264,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/shaman/restoration/rotation-cooldowns-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/shaman/restoration/talent-builds-pve-healer",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "WARLOCK",
+      "specID": 265,
+      "slug": "warlock-affliction",
+      "sourceURL": "https://www.wowhead.com/guide/classes/warlock/affliction/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CkQAAAAAAAAAAAAAAAAAAAAAAwMzMzoZhhZmZmlBAAYmZZ2mZmlxAAjllBGwEMDbBG2GAAAmBAAwMDzMjBzwMzMzMGMzMzAAmBG"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 265,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warlock/affliction/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warlock/affliction/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "WARLOCK",
+      "specID": 266,
+      "slug": "warlock-demonology",
+      "sourceURL": "https://www.wowhead.com/guide/classes/warlock/demonology/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CoQAAAAAAAAAAAAAAAAAAAAAAYmZMzoZjhZmxsMAAAAAAAgxMGWgB2GtQDLGjxysMzMjZAgZGzMzMzAMzMmZAAAGzMzMDDLzYAD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 266,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warlock/demonology/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warlock/demonology/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "WARLOCK",
+      "specID": 267,
+      "slug": "warlock-destruction",
+      "sourceURL": "https://www.wowhead.com/guide/classes/warlock/destruction/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CsQAAAAAAAAAAAAAAAAAAAAAAwMmZGNLMzmZmZWmlZmZmFjZbxDMAAYGjZmZxGMwsY0YGAzWsxAAAjBGbAAzMYMjZsBAAYmZGAAGDD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 267,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warlock/destruction/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 8
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warlock/destruction/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "WARRIOR",
+      "specID": 71,
+      "slug": "warrior-arms",
+      "sourceURL": "https://www.wowhead.com/guide/classes/warrior/arms/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CcEAAAAAAAAAAAAAAAAAAAAAAgZmxsMzMzYGAAAghphxYmZzMzMzYmxMDAAAAgxmZgJLAbmxwCMwMajGDWAzMMMGzmZbwMDAwMMA"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 71,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warrior/arms/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warrior/arms/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "WARRIOR",
+      "specID": 72,
+      "slug": "warrior-fury",
+      "sourceURL": "https://www.wowhead.com/guide/classes/warrior/fury/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CgEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgGDjZMz2yMzMjZmxMzMzMjZWmZmZmxsYmZGAAIMwGssY0YGQmFMjFAzgBAMzAwwiZAGD"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 72,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warrior/fury/rotation-cooldowns-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warrior/fury/talent-builds-pve-dps",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    },
+    {
+      "classToken": "WARRIOR",
+      "specID": 73,
+      "slug": "warrior-protection",
+      "sourceURL": "https://www.wowhead.com/guide/classes/warrior/protection/basics",
+      "updated": "2026-08-12",
+      "patch": "12.1.0",
+      "importStrings": [
+        "CkEAAAAAAAAAAAAAAAAAAAAAA0yAAAzMzYmZGzY2MzsMjxYmGmZYZMzMDzYmBAAAAbDAzYAGYD2WMaMDgZLmZDmxMDmNAYmBAgBMG"
+      ],
+      "readOK": true,
+      "importHeaderChecks": [
+        {
+          "serializationVersion": 2,
+          "specID": 73,
+          "valid": true,
+          "matchesPageSpec": true
+        }
+      ],
+      "classification": "generic-starter-only",
+      "includeInActiveCatalog": false,
+      "linkedPagesChecked": [
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warrior/protection/rotation-cooldowns-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        },
+        {
+          "sourceURL": "https://www.wowhead.com/guide/classes/warrior/protection/talent-builds-pve-tank",
+          "readOK": true,
+          "sbaMentions": 0
+        }
+      ]
+    }
+  ],
+  "alternateSourceChecks": [
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=-Yzh1CES8nY",
+      "specID": 268,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=aFVFxsPIEwg",
+      "specID": 250,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=YUQlvcBePWQ",
+      "specID": 581,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=65Verfwv5xA",
+      "specID": 104,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=cipyKoLtTgY",
+      "specID": 66,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=exT3MjfAA1I",
+      "specID": 252,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=xgllW-GHybY",
+      "specID": 267,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=IsbvgSxjd0c",
+      "specID": 265,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=1YU9w1Y20tE",
+      "specID": 266,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=Qf_RIAuzqos",
+      "specID": 577,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=xfHrZE1A0FI",
+      "specID": 1480,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=GsJkSI3SB8E",
+      "specID": 103,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming",
+      "sourceURL": "https://www.youtube.com/watch?v=szlRUMFpGF8",
+      "specID": 102,
+      "status": "No talent export in public video description; creator directs to Discord.",
+      "importString": null
+    },
+    {
+      "source": "Dvalin Gaming creator post and visible comments",
+      "sourceURL": "https://www.reddit.com/r/Dvalin/comments/1sglwty/all_my_singlebutton_assistant_sba_builds_for_wow/",
+      "status": "Creator post directs talent exports to Discord. No export string in the visible comments retrieved by web browsing. Reddit JSON endpoint returned 403; unexpanded comments were not inspected.",
+      "importString": null
+    }
+  ],
+  "sourceExceptions": [
+    {
+      "specID": 62,
+      "sourceURL": "https://www.wowhead.com/guide/classes/mage/arcane/rotation-cooldowns-pve-dps",
+      "decision": "Excluded. The nearby simple-build export is recommended as an alternative to SBA, not for SBA."
+    },
+    {
+      "specID": 267,
+      "sourceURL": "https://www.wowhead.com/guide/classes/warlock/destruction/rotation-cooldowns-pve-dps",
+      "decision": "Mentions preferring Mayhem when Havoc would go unused, but no separate SBA export. No modified string invented."
+    },
+    {
+      "specID": 259,
+      "sourceURL": "https://www.wowhead.com/guide/classes/rogue/assassination/basics",
+      "decision": "No embedded Blizzard import string found on the basics page."
+    }
+  ]
+}

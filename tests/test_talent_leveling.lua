@@ -1,0 +1,569 @@
+-- Run from the addon root: lua tests/test_talent_leveling.lua
+-- Exercises the real incremental-leveling module with a small trait API mock.
+
+local function check(value, message)
+    assert(value, message)
+end
+
+local function copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for key, item in pairs(value) do result[key] = copy(item) end
+    return result
+end
+
+local function makeHarness(options)
+    options = options or {}
+    local h = {
+        specID = 100,
+        classToken = "MAGE",
+        configID = 1,
+        treeBySpec = { [100] = 10, [101] = 11 },
+        treeHash = { [10] = { "mage", "one" }, [11] = { "mage", "two" } },
+        client = { "11.2.0", "12345", nil, "110200" },
+        staged = false,
+        timers = {},
+        commits = 0,
+        purchases = 0,
+        selections = 0,
+        imports = 0,
+        resets = 0,
+        rollbacks = 0,
+        purchaseOrder = {},
+        refreshes = 0,
+        editable = true,
+        currencies = {},
+        nodes = {},
+        entries = {},
+    }
+
+    h.entries.A = {
+        id = "A", name = "Arcane SBA", specID = 100, classToken = "MAGE",
+        importString = "arcane-export", patch = "11.2.0",
+    }
+    h.entries.B = {
+        id = "B", name = "Fire SBA", specID = 101, classToken = "MAGE",
+        importString = "fire-export", patch = "11.2.0",
+    }
+    h.rows = options.rows or {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 2, ranksPurchased = 1, selectionEntryID = 201 },
+    }
+    h.nodes[1] = { ranksPurchased = 0, canPurchaseRank = true, isAvailable = true, posY = 1, posX = 1, type = 1 }
+    h.nodes[2] = { ranksPurchased = 0, canPurchaseRank = true, isAvailable = true, posY = 2, posX = 1, type = 1 }
+    h.costs = { [1] = { { ID = 1, amount = 1 } }, [2] = { { ID = 1, amount = 1 } } }
+    h.currencies[10] = { { traitCurrencyID = 1, quantity = 1 } }
+
+    function h:runDue(delay, limit)
+        local runs = 0
+        for i = #self.timers, 1, -1 do
+            if self.timers[i].delay == delay then
+                local callback = table.remove(self.timers, i).callback
+                callback()
+                runs = runs + 1
+                check(runs <= (limit or 10), "timer loop did not settle")
+            end
+        end
+        return runs
+    end
+
+    function h:confirm()
+        self.staged = false
+        self.NS.OnTalentLevelingEvent("TRAIT_CONFIG_UPDATED", self.configID)
+    end
+
+    function h:selectTarget(id)
+        local ok, message = self.NS.SetTalentLevelingTarget(id)
+        check(ok, message or "target selection failed")
+    end
+
+    function h:info()
+        return self.NS.GetTalentLevelingInfo()
+    end
+
+    _G.GetBuildInfo = function() return table.unpack(h.client) end
+    _G.InCombatLockdown = function() return h.combat == true end
+    _G.Enum = { TraitNodeType = { Selection = 2, SubTreeSelection = 3 } }
+    _G.C_Spell = { GetSpellName = function(spellID) return "Spell " .. tostring(spellID) end }
+    _G.C_ClassTalents = {
+        GetActiveConfigID = function() return h.configID end,
+        CanEditTalents = function() return h.editable, h.editReason end,
+        GetTraitTreeForSpec = function(specID) return h.treeBySpec[specID] end,
+        CommitConfig = function()
+            h.commits = h.commits + 1
+            return h.commitSucceeds ~= false
+        end,
+    }
+    _G.C_Traits = {
+        GetTreeHash = function(treeID) return h.treeHash[treeID] end,
+        GetTreeNodes = function(treeID) return treeID and h.treeNodes or nil end,
+        GetNodeInfo = function(configID, nodeID) return configID == h.configID and h.nodes[nodeID] or nil end,
+        GetEntryInfo = function(_, entryID) return { definitionID = entryID } end,
+        GetDefinitionInfo = function(entryID) return { spellID = entryID } end,
+        GetNodeCost = function(_, nodeID) return h.costs[nodeID] end,
+        GetTreeCurrencyInfo = function(_, treeID) return h.currencies[treeID] end,
+        CanPurchaseRank = function(_, nodeID, entryID)
+            local node = h.nodes[nodeID]
+            return node and node.canPurchaseRank and node.isAvailable ~= false and entryID ~= nil
+        end,
+        PurchaseRank = function(_, nodeID)
+            local node = h.nodes[nodeID]
+            h.purchases = h.purchases + 1
+            h.purchaseOrder[#h.purchaseOrder + 1] = nodeID
+            node.ranksPurchased = node.ranksPurchased + 1
+            if h.useBudgets then
+                for _, cost in ipairs(h.costs[nodeID] or {}) do
+                    for _, currency in ipairs(h.currencies[h.treeBySpec[h.specID]]) do
+                        if currency.traitCurrencyID == cost.ID then currency.quantity = currency.quantity - cost.amount end
+                    end
+                end
+            end
+            h.staged = true
+            if h.onPurchase then h.onPurchase(nodeID) end
+            return h.failPurchaseAt ~= h.purchases
+        end,
+        SetSelection = function(_, nodeID, entryID)
+            h.selections = h.selections + 1
+            h.nodes[nodeID].activeEntry = { entryID = entryID }
+            h.staged = true
+            return true
+        end,
+        ConfigHasStagedChanges = function(configID) return configID == h.configID and h.staged end,
+        ResetTree = function(_, treeID)
+            h.resets = h.resets + 1
+            h.beforeReset = { nodes = copy(h.nodes), currencies = copy(h.currencies), staged = h.staged }
+            for nodeID, node in pairs(h.nodes) do
+                for _, cost in ipairs(h.costs[nodeID] or {}) do
+                    for _, currency in ipairs(h.currencies[treeID]) do
+                        if currency.traitCurrencyID == cost.ID then
+                            currency.quantity = currency.quantity + cost.amount * node.ranksPurchased
+                        end
+                    end
+                end
+                node.ranksPurchased, node.activeEntry = 0, nil
+            end
+            h.staged = true
+            if h.onReset then h.onReset() end
+            return h.resetSucceeds ~= false
+        end,
+        RollbackConfig = function(configID)
+            h.rollbacks = h.rollbacks + 1
+            check(configID == 1, "rollback must target only the configuration owned by the request")
+            if h.beforeReset then
+                h.nodes, h.currencies, h.staged = copy(h.beforeReset.nodes), copy(h.beforeReset.currencies), h.beforeReset.staged
+            end
+            return h.rollbackSucceeds ~= false
+        end,
+        IsReadyForCommit = function() return h.readyForCommit ~= false end,
+    }
+
+    local NS = {
+        dbRoot = {}, TALENT_BUILD_CUSTOM_ID = "CUSTOM",
+        GetCharKey = function() return h.character or "Tester-Realm" end,
+        GetTalentBuildCurrentSpecID = function() return h.specID end,
+        GetTalentBuildSpecName = function(id) return id == 100 and "Arcane" or "Fire" end,
+        GetTalentBuildClassToken = function() return h.classToken end,
+        FindTalentBuildByID = function(id) return h.entries[id] end,
+        DecodeTalentBuildTarget = function(entry)
+            if h.decodeError then return nil, h.decodeError end
+            return h.rows
+        end,
+        IsTalentBuildSystemEnabled = function() return h.systemEnabled ~= false end,
+        IsTalentBuildImportPending = function() return h.importPending == true end,
+        C_Timer_After = function(delay, callback) h.timers[#h.timers + 1] = { delay = delay, callback = callback } end,
+        RefreshTalentBuildPanels = function() h.refreshes = h.refreshes + 1 end,
+        ClearBaseCDCache = function() h.clearedCache = true end,
+        InvalidateRotationCache = function() h.invalidated = true end,
+        RebuildMacroText = function() h.rebuilt = true end,
+        UpdateNow = function() h.updated = true end,
+        RequestTalentBuildApply = function() h.imports = h.imports + 1 end,
+        ResetConfig = function() h.resets = h.resets + 1 end,
+    }
+    h.treeNodes = options.treeNodes or { 1, 2 }
+    h.NS = NS
+    assert(loadfile("Core/Functions/TalentLeveling.lua"))("BetterSBA", NS)
+    return h
+end
+
+-- Explicit target selection and enabled auto-spend stage one rank and commit
+-- it directly. There is no confirmation/prompt path and no full import/reset.
+do
+    local h = makeHarness()
+    h:selectTarget("A")
+    local ok, message = h.NS.SetTalentLevelingEnabled(true)
+    check(ok, message)
+    h:runDue(.25)
+    check(h.purchases == 1 and h.commits == 1, "auto-spend must purchase and commit one rank without a prompt")
+    check(h.imports == 0 and h.resets == 0, "leveling must never import or reset a build")
+    check(h.NS.IsTalentLevelingBusy(), "a sent commit must prevent a second purchase until confirmed")
+    h.NS.ScheduleTalentLevelingCheck(); h:runDue(.25)
+    check(h.purchases == 1, "pending commit must prevent double-spend")
+    h.NS.OnTalentLevelingEvent("TRAIT_CONFIG_UPDATED", h.configID)
+    check(h.NS.IsTalentLevelingBusy(), "an early trait event must not allow a second spend while changes are still staged")
+    h:confirm()
+    check(not h.NS.IsTalentLevelingBusy(), "trait confirmation must clear the pending commit")
+end
+
+-- Currency order is irrelevant: all costs must be covered, then the legal
+-- prerequisite-first candidate can be spent. A staged user edit blocks it.
+do
+    local h = makeHarness({ rows = { { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 } } })
+    h.costs[1] = { { ID = 9, amount = 2 }, { ID = 3, amount = 1 } }
+    h.currencies[10] = { { traitCurrencyID = 3, quantity = 1 }, { traitCurrencyID = 9, quantity = 2 } }
+    h:selectTarget("A")
+    check(h:info().canSpend, "multiple currencies in a different order must still be affordable")
+    h.staged = true
+    check(not h:info().canSpend and h:info().status:find("pending talent edits", 1, true), "user staged edits must block spending")
+    h.staged = false
+    check(h.NS.SpendNextTalentPoint(), "manual SPEND NEXT must work when auto-spend is off")
+    check(h.commits == 1 and h.purchases == 1, "manual spend must commit exactly one point")
+end
+
+-- Choice and hero-subtree choices select their required entry first, whereas
+-- multi-rank non-choice nodes use PurchaseRank and never selection/reset APIs.
+do
+    local h = makeHarness({
+        rows = {
+            { nodeID = 7, ranksPurchased = 1, selectionEntryID = 701 },
+            { nodeID = 8, ranksPurchased = 1, selectionEntryID = 801 },
+            { nodeID = 8, ranksPurchased = 1, selectionEntryID = 802 },
+        },
+        treeNodes = { 7, 8 },
+    })
+    h.nodes = {
+        [7] = { ranksPurchased = 0, canPurchaseRank = true, isAvailable = true, posY = 1, posX = 1, type = Enum.TraitNodeType.SubTreeSelection },
+        [8] = { ranksPurchased = 0, canPurchaseRank = true, isAvailable = true, posY = 2, posX = 1, type = 1 },
+    }
+    h.costs = { [7] = { { ID = 1, amount = 1 } }, [8] = { { ID = 1, amount = 1 } } }
+    h:selectTarget("A")
+    check(h.NS.SpendNextTalentPoint(), "hero subtree choice should be spendable")
+    check(h.selections == 1 and h.nodes[7].activeEntry.entryID == 701, "hero subtree must select the target entry")
+    h:confirm()
+    h.currencies[10][1].quantity = 1
+    check(h.NS.SpendNextTalentPoint(), "first rank of a multi-rank node should be spendable")
+    check(h.selections == 1, "non-choice multiple-rank nodes must not call SetSelection")
+    check(h.imports == 0 and h.resets == 0, "choice handling must remain incremental")
+
+    local conflict = makeHarness({ rows = { { nodeID = 7, ranksPurchased = 1, selectionEntryID = 701 } }, treeNodes = { 7 } })
+    conflict.nodes = {
+        [7] = {
+            ranksPurchased = 1, canPurchaseRank = true, isAvailable = true, posY = 1, posX = 1,
+            type = Enum.TraitNodeType.Selection, activeEntry = { entryID = 799 },
+        },
+    }
+    conflict.costs = { [7] = { { ID = 1, amount = 1 } } }
+    conflict:selectTarget("A")
+    local conflictInfo = conflict:info()
+    check(not conflictInfo.canSpend and conflictInfo.status:find("learned talents differ", 1, true),
+        "a manually chosen conflicting node must remain under user ownership")
+    check(not conflict.NS.SpendNextTalentPoint() and conflict.selections == 0 and conflict.purchases == 0,
+        "leveling must never replace an existing conflicting choice")
+end
+
+-- Combat and invalid active context pause the process; changing specs/config
+-- while a commit is pending fails it rather than applying into another target.
+do
+    local h = makeHarness()
+    h:selectTarget("A")
+    h.combat = true
+    check(not h:info().canSpend and h:info().status:find("combat", 1, true), "combat must pause leveling")
+    h.combat = false
+    h.NS.OnTalentLevelingEvent("PLAYER_REGEN_ENABLED")
+    h:runDue(.25)
+    check(h.purchases == 0, "combat-end event must not spend while auto-spend is off")
+    check(h.NS.SpendNextTalentPoint(), "manual spending should start after combat")
+    h.specID, h.configID = 101, 2
+    h.NS.OnTalentLevelingEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
+    check(not h.NS.IsTalentLevelingBusy(), "spec switch must cancel the old pending request")
+    check(h:info().buildID == "CUSTOM", "the other spec must retain its independent default target")
+
+    local configSwitch = makeHarness()
+    configSwitch:selectTarget("A")
+    check(configSwitch.NS.SpendNextTalentPoint(), "config switch fixture must begin a commit")
+    configSwitch.configID = 2
+    configSwitch.NS.OnTalentLevelingEvent("TRAIT_CONFIG_UPDATED", 1)
+    check(not configSwitch.NS.IsTalentLevelingBusy(), "active configuration switch must fail the old pending request")
+end
+
+-- Saving targets is character-local. Client/build changes pause a target until
+-- reselected, and opting out before confirmation prevents continuation.
+do
+    local h = makeHarness()
+    h:selectTarget("A")
+    h.character = "Alt-Realm"
+    check(h.NS.GetTalentLevelingState().buildID == "CUSTOM", "leveling settings must be isolated per character")
+    h.character = "Tester-Realm"
+    h.client[2] = "99999"
+    check(h:info().status:find("changed", 1, true), "client changes must pause an existing target")
+    h.client[2] = "12345"
+    h.entries.A.importString = "changed-export"
+    check(h:info().status:find("changed", 1, true), "target build changes must pause an existing target")
+    h.entries.A.importString = "arcane-export"
+    check(h.NS.SetTalentLevelingEnabled(true))
+    h:runDue(.25)
+    check(h.purchases == 1, "auto-spend must begin from an explicitly enabled target")
+    check(h.NS.SetTalentLevelingEnabled(false), "user opt-out must be accepted while a commit is pending")
+    h:confirm(); h:runDue(.25)
+    check(h.purchases == 1, "opting out must stop automatic continuation after confirmation")
+end
+
+-- A rejected commit or confirmation timeout creates a fault and does not spin
+-- retries from later trait/currency events.
+do
+    local h = makeHarness()
+    h:selectTarget("A")
+    h.commitSucceeds = false
+    check(not h.NS.SpendNextTalentPoint(), "failed CommitConfig must report failure")
+    check(h.purchases == 1 and not h.NS.IsTalentLevelingBusy(), "failed commit must clear pending state once")
+    h.NS.OnTalentLevelingEvent("TRAIT_TREE_CURRENCY_INFO_UPDATED", 10); h:runDue(.25)
+    check(h.purchases == 1, "faulted target must not retry in an event loop")
+
+    local timeout = makeHarness()
+    timeout:selectTarget("A")
+    check(timeout.NS.SpendNextTalentPoint(), "timeout fixture must stage and send a commit")
+    timeout:runDue(10)
+    check(not timeout.NS.IsTalentLevelingBusy() and timeout:info().status:find("Timed out", 1, true), "commit timeout must fault and stop")
+    timeout.NS.OnTalentLevelingEvent("PLAYER_LEVEL_UP"); timeout:runDue(.25)
+    check(timeout.purchases == 1, "timed-out request must not auto-retry")
+
+    -- A TRAIT_CONFIG_UPDATED signal can arrive before WoW has cleared the
+    -- staged-change flag. The deferred .25 check must confirm it once after a
+    -- later currency update, then continue one automatic rank at a time.
+    local reordered = makeHarness()
+    reordered:selectTarget("A")
+    check(reordered.NS.SetTalentLevelingEnabled(true), "reordered-event fixture must enable auto-spend")
+    reordered:runDue(.25)
+    check(reordered.purchases == 1 and reordered.commits == 1 and reordered.NS.IsTalentLevelingBusy(),
+        "initial automatic rank must be staged exactly once")
+    reordered.NS.OnTalentLevelingEvent("TRAIT_CONFIG_UPDATED", reordered.configID)
+    check(reordered.NS.IsTalentLevelingBusy(), "early staged config event must leave the request pending")
+    reordered.staged = false
+    reordered.NS.OnTalentLevelingEvent("TRAIT_TREE_CURRENCY_INFO_UPDATED", 10)
+    reordered:runDue(.25)
+    check(reordered.purchases == 1 and not reordered.NS.IsTalentLevelingBusy(),
+        "the deferred confirmation check must finish the first rank once without a duplicate purchase")
+    reordered:runDue(.25)
+    check(reordered.purchases == 2 and reordered.commits == 2 and reordered.NS.IsTalentLevelingBusy(),
+        "confirmed auto-spend must continue with exactly one next rank")
+    reordered:confirm(); reordered:runDue(.25)
+    check(reordered.purchases == 2 and not reordered.NS.IsTalentLevelingBusy(),
+        "the completed two-rank sequence must not spend again")
+    if reordered.NS.IsTalentLevelingBusy() then
+        reordered:runDue(10)
+    end
+end
+
+-- Class guidance changes which legal target rank comes next. Weights map to
+-- definition spell IDs, never translated names; they cannot add outside nodes.
+do
+    local h = makeHarness()
+    h.NS.TALENT_SBA_PRIORITIES = {
+        [100] = { patch = "11.2", spells = {
+            [201] = { priority = 90, name = "Core engine", reason = "Improves the SBA resource engine.", sourceURL = "https://example.test/guide" },
+            [999] = { priority = 1000, name = "Outside target", reason = "Must never enter the plan." },
+        } },
+    }
+    h:selectTarget("A")
+    local info = h:info()
+    check(info.pick.nodeID == 2 and info.reason:find("resource engine", 1, true),
+        "a sourced core talent must outrank a legal top-row side talent")
+    h.client[1] = "12.1.0"
+    h:selectTarget("A")
+    check(h:info().pick.nodeID == 1, "source weights from a previous patch must not leak into a new patch")
+end
+
+-- An unavailable high-priority talent can promote its actual connector,
+-- without following visual-only or mutually-exclusive edges outside the path.
+do
+    local h = makeHarness({ rows = {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 2, ranksPurchased = 1, selectionEntryID = 201 },
+        { nodeID = 3, ranksPurchased = 1, selectionEntryID = 301 },
+    }, treeNodes = { 1, 2, 3 } })
+    Enum.TraitEdgeType = { VisualOnly = 0, SufficientForAvailability = 2, RequiredForAvailability = 3, MutuallyExclusive = 4 }
+    h.nodes[3] = { ranksPurchased = 0, canPurchaseRank = false, isAvailable = false, posY = 3, type = 1 }
+    h.nodes[1].visibleEdges = { { targetNode = 3, type = 0 } }
+    h.nodes[2].visibleEdges = { { targetNode = 3, type = 3 } }
+    h.NS.TALENT_SBA_PRIORITIES = { [100] = { patch = "11.2", spells = {
+        [301] = { priority = 90, name = "Core engine", reason = "Core synergy." },
+    } } }
+    h:selectTarget("A")
+    check(h:info().pick.nodeID == 2 and h:info().reason:find("path toward Core engine", 1, true),
+        "a required connector must inherit destination priority")
+    h.entries.A.levelingOrder = { { nodeID = 1, rank = 1 }, { nodeID = 2, rank = 1 } }
+    check(h:info().pick.nodeID == 1, "an authored rank order must take precedence over heuristic source weights")
+end
+
+local function makeRespecHarness(points)
+    local h = makeHarness({ treeNodes = { 1, 2, 99 } })
+    h.useBudgets = true
+    h.currencies[10][1].quantity = points or 0
+    h.nodes[99] = { ranksPurchased = 1, type = 1, canPurchaseRank = false }
+    h.costs[99] = { { ID = 1, amount = 1 } }
+    h:selectTarget("A")
+    return h
+end
+
+-- Warnings assess the selected target with auto-spend off, are opt-in per
+-- character/spec, and never cause a reset or repeatedly alert on trait events.
+do
+    local h = makeRespecHarness()
+    local alerts, hides = 0, 0
+    h.NS.CheckTalentSBAWarning = function(assessment)
+        if assessment.warningEnabled and assessment.settled and assessment.hasMismatch then
+            alerts = alerts + 1
+        else
+            hides = hides + 1
+        end
+    end
+    local assessment = h.NS.GetTalentSBAAssessment()
+    check(assessment.hasMismatch and assessment.canRespec and not assessment.warningEnabled,
+        "mismatch assessment must work with auto-spend and warnings off")
+    check(assessment.signature and assessment.message:find("chosen SBA build", 1, true), "warning must identify a target difference")
+    h:runDue(.25)
+    check(alerts == 0, "warning must default off")
+    h.NS.SetTalentSBAWarningEnabled(true)
+    check(alerts == 1 and h.resets == 0 and h.purchases == 0, "enabling warnings must only alert")
+    h.NS.OnTalentLevelingEvent("PLAYER_LEVEL_UP"); h:runDue(.25)
+    h.NS.OnTalentLevelingEvent("TRAIT_CONFIG_UPDATED", h.configID); h:runDue(.25)
+    check(alerts == 1, "unchanged mismatch must not repeatedly alert")
+    h.combat = true
+    h.NS.ScheduleTalentLevelingCheck(); h:runDue(.25)
+    check(hides == 1, "unsettled combat state must hide an existing alert")
+    h.combat = false
+    h.NS.OnTalentLevelingEvent("PLAYER_REGEN_ENABLED"); h:runDue(.25)
+    check(alerts == 2, "settled state must notify the UI again so an undismissed warning can return")
+    h.NS.SetTalentSBAWarningEnabled(false)
+    check(hides == 2 and not h.NS.GetTalentLevelingState().warnMismatch, "disabling warnings must silence and persist")
+    h.NS.SetTalentSBAWarningEnabled(true)
+    h.NS.SetTalentLevelingTarget("CUSTOM"); h:runDue(.25)
+    check(hides == 3, "clearing the target must hide its old warning")
+    h.character = "Other-Realm"
+    check(not h.NS.GetTalentSBAAssessment().warningEnabled, "warning opt-in must not leak across characters")
+end
+
+-- A deliberate respec uses the same guide priorities and live point budget,
+-- sends one commit, and blocks both ordinary auto-spend and repeated actions.
+do
+    local h = makeRespecHarness()
+    h.NS.TALENT_SBA_PRIORITIES = { [100] = { patch = "11.2", spells = {
+        [201] = { priority = 90, name = "Core", reason = "Core priority." },
+    } } }
+    h.NS.SetTalentLevelingEnabled(true)
+    local ok, message = h.NS.RequestTalentSBARespec()
+    check(ok, message)
+    check(h.resets == 1 and h.commits == 1 and h.purchases == 1 and h.purchaseOrder[1] == 2,
+        "current-level respec must spend only the refunded point using guide priorities and commit once")
+    check(h.nodes[99].ranksPurchased == 0 and h.nodes[1].ranksPurchased == 0 and h.currencies[10][1].quantity == 0,
+        "respec must remove conflicting allocation without overspending the current level")
+    check(not h.NS.RequestTalentSBARespec() and not h.NS.SpendNextTalentPoint(), "pending respec must prevent overlapping mutations")
+    h:runDue(.25)
+    check(h.commits == 1 and h.purchases == 1, "scheduled auto-spend must not race the respec")
+    h:confirm(); h:runDue(.25)
+    check(not h.NS.IsTalentLevelingBusy() and h.commits == 1 and not h.NS.GetTalentSBAAssessment().hasMismatch,
+        "confirmation must verify the whole staged plan and finish without another spend")
+end
+
+-- Preconditions must reject before reset and must never discard user edits.
+do
+    for _, block in ipairs({ "combat", "staged", "importPending", "disabled", "stamp", "decode", "readonly" }) do
+        local h = makeRespecHarness()
+        if block == "disabled" then h.systemEnabled = false
+        elseif block == "stamp" then h.entries.A.importString = "changed"
+        elseif block == "decode" then h.decodeError = "incompatible target"
+        elseif block == "readonly" then h.editable = false
+        else h[block] = true end
+        check(not h.NS.RequestTalentSBARespec(), "blocked respec must reject: " .. block)
+        check(h.resets == 0 and h.commits == 0 and h.rollbacks == 0 and h.nodes[99].ranksPurchased == 1,
+            "preflight must not mutate or roll back preexisting changes: " .. block)
+    end
+end
+
+-- Every failure before successful commit restores the original allocation,
+-- including APIs which return failure after partially mutating staged state.
+do
+    for _, failure in ipairs({ "reset", "purchase", "empty", "refund", "validation", "commit", "unexpected" }) do
+        local h = makeRespecHarness(1)
+        if failure == "reset" then h.resetSucceeds = false
+        elseif failure == "purchase" then h.failPurchaseAt = 2
+        elseif failure == "empty" then h.nodes[1].canPurchaseRank = false; h.nodes[2].canPurchaseRank = false
+        elseif failure == "refund" then
+            h.nodes[99].ranksPurchased = 2
+            h.nodes[2].canPurchaseRank = false
+            h.currencies[10][1].quantity = 0
+        elseif failure == "validation" then h.readyForCommit = false
+        elseif failure == "commit" then h.commitSucceeds = false
+        elseif failure == "unexpected" then h.onPurchase = function() h.nodes[99].ranksPurchased = 1 end end
+        local beforeRank, beforeCurrency = h.nodes[99].ranksPurchased, h.currencies[10][1].quantity
+        local ok = h.NS.RequestTalentSBARespec()
+        check(not ok and h.rollbacks == 1 and not h.NS.IsTalentLevelingBusy(), "failed respec must roll back: " .. failure)
+        check(h.nodes[99].ranksPurchased == beforeRank and h.nodes[1].ranksPurchased == 0
+            and h.nodes[2].ranksPurchased == 0 and h.currencies[10][1].quantity == beforeCurrency and not h.staged,
+            "failure must preserve original ranks and points: " .. failure)
+        check(h.commits == (failure == "commit" and 1 or 0), "invalid/empty/underallocated plan must never be committed: " .. failure)
+    end
+end
+
+-- Class, spec and hero currencies are independent; the selected hero choice
+-- and all three budgets must survive one reset/rebuild transaction.
+do
+    local h = makeRespecHarness()
+    h.readyForCommit = false
+    check(not h.NS.RequestTalentSBARespec(), "invalid plan must fail before retry")
+    check(h.NS.GetTalentSBAAssessment().failure, "failed plan must explain the failure")
+    h.readyForCommit = true
+    check(h.NS.RequestTalentSBARespec(), "a corrected explicit respec retry must start")
+    h:confirm()
+    check(not h.NS.GetTalentSBAAssessment().failure, "successful retry must clear stale faults so auto-spend can resume")
+end
+
+do
+    local failedRollback = makeRespecHarness()
+    failedRollback.resetSucceeds, failedRollback.rollbackSucceeds = false, false
+    local ok, message = failedRollback.NS.RequestTalentSBARespec()
+    check(not ok and message:find("could not roll back", 1, true) and not message:find("were restored", 1, true),
+        "a failed rollback must be reported without claiming the original talents were restored")
+end
+
+do
+    local h = makeHarness({ rows = {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 2, ranksPurchased = 1, selectionEntryID = 201 },
+        { nodeID = 7, ranksPurchased = 1, selectionEntryID = 701 },
+    }, treeNodes = { 1, 2, 7, 97, 98, 99 } })
+    h.useBudgets = true
+    h.nodes[7] = { ranksPurchased = 0, type = Enum.TraitNodeType.SubTreeSelection, canPurchaseRank = true, isAvailable = true }
+    h.costs[2], h.costs[7] = { { ID = 2, amount = 1 } }, { { ID = 3, amount = 1 } }
+    h.currencies[10] = { { traitCurrencyID = 1, quantity = 0 }, { traitCurrencyID = 2, quantity = 0 }, { traitCurrencyID = 3, quantity = 0 } }
+    for index, nodeID in ipairs({ 97, 98, 99 }) do
+        h.nodes[nodeID] = { ranksPurchased = 1, type = 1 }
+        h.costs[nodeID] = { { ID = index, amount = 1 } }
+    end
+    h:selectTarget("A")
+    local ok, message = h.NS.RequestTalentSBARespec()
+    check(ok, message)
+    check(h.commits == 1 and h.purchases == 3 and h.nodes[7].activeEntry.entryID == 701,
+        "respec must allocate class/spec/hero points and the exact chosen hero entry")
+    for _, currency in ipairs(h.currencies[10]) do check(currency.quantity == 0, "each refunded currency must be spent independently") end
+    h:confirm()
+    check(not h.NS.IsTalentLevelingBusy(), "all-tree allocation must be confirmed")
+end
+
+-- Once a commit is accepted, asynchronous failure/timeout must not roll back
+-- a possibly applied server change, but must notify the warning UI of failure.
+do
+    for _, failure in ipairs({ "event", "timeout", "identity" }) do
+        local h = makeRespecHarness()
+        local reported
+        h.NS.CheckTalentSBAWarning = function(assessment) if assessment.failure then reported = assessment.failure end end
+        h.NS.SetTalentSBAWarningEnabled(true)
+        check(h.NS.RequestTalentSBARespec(), "async failure fixture must start")
+        if failure == "event" then h.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", h.configID)
+        elseif failure == "timeout" then h:runDue(10)
+        else h.entries.A.importString = "changed"; h:confirm() end
+        check(not h.NS.IsTalentLevelingBusy() and h.rollbacks == 0 and reported,
+            "accepted commit failure must stop, retain ownership boundaries, and refresh the UI: " .. failure)
+    end
+end
+
+print("talent leveling mock: guided spending, warning deduplication, transactional respec, budget/rollback and commit safety passed")

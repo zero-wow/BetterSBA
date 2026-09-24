@@ -64,7 +64,8 @@ local NS = {
 setmetatable(NS, { __index = function() return function() end end })
 local entries = {}
 for i, source in ipairs({"Very Long Source Alpha", "Very Long Source Bravo", "Very Long Source Charlie", "Very Long Source Delta", "Very Long Source Echo", "Very Long Source Foxtrot"}) do
-    entries[i] = {id="BUILD-" .. i, name="Build " .. i, specID=(i % 2 == 0 and 101 or 100), author="Tester", source=source, catalogSource=source, rating="A", buildType="builtin", sourceURL="https://example.test/" .. i}
+    entries[i] = {id="BUILD-" .. i, name="Build " .. i, specID=(i % 2 == 0 and 101 or 100), author="Tester", source=source, catalogSource=source, rating="A", buildType="builtin", sourceURL="https://example.test/" .. i,
+        verificationStatus=(i == 1 and "guide-adapted" or nil)}
 end
 NS.GetTalentBuildSpecsForCurrentClass = function() return {{specID=100, index=1}, {specID=101, index=2}} end
 NS.GetTalentBuildCurrentSpecID = function() return 100 end
@@ -74,7 +75,46 @@ NS.GetTalentBuildEntriesForClass = function() return entries end
 NS.GetTalentBuildCustomEntry = function(id, name) return {id="CUSTOM", name="Custom", specID=id, specName=name, buildType="custom", source=""} end
 NS.GetSelectedTalentBuildID = function() return "CUSTOM" end
 NS.GetTalentBuildLastStatus = function() return nil end
-NS.RequestTalentBuildApply = function() return true end
+local applyCalls = 0
+NS.RequestTalentBuildApply = function() applyCalls = applyCalls + 1; return true end
+local leveling = {buildID="CUSTOM", enabled=false, targetName=nil, specName="Arcane", nextName=nil, status="Choose a build for leveling.", detail="Catalog freshness is unverified; prerequisite order will be used.", canSpend=false}
+NS.GetTalentLevelingState = function() return leveling end
+NS.GetTalentLevelingInfo = function() return leveling end
+NS.SetTalentLevelingTarget = function(buildID)
+    leveling.buildID = buildID
+    leveling.targetName = buildID == "CUSTOM" and nil or ("Build " .. tostring(buildID):gsub("BUILD%-", ""))
+    leveling.nextName = buildID == "CUSTOM" and nil or "Arcane Surge"
+    leveling.status = buildID == "CUSTOM" and "Leveling target cleared." or "Ready for the next available talent point."
+    leveling.canSpend = buildID ~= "CUSTOM"
+    return true, leveling.status
+end
+NS.SetTalentLevelingEnabled = function(enabled)
+    leveling.enabled = enabled and true or false
+    return true, leveling.enabled and "Auto-spend enabled." or "Auto-spend disabled."
+end
+NS.SpendNextTalentPoint = function()
+    if not leveling.canSpend then return false end
+    leveling.status = "Spent Arcane Surge."
+    return true
+end
+local sbaAssessment = {
+    warningEnabled=false, hasMismatch=false, settled=true, specID=100, buildID="BUILD-1",
+    signature="mage-arcane-build-1-mismatch-one", targetName="Arcane SBA",
+    message="Your learned talents differ from the selected SBA target.", detail="The selected target can be reset and applied at your current level.",
+    canRespec=true,
+}
+local warningSetCalls, respecCalls = 0, 0
+NS.GetTalentSBAAssessment = function() return sbaAssessment end
+NS.SetTalentSBAWarningEnabled = function(enabled)
+    warningSetCalls = warningSetCalls + 1
+    sbaAssessment.warningEnabled = enabled and true or false
+    return true, sbaAssessment.warningEnabled and "SBA warning enabled." or "SBA warning disabled."
+end
+NS.RequestTalentSBARespec = function()
+    respecCalls = respecCalls + 1
+    if not sbaAssessment.canRespec then return false, "Cannot respec while the talent tree is changing." end
+    return true, "SBA respec requested."
+end
 NS.GetInterceptBlockReason = function() return nil end
 UnitClass = function() return "Mage", "MAGE", 8 end
 
@@ -331,6 +371,109 @@ talentParent:SetSize(972, 560)
 talentParent._contentWidth, talentParent._sectionColor, talentParent._subsections = 972, color(), {}
 talentParent._sectionColorDim, talentParent._sectionColorBright = color(), color()
 local talentState = assert(NS.BuildTalentBuildsConfigSection(talentParent))
+assert(rawget(talentState.levelingTarget, "_text") == "Target: No leveling target selected",
+    "leveling assist must expose the current-spec target before the catalog")
+assert(rawget(talentState.levelingStatus, "_text"):find("prerequisite order", 1, true),
+    "leveling assist must explain the fallback order qualification")
+assert(talentState.parent._contentH >= 732, "leveling assist must reserve real catalog height")
+local selectedCatalogRow
+for _, row in ipairs(talentState.rowButtons) do
+    if rawget(row, "_data") and row._data.id == "BUILD-1" then selectedCatalogRow = row; break end
+end
+assert(selectedCatalogRow, "active-spec catalog row required for leveling interaction")
+assert(selectedCatalogRow:GetScript("OnClick"), "catalog row requires an inspect handler")
+selectedCatalogRow:GetScript("OnClick")(selectedCatalogRow)
+assert(applyCalls == 0, "browsing a catalog row must never import or apply it")
+assert(talentState.selectedRow.id == "BUILD-1", "catalog click must only select the build for inspection")
+local useForLeveling = assert(talentState.useForLevelingBtn:GetScript("OnClick"), "USE FOR LEVELING needs a handler")
+useForLeveling(talentState.useForLevelingBtn)
+assert(leveling.buildID == "BUILD-1" and rawget(talentState.levelingNext, "_text") == "Next recommended talent: Arcane Surge",
+    "USE FOR LEVELING must set the selected active-spec build without importing it")
+assert(applyCalls == 0, "setting a leveling target must not import a full build")
+local autoSpend = assert(talentState.autoSpendBtn:GetScript("OnClick"), "AUTO-SPEND needs a handler")
+autoSpend(talentState.autoSpendBtn)
+assert(leveling.enabled and rawget(talentState.autoSpendBtn._text, "_text") == "AUTO-SPEND: ON",
+    "AUTO-SPEND must be an explicit per-spec option")
+autoSpend(talentState.autoSpendBtn)
+assert(not leveling.enabled, "AUTO-SPEND must toggle back off")
+local spendNext = assert(talentState.spendNextBtn:GetScript("OnClick"), "SPEND NEXT needs a handler")
+spendNext(talentState.spendNextBtn)
+assert(leveling.status == "Spent Arcane Surge.", "SPEND NEXT must use the manual backend path when auto-spend is off")
+local warningToggle = assert(talentState.sbaWarningBtn:GetScript("OnClick"), "SBA ALERT needs an opt-in handler")
+warningToggle(talentState.sbaWarningBtn)
+assert(warningSetCalls == 1 and sbaAssessment.warningEnabled
+    and rawget(talentState.sbaWarningBtn._text, "_text") == "SBA ALERT: ON",
+    "SBA alert must remain an explicit per-spec opt-in")
+assert(not talentState.respecSBABtn._enabled, "RESPEC TO SBA must stay unavailable without a mismatch")
+sbaAssessment.hasMismatch = true
+talentState:Refresh()
+assert(talentState.respecSBABtn._enabled, "RESPEC TO SBA must become available for a settled actionable mismatch")
+local panelRespec = assert(talentState.respecSBABtn:GetScript("OnClick"), "RESPEC TO SBA needs an explicit-action handler")
+panelRespec(talentState.respecSBABtn)
+assert(respecCalls == 1, "panel RESPEC TO SBA must request a deliberate SBA reset once")
+
+-- Scheduled checks can run before this panel exists. The callback owns a
+-- lazy alert, suppresses its dismissed mismatch signature, and rechecks the
+-- backend action instead of retaining a stale result.
+NS.CheckTalentSBAWarning(sbaAssessment)
+local warningTitle = assert(findTextWidget(ui.uiParent, "SBA TALENT MISMATCH"), "settled opted-in mismatch must show a warning alert")
+local warningPopup = warningTitle:GetParent()
+assert(warningPopup:IsShown() and rawget(warningPopup._target, "_text"):find("Arcane SBA", 1, true),
+    "warning alert must identify the selected SBA target")
+assert(warningPopup._target:GetHeight() == 14 and not rawget(warningPopup._target, "_wordWrap")
+    and warningPopup._bodyScroll and warningPopup._bodyContent
+    and rawget(warningPopup._body, "_text"):find("resets your class, specialization, and hero talent points", 1, true),
+    "warning alert must reserve a bounded target line and explain the explicit SBA reset")
+local wl, wt, wr, wb = mock.rect(warningPopup)
+local bl, bt, br, bb = mock.rect(warningPopup._bodyScroll)
+local _, respecTop = mock.rect(warningPopup._respec)
+assert(bl >= wl + 12 and br <= wr - 12 and bt <= wt - 45 and bb >= respecTop + 12,
+    "scrolling warning details must stay inside the popup and above its actions")
+sbaAssessment.targetName = string.rep("Very Long Custom SBA Target ", 12)
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(rawget(warningPopup._target, "_text"):find("Very Long Custom SBA Target", 1, true)
+    and warningPopup._target:GetHeight() == 14,
+    "long SBA target names must stay in the reserved single-line alert target slot")
+sbaAssessment.targetName = "Arcane SBA"
+local dismissWarning = assert(warningPopup._dismiss:GetScript("OnClick"), "warning alert needs dismissal")
+dismissWarning(warningPopup._dismiss)
+assert(not warningPopup:IsShown(), "dismiss must hide the current SBA mismatch alert")
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(not warningPopup:IsShown(), "dismissed mismatch signature must not spam repeated alerts")
+sbaAssessment.settled, sbaAssessment.hasMismatch = false, false
+NS.CheckTalentSBAWarning(sbaAssessment)
+sbaAssessment.settled, sbaAssessment.hasMismatch = true, true
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(not warningPopup:IsShown(), "a transient unavailable assessment must preserve the user's dismissal")
+sbaAssessment.signature = "mage-arcane-build-1-mismatch-two"
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(warningPopup:IsShown(), "a changed mismatch signature must be shown again")
+sbaAssessment.settled = false
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(not warningPopup:IsShown(), "unsettled talent changes must not leave an actionable SBA alert visible")
+sbaAssessment.settled = true
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(warningPopup:IsShown(), "settled mismatch must restore its actionable SBA alert")
+sbaAssessment.canRespec = false
+local alertRespec = assert(warningPopup._respec:GetScript("OnClick"), "alert RESPEC TO SBA needs an explicit-action handler")
+alertRespec(warningPopup._respec)
+assert(respecCalls == 2 and rawget(warningPopup._body, "_text"):find("Cannot respec", 1, true),
+    "alert action must recheck and visibly report an unavailable SBA reset")
+sbaAssessment.failure = "WoW rejected the respec. Review pending talents."
+sbaAssessment.settled, sbaAssessment.hasMismatch = false, false
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(warningPopup:IsShown() and not warningPopup._respec._enabled
+    and rawget(warningPopup._body, "_text"):find("WoW rejected", 1, true),
+    "asynchronous respec failure must remain visible even while staged data is unsettled")
+sbaAssessment.failure, sbaAssessment.settled = nil, true
+sbaAssessment.canRespec, sbaAssessment.hasMismatch = true, false
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(not warningPopup:IsShown(), "resolved SBA mismatch must hide its alert")
+sbaAssessment.warningEnabled, sbaAssessment.hasMismatch = false, true
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(not warningPopup:IsShown(), "disabled SBA warning must hide its alert")
+talentState:Refresh()
+assert(talentState.respecSBABtn._enabled, "turning off popup alerts must not disable an explicit respec action")
 local sourceChips = {}
 for _, child in ipairs(talentParent._children) do
     if rawget(child, "_source") then sourceChips[#sourceChips + 1] = child end
@@ -345,6 +488,43 @@ for _, chip in ipairs(sourceChips) do
 end
 local rowCount = 0; for _ in pairs(rows) do rowCount = rowCount + 1 end
 assert(rowCount >= 2, "long source chips must wrap across rows")
+
+-- Wrapped filters must push the footer as well as the table/actions. Status
+-- messages and assist controls must have real interior bounds, not clipping.
+local assistPanel = talentState.useForLevelingBtn:GetParent()
+local apl, apt, apr, apb = mock.rect(assistPanel)
+for _, control in ipairs({talentState.levelingTarget, talentState.levelingNext, talentState.levelingStatus,
+    talentState.useForLevelingBtn, talentState.autoSpendBtn, talentState.spendNextBtn,
+    talentState.sbaWarningBtn, talentState.respecSBABtn, talentState.levelingHint}) do
+    local l, t, r, b = mock.rect(control)
+    assert(l >= apl + 8 and r <= apr - 8 and t <= apt - 8 and b >= apb + 8,
+        "leveling labels and controls must stay inside an explicit gutter")
+end
+local footer = assert(findTextWidget(talentParent,
+    "Click a row to inspect it. APPLY BUILD imports the selected full build. LOAD ANYWAY remains for an off-spec selection."))
+local _, tableTop, _, tableBottom = mock.rect(talentState.tablePanel)
+local _, footerTop, _, footerBottom = mock.rect(footer)
+local _, _, _, contentBottom = mock.rect(talentParent)
+assert(footerTop < tableBottom - 30 and footerBottom > contentBottom + 10,
+    "footer must move below wrapped-source table without leaving the content bounds")
+
+-- Source provenance can contain long author notes; it scrolls inside the
+-- dialog, leaving the URL/copy and close controls reachable.
+talentState.selectedRow.notes = string.rep("Manual cooldowns and source limitations. ", 70)
+talentState.sourceBtn:GetScript("OnClick")(talentState.sourceBtn)
+local sourcePopup = assert(talentParent._talentBuildURLPopup)
+assert(rawget(sourcePopup._provenance, "_text"):find("Guide-adapted", 1, true)
+    and rawget(sourcePopup._provenance, "_text"):find("not an optimality claim", 1, true),
+    "source popup must identify guide-adapted choices and qualify guide-informed priorities")
+assert(sourcePopup._sourceContent:GetHeight() > sourcePopup._sourceScroll:GetHeight(),
+    "long source notes must reserve scrollable height")
+sourcePopup._sourceScroll:GetScript("OnMouseWheel")(sourcePopup._sourceScroll, -1)
+assert(sourcePopup._sourceScroll:GetVerticalScroll() > 0, "source notes must be scrollable")
+local spl, spt, spr, spb = mock.rect(sourcePopup)
+local sl, st, sr, sb = mock.rect(sourcePopup._sourceScroll)
+assert(sl >= spl + 12 and sr <= spr - 12 and st < spt - 80 and sb >= spb + 30,
+    "source viewport must leave room for the dialog controls")
+sourcePopup:Hide()
 
 -- Fixed-size rows and direct disclosure controls must remain inside their
 -- scroll-content parent. This includes the two 66px trinket rows.
@@ -368,6 +548,22 @@ NS._restoreSection = false
 local minHeightPanel = assert(NS.Config:Create())
 assert(minHeightPanel:GetWidth() == 640 and minHeightPanel:GetHeight() == 400,
     "compact config must enforce its 400px minimum height")
+NS.Config.SelectSection(5)
+assertActiveSectionInScrollRegion(5)
+local compactTalent = assert(newestSection(5), "compact Talent Builds content missing")
+local compactAssistTitle = assert(findTextWidget(compactTalent, "LEVELING TARGET"), "compact panel must keep leveling assist visible")
+local compactCatalogTitle = assert(findTextWidget(compactTalent, "TALENT BUILDS"), "compact panel must keep catalog title visible")
+local _, _, _, assistBottom = mock.rect(rawget(compactAssistTitle, "_parent"))
+local _, catalogTop = mock.rect(compactCatalogTitle)
+assert(catalogTop <= assistBottom - 20, "compact panel must reserve a gutter between leveling assist and catalog")
+local compactAlert = assert(findTextWidget(compactTalent, "SBA ALERT: OFF"), "compact panel must reserve the SBA alert option")
+local compactRespec = assert(findTextWidget(compactTalent, "RESPEC TO SBA"), "compact panel must reserve the SBA respec action")
+for _, control in ipairs({compactAlert:GetParent(), compactRespec:GetParent()}) do
+    local l, t, r, b = mock.rect(control)
+    local pl, pt, pr, pb = mock.rect(rawget(compactAssistTitle, "_parent"))
+    assert(l >= pl + 8 and r <= pr - 8 and t <= pt - 8 and b >= pb + 8,
+        "compact SBA warning controls must remain inside the reserved assist block")
+end
 
 -- A page must never be left transparent when the user closes/reopens while
 -- transition settings are enabled. The shell no longer fades whole content.

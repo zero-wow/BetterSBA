@@ -23,18 +23,14 @@ local runtimeFrame
 local runtimeInitialized = false
 local pendingLoadRequest
 local ProcessPendingApply
-local didInitialTalentBuildSync = false
 local MAX_PENDING_APPLY_RETRIES = 5
 local IMPORT_CONFIRM_TIMEOUT = 10
-local levelUpListener = {
-    level = false,
-    currency = false,
-}
 local TALENT_BUILD_RUNTIME_EVENTS = {
     "PLAYER_LOGIN",
     "PLAYER_REGEN_ENABLED",
     "PLAYER_SPECIALIZATION_CHANGED",
     "PLAYER_LEVEL_UP",
+    "PLAYER_ENTERING_WORLD",
     "TRAIT_TREE_CURRENCY_INFO_UPDATED",
     "TRAIT_CONFIG_CREATED",
     "TRAIT_CONFIG_UPDATED",
@@ -151,20 +147,6 @@ local function GetManagedConfigKey(entry)
     return tostring(entry)
 end
 
-local function SetPromptPending(specID, buildID, reason)
-    EnsureProfileState(NS.db)
-    if not NS.db then return end
-    if not buildID or buildID == NS.TALENT_BUILD_CUSTOM_ID then
-        NS.db.talentBuildPromptPending = nil
-        return
-    end
-    NS.db.talentBuildPromptPending = {
-        specID = specID,
-        buildID = buildID,
-        reason = reason,
-    }
-end
-
 local function GetPromptPending()
     return NS.db and NS.db.talentBuildPromptPending or nil
 end
@@ -202,11 +184,6 @@ local function ClearPendingApply()
     end
 end
 
-local function ClearLevelUpListener()
-    levelUpListener.level = false
-    levelUpListener.currency = false
-end
-
 local function SetStatus(specID, kind, text, buildID)
     NS.SetTalentBuildLastStatus(specID, {
         kind = kind,
@@ -217,14 +194,6 @@ local function SetStatus(specID, kind, text, buildID)
     if NS.ShowConfigStatusMessage then
         NS.ShowConfigStatusMessage(text, kind, 4)
     end
-end
-
-local function GetLastAppliedTalentBuildID(specID)
-    local map = NS.db and NS.db.lastAppliedTalentBuildIDs
-    if not specID or not map then
-        return nil
-    end
-    return map[specID]
 end
 
 local function SetLastAppliedTalentBuildID(specID, buildID)
@@ -343,34 +312,46 @@ end
 
 local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent)
     local results = {}
-    local count = 1
     local treeNodes = C_Traits.GetTreeNodes(treeID)
+    if not treeNodes then return nil, "Talent tree unavailable" end
     for i = 1, #treeNodes do
-        local indexInfo = loadoutContent[i]
-        if indexInfo and indexInfo.isNodeSelected and not indexInfo.isNodeGranted then
-            local treeNodeID = treeNodes[i]
-            local nodeInfo = C_Traits.GetNodeInfo(configID, treeNodeID)
-            if not nodeInfo then
-                return nil, "Unable to read node info"
+        local encoded = loadoutContent[i]
+        if encoded and encoded.isNodeSelected and not encoded.isNodeGranted then
+            local nodeID = treeNodes[i]
+            local node = C_Traits.GetNodeInfo(configID, nodeID)
+            if not node then return nil, "Unable to read node info" end
+            local maxRanks = node.maxRanks
+            local ranks = encoded.isPartiallyRanked and encoded.partialRanksPurchased or maxRanks
+            if type(maxRanks) ~= "number" or maxRanks < 1 or type(ranks) ~= "number"
+                or ranks % 1 ~= 0 or ranks < 1 or ranks > maxRanks
+                or (encoded.isPartiallyRanked and ranks >= maxRanks) then
+                return nil, "Invalid purchased rank count"
             end
-            local isChoiceNode = nodeInfo.type == Enum.TraitNodeType.Selection or nodeInfo.type == Enum.TraitNodeType.SubTreeSelection
-            local selectionEntryID
-            if isChoiceNode then
-                selectionEntryID = nodeInfo.entryIDs and nodeInfo.entryIDs[indexInfo.choiceNodeSelection or 1]
-                if not selectionEntryID then return nil, "Invalid choice-node selection" end
+            local choice = node.type == Enum.TraitNodeType.Selection or node.type == Enum.TraitNodeType.SubTreeSelection
+            if encoded.isChoiceNode ~= choice then return nil, "Build node type does not match this talent tree" end
+            local entries = node.entryIDs
+            if not entries or #entries == 0 then return nil, "Talent node has no entries" end
+            if Enum.TraitNodeType.Tiered and node.type == Enum.TraitNodeType.Tiered then
+                if not C_Traits.GetEntryInfo then return nil, "Tiered talent API unavailable" end
+                local remaining = ranks
+                for j = 1, #entries do
+                    if remaining == 0 then break end
+                    local entryID = entries[j]
+                    local info = C_Traits.GetEntryInfo(configID, entryID)
+                    local capacity = info and info.maxRanks
+                    if type(capacity) ~= "number" or capacity < 1 or capacity % 1 ~= 0 then
+                        return nil, "Unable to read tiered talent ranks"
+                    end
+                    local purchased = math.min(remaining, capacity)
+                    results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = purchased, selectionEntryID = entryID }
+                    remaining = remaining - purchased
+                end
+                if remaining ~= 0 then return nil, "Tiered talent rank count exceeds its entries" end
             else
-                selectionEntryID = nodeInfo.activeEntry and nodeInfo.activeEntry.entryID or (nodeInfo.entryIDs and nodeInfo.entryIDs[1]) or nil
+                local entryID = choice and entries[encoded.choiceNodeSelection] or entries[1]
+                if choice and not entries[encoded.choiceNodeSelection] then return nil, "Invalid choice-node selection" end
+                results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = ranks, selectionEntryID = entryID }
             end
-            local result = {
-                nodeID = treeNodeID,
-                ranksGranted = 0,
-                ranksPurchased = indexInfo.isPartiallyRanked and indexInfo.partialRanksPurchased or (nodeInfo.maxRanks or 1),
-            }
-            if selectionEntryID then
-                result.selectionEntryID = selectionEntryID
-            end
-            results[count] = result
-            count = count + 1
         end
     end
     return results
@@ -454,6 +435,15 @@ function NS.ValidateTalentBuildImportString(importString, specID)
     local okContent = pcall(ReadLoadoutContent, importStream, treeID)
     if not okContent then return false, "Invalid or incomplete build content" end
     return true, nil
+end
+
+-- Shared decoder: a leveling target describes purchased ranks, never a reset.
+function NS.DecodeTalentBuildTarget(entry, configID)
+    return BuildImportEntryInfo(entry.importString, entry.specID, configID)
+end
+
+function NS.IsTalentBuildImportPending()
+    return pendingLoadRequest ~= nil or GetPendingApply() ~= nil
 end
 
 local function IsManagedConfigValid(specID, configID)
@@ -694,117 +684,15 @@ ProcessPendingApply = function(reason)
     return result ~= "failed"
 end
 
-local function TryProcessLevelUpAutoApply()
-    if not levelUpListener.level or not levelUpListener.currency then
-        return
-    end
-    ClearLevelUpListener()
-    if not NS.db or not NS.db.talentBuildsEnabled then
-        return
-    end
-    local specID = NS.GetTalentBuildCurrentSpecID()
-    local buildID = NS.GetSelectedTalentBuildID(specID)
-    if not buildID or buildID == NS.TALENT_BUILD_CUSTOM_ID then
-        return
-    end
-    if NS.db.talentBuildAutoApplyMode == "Prompt Before Spending" then
-        SetPromptPending(specID, buildID, "level-up")
-        local entry = NS.FindTalentBuildByID(buildID)
-        SetStatus(specID, "prompt", "Talent point available for " .. ((entry and entry.name) or "selected build"), buildID)
-        return
-    end
-    SetPendingApply(buildID, specID, "level-up", false)
-    ProcessPendingApply("level-up")
-end
-
-local function EnsureSelectedTalentBuildReady(reason)
-    if didInitialTalentBuildSync then
-        return false
-    end
-    if not NS.db or not NS.db.talentBuildsEnabled or not NS.db.talentBuildManagedLoadouts then
-        didInitialTalentBuildSync = true
-        return false
-    end
-    if pendingLoadRequest or GetPendingApply() then
-        return false
-    end
-    local specID = NS.GetTalentBuildCurrentSpecID()
-    if not specID then
-        return false
-    end
-    local buildID = NS.GetSelectedTalentBuildID(specID)
-    if not buildID or buildID == NS.TALENT_BUILD_CUSTOM_ID then
-        didInitialTalentBuildSync = true
-        return false
-    end
-    local entry = NS.FindTalentBuildByID(buildID)
-    if not entry then
-        didInitialTalentBuildSync = true
-        return false
-    end
-    local managedConfigID = GetManagedConfigID(entry)
-    local activeConfigID = C_ClassTalents and C_ClassTalents.GetActiveConfigID and C_ClassTalents.GetActiveConfigID() or nil
-    if managedConfigID and activeConfigID and managedConfigID == activeConfigID and GetLastAppliedTalentBuildID(specID) == buildID then
-        didInitialTalentBuildSync = true
-        return false
-    end
-    if InCombatLockdown() then
-        SetPendingApply(buildID, specID, reason or "login-sync", false)
-        SetStatus(specID, "queued", "Queued " .. entry.name .. " to restore selected build", buildID)
-        return true
-    end
-    local started = NS.RequestTalentBuildApply(buildID, {
-        specID = specID,
-        reason = reason or "login-sync",
-        loadAnyway = false,
-    })
-    if started ~= false then
-        didInitialTalentBuildSync = true
-    end
-    return started
-end
-
 local function OnTalentBuildEvent(_, event, ...)
     if not IsTalentBuildSystemEnabled() then
         return
     end
-    if event == "PLAYER_LOGIN" then
-        ProcessPendingApply("login")
-        NS.C_Timer_After(1, function()
-            EnsureSelectedTalentBuildReady("login-sync")
-        end)
-    elseif event == "PLAYER_REGEN_ENABLED" then
-        ProcessPendingApply("combat")
-        if not didInitialTalentBuildSync then
-            NS.C_Timer_After(0.2, function()
-                EnsureSelectedTalentBuildReady("combat-sync")
-            end)
-        end
+    if NS.OnTalentLevelingEvent then NS.OnTalentLevelingEvent(event, ...) end
+    if event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then
+        ProcessPendingApply(event)
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
-        ClearLevelUpListener()
-        NS.C_Timer_After(0.1, function()
-            ProcessPendingApply("spec-switch")
-        end)
-    elseif event == "PLAYER_LEVEL_UP" then
-        if not NS.db or not NS.db.talentBuildsEnabled then
-            return
-        end
-        local level = ...
-        if level and level >= 10 then
-            levelUpListener.level = true
-            TryProcessLevelUpAutoApply()
-        end
-    elseif event == "TRAIT_TREE_CURRENCY_INFO_UPDATED" then
-        if not NS.db or not NS.db.talentBuildsEnabled then
-            return
-        end
-        local treeID = ...
-        local specID = NS.GetTalentBuildCurrentSpecID()
-        local playerTreeID = specID and C_ClassTalents.GetTraitTreeForSpec(specID) or nil
-        if treeID and playerTreeID and treeID == playerTreeID then
-            levelUpListener.currency = true
-            TryProcessLevelUpAutoApply()
-        end
+        NS.C_Timer_After(0.1, function() ProcessPendingApply("spec-switch") end)
     elseif event == "TRAIT_CONFIG_CREATED" then
         local configInfo = ...
         if not pendingLoadRequest or pendingLoadRequest.mode ~= "import" or not configInfo or configInfo.type ~= Enum.TraitConfigType.Combat then
@@ -836,6 +724,13 @@ end
 function NS.InitializeTalentBuildStorage()
     EnsureRootStore(NS.dbRoot)
     EnsureProfileState(NS.db)
+    -- Drop queued work from the retired full-loadout level/login automation.
+    local pending = GetPendingApply()
+    if pending and pending.reason ~= "manual" and pending.reason ~= "load-anyway"
+        and pending.reason ~= "config-apply" and pending.reason ~= "config-load-anyway" then
+        ClearPendingApply()
+    end
+    ClearPromptPending()
     NS.InitializeTalentBuildRuntime()
 end
 
@@ -866,19 +761,17 @@ function NS.RefreshTalentBuildRuntimeState()
         for i = 1, #TALENT_BUILD_RUNTIME_EVENTS do
             runtimeFrame:RegisterEvent(TALENT_BUILD_RUNTIME_EVENTS[i])
         end
-        didInitialTalentBuildSync = false
         NS.C_Timer_After(0.2, function()
             if not IsTalentBuildSystemEnabled() then
                 return
             end
-            EnsureSelectedTalentBuildReady("toggle-enable")
+            if NS.ScheduleTalentLevelingCheck then NS.ScheduleTalentLevelingCheck() end
         end)
     else
         ClearPendingApply()
         ClearPromptPending()
-        ClearLevelUpListener()
         pendingLoadRequest = nil
-        didInitialTalentBuildSync = false
+        if NS.CheckTalentSBAWarning then NS.CheckTalentSBAWarning({ warningEnabled = false }) end
     end
 
     if NS.RefreshTalentBuildPanels then
@@ -1153,7 +1046,7 @@ function NS.RequestTalentBuildApply(buildID, opts)
         return false
     end
     -- Do not let a second click replace the identity of an in-flight import.
-    if pendingLoadRequest then return false end
+    if pendingLoadRequest or (NS.IsTalentLevelingBusy and NS.IsTalentLevelingBusy()) then return false end
     if not buildID or buildID == NS.TALENT_BUILD_CUSTOM_ID then
         local specID = opts.specID or NS.GetTalentBuildCurrentSpecID()
         NS.SetSelectedTalentBuildID(specID, NS.TALENT_BUILD_CUSTOM_ID)

@@ -161,11 +161,31 @@ The panel is organized into nine sections:
 | **Appearance** | Cast animation type &amp; style, animated clone keybind controls, per-context font system (global, config panel, keybind, queue label, queue keybind, pause symbol, pause reason) |
 | **Active Display** | Button size, show/hide keybind text, keybind X/Y offset, show/hide cooldown spiral, range coloring toggle, button background color |
 | **Priority Display** | Show/hide the spell pool, icon size, scale, anchor position, detach &amp; drag-to-move, offsets, keybind labels, background &amp; border colors |
-| **Talent Builds** | Browse and filter builds, manage personal imports, and apply talent loadouts |
+| **Talent Builds** | Choose a leveling target, automatically spend new points, enable mismatch warnings, respec toward an SBA target, and manage imports |
 | **Visibility** | Combat-only mode, hide in vehicle, button out-of-combat alpha, queue out-of-combat alpha |
 | **Importance** | Enable/disable importance borders, cooldown tier colors (auto-attack, filler, short, long, major), section theme colors for each config panel tab |
 | **Advanced** | Modifier scaling (Shift/Ctrl/Alt size multiplier), lock button position, debug mode, minimap button toggle, LDB status text, live performance stats (memory, update rate, managed frames, keybind status, active profile, session uptime, health) |
 | **Profiles** | Active profile dropdown, create new / delete profiles, per-character binding, copy settings from another profile, reset to defaults |
+
+---
+
+## Automatic talent points
+
+Open **/bs → Talents**, select a build for your current specialization, click **USE FOR LEVELING**, and turn **AUTO-SPEND** on. BetterSBA spends and applies available points toward that build without asking for approval for each point. The setting and target are saved separately for each character and specialization. With auto-spend off, **SPEND NEXT** applies one available rank.
+
+**AUTO-SPEND** adds points to the current allocation without resetting talents or changing specialization. It waits during combat, while another build is importing, or while you have uncommitted talent edits. Conflicting learned talents pause the assistant with a status message. Changed client builds, tree hashes, or target exports require reselecting the target. Failed or unconfirmed commits stop the pass; review pending talents before toggling auto-spend to retry.
+
+The optional **mismatch warning** compares your learned talents with the chosen SBA target. Enable it separately for each character and specialization. A mismatch means the allocations differ; it does not prove your current talents are bad or that the target performs better. Turning the warning on does not reset anything.
+
+To replace a conflicting allocation, click **RESPEC TO SBA**. This explicit action resets the current specialization's purchased class, spec and hero talents, then spends the points available at your current level toward the chosen target. It does not grant max-level points or switch specialization. Review the target and its source notes before using it; the reset replaces your current allocation. Auto-spend can continue that target as you earn more points.
+
+Catalog row clicks only inspect a build. **APPLY BUILD** remains an explicit full-loadout import, and **LOAD ANYWAY** explicitly switches to an off-spec build. Old automatic full-loadout imports on login/level-up have been retired; existing personal imports remain available.
+
+**VIEW SOURCE** shows the exact guide link, patch, research date, hero tree and author limitations. The bundled catalog has **15 entries across 10 specs**: four publisher-designated SBA builds, four author-endorsed SBA-compatible builds, one Fire Mage adaptation to match its author's written talent recommendation, and six unverified legacy Druid imports. The Fire adaptation changes only the Flamestrike choice to its targeted variant; it is a BetterSBA adaptation, not the publisher's exact export or an in-game-verified result. The addon does not fetch websites inside WoW. Coverage does not yet include every class, specialization or hero tree.
+
+A max-level import has no leveling chronology. BetterSBA has **72 guide-informed priority rules across these 10 specs**, restricted to matching talents in the selected target, and promotes the prerequisites leading to those talents. The next-pick status explains the reason. Explicit rank orders take precedence; unweighted talents use a stable legal path. Every acquisition weight is an inference from class/SBA guidance, not an author-published leveling order or a simulated optimum. Some rules may not occur in a particular target, especially the legacy Druid imports; those rules are ignored. Class/spec/hero currency, level gates and the active hero tree still determine what can be learned.
+
+The [source research and coverage](docs/sba-talent-sources.md) records the available SBA evidence and the process for evaluating general builds with SBA-mode simulations. General guide candidates remain research data until their SBA suitability is established. Automated Lua tests exercise spending/confirmation, conflicts, combat delays and layout; these checks do not replace in-game validation.
 
 ---
 

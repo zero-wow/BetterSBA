@@ -9,7 +9,7 @@ _G.BetterSBA = NS
 --   build   = total commit count (auto)
 NS.VERSION_RELEASE = 1
 NS.VERSION_PATCH   = 8       -- bump this for feature milestones
-NS.VERSION = "R1.13396.45b3173.0008.17"
+NS.VERSION = "R1.23023.4c4b3e1.0008.27"
 NS.ADDON_NAME = ADDON_NAME
 
 -- SBA Spell

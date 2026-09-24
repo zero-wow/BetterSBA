@@ -5,6 +5,7 @@ local timers = {}
 local deletedConfigs = 0
 local importedLoadouts = 0
 local streamMode = "invalid"
+local encodedContent, encodedBits
 local now = 100
 local runtimeFrame
 
@@ -18,7 +19,7 @@ SetSpecialization = function() end
 PlayerUtil = { GetCurrentSpecID = function() return 100 end }
 Enum = {
     TraitConfigType = { Combat = 1 },
-    TraitNodeType = { Selection = 1, SubTreeSelection = 2 },
+    TraitNodeType = { Selection = 1, SubTreeSelection = 2, Tiered = 3 },
 }
 C_Traits = {
     GetLoadoutSerializationVersion = function() return 2 end,
@@ -52,13 +53,15 @@ ExportUtil = {
         local hash = streamMode == "hash-mismatch" and 1 or 0
         values[#values + 1] = hash
         for i = 2, 16 do values[#values + 1] = 0 end
-        if streamMode == "valid" then
+        if encodedContent then
+            for _, value in ipairs(encodedContent) do values[#values + 1] = value end
+        elseif streamMode == "valid" then
             values[#values + 1] = 1 -- selected
             values[#values + 1] = 1 -- purchased
             values[#values + 1] = 0 -- fully ranked
             values[#values + 1] = 0 -- non-choice
         end
-        local bits = streamMode == "header-only" and 152 or 156
+        local bits = encodedBits and 152 + encodedBits or (streamMode == "header-only" and 152 or 156)
         local index = 0
         return {
             GetNumberOfBits = function() return bits end,
@@ -173,5 +176,50 @@ while #timers > 0 do
     assert(executed <= 5, "retry loop must be bounded")
 end
 assert(NS.GetTalentBuildPendingApply() == nil, "exhausted retry must clear pending state")
+
+-- Level-up/login events must never restore or reimport a complete loadout.
+local importsBeforeEvents = importedLoadouts
+NS.db.selectedTalentBuildIDs[100] = "BUILD-1"
+runtimeFrame.onEvent(runtimeFrame, "PLAYER_LEVEL_UP", 25)
+runtimeFrame.onEvent(runtimeFrame, "TRAIT_TREE_CURRENCY_INFO_UPDATED", 9001)
+runtimeFrame.onEvent(runtimeFrame, "PLAYER_LOGIN")
+assert(importedLoadouts == importsBeforeEvents, "legacy automatic loadout imports must stay retired")
+
+-- Modern tiered nodes serialize one total rank count but import as multiple
+-- entries. Starting with a later active entry must not misassign early ranks.
+streamMode = "valid"
+C_Traits.GetNodeInfo = function()
+    return { type = Enum.TraitNodeType.Tiered, entryIDs = { 8001, 8002 }, maxRanks = 2, activeEntry = { entryID = 8002 } }
+end
+C_Traits.GetEntryInfo = function() return { maxRanks = 1 } end
+local rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "tiered" }, 42))
+assert(#rows == 2 and rows[1].selectionEntryID == 8001 and rows[2].selectionEntryID == 8002)
+assert(rows[1].ranksPurchased == 1 and rows[2].ranksPurchased == 1)
+encodedContent, encodedBits = { 1, 1, 1, 0, 0 }, 10
+assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "zero-ranks" }, 42) == nil,
+    "a selected purchased node cannot contain zero paid ranks")
+encodedContent, encodedBits = { 1, 1, 1, 3, 0 }, 10
+assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "excess-ranks" }, 42) == nil,
+    "a purchased rank count cannot exceed node capacity")
+encodedContent, encodedBits = { 1, 1, 1, 1, 0 }, 10
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "partial-tier" }, 42))
+assert(#rows == 1 and rows[1].selectionEntryID == 8001 and rows[1].ranksPurchased == 1)
+encodedContent, encodedBits = nil, nil
+C_Traits.GetNodeInfo = function() return { type = Enum.TraitNodeType.Selection, entryIDs = { 8001, 8002 }, maxRanks = 1 } end
+assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "changed-node-type" }, 42) == nil,
+    "an outdated zero-hash export with a changed node type must fail closed")
+
+-- An upgrade must not resume the retired full-reset leveling behavior from
+-- SavedVariables. Disabling the feature also withdraws an outstanding alert.
+NS.db.talentBuildPendingApply = { buildID = "BUILD-1", specID = 100, reason = "level-up" }
+NS.db.talentBuildPromptPending = { buildID = "BUILD-1" }
+NS.InitializeTalentBuildStorage()
+assert(NS.GetTalentBuildPendingApply() == nil and NS.GetTalentBuildPromptPending() == nil,
+    "obsolete automatic whole-build work must be removed during initialization")
+local warningWithdrawn = false
+NS.CheckTalentSBAWarning = function(assessment) warningWithdrawn = assessment.warningEnabled == false end
+NS.db.talentBuildsEnabled = false
+NS.RefreshTalentBuildRuntimeState()
+assert(warningWithdrawn and next(runtimeFrame.events) == nil, "disabled talent assistance must withdraw warnings and events")
 
 print("talent regression mocks: ok")

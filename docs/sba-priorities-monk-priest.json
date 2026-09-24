@@ -1,0 +1,166 @@
+{
+  "checkedOn": "2026-09-24",
+  "scope": "Source-informed candidate priorities for the two active Wowhead SBA-compatible catalog targets only: Brewmaster 268 Master of Harmony and Shadow 258 Voidweaver.",
+  "policy": "Wowhead does not publish a full SBA-specific talent-point leveling order for either target. These are not measured best builds or a replacement for legal tree prerequisites. Apply an item only when its spellID is present in the selected full target; let normal prerequisite order decide everything else.",
+  "priorityMeaning": "Higher integers are considered first after legal prerequisites. Every numeric acquisition score is an inference from source guidance, not an author-published leveling order. definitionID is the current selected talent definition; spellID is its current spell effect from the live talent data.",
+  "targets": [
+    {
+      "targetBuildID": "WH-SBA-COMPATIBLE-268-20260812",
+      "classToken": "MONK",
+      "specID": 268,
+      "specName": "Brewmaster",
+      "targetName": "Brewmaster Monk - Master of Harmony (SBA-compatible)",
+      "heroTree": "Master of Harmony",
+      "sourcePatch": "12.1.0",
+      "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/the-war-within-guide",
+      "checkdate": "2026-09-24",
+      "priorities": [
+        {
+          "definitionID": 129703,
+          "spellID": 121253,
+          "englishName": "Keg Smash",
+          "priority": 100,
+          "shortReason": "Selected core loop talent that grants Shuffle and reduces Brew cooldowns.",
+          "rationale": "Wowhead calls this a core rotational skill; its Brewmaster effect grants Shuffle and reduces Brew cooldowns, so it supports both the SBA damage loop and tank foundation.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/abilities-talents-pve-tank",
+          "spellURL": "https://www.wowhead.com/spell=121253/keg-smash",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 129676,
+          "spellID": 119582,
+          "englishName": "Purifying Brew",
+          "priority": 95,
+          "shortReason": "Selected core defensive talent that preserves Brewmaster's survival base.",
+          "rationale": "Wowhead describes Purifying Brew as a core defensive skill and fundamental component; it preserves the tank survival base while following the selected build.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/abilities-talents-pve-tank",
+          "spellURL": "https://www.wowhead.com/spell=119582/purifying-brew",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 129684,
+          "spellID": 383695,
+          "englishName": "Improved Blackout Kick",
+          "priority": 90,
+          "shortReason": "Selected Blackout Kick upgrade scored from the guide's core-loop priority.",
+          "rationale": "The selected target contains Improved Blackout Kick. The guide's Blackout Kick-on-cooldown guidance makes this a bounded acquisition inference for the selected target's core loop.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/tank-leveling-tips",
+          "spellURL": "https://www.raidbots.com/static/data/live/talents.json",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 140901,
+          "spellID": 1241059,
+          "englishName": "Celestial Infusion",
+          "priority": 85,
+          "shortReason": "Selected Master of Harmony trigger for stored-vitality throughput.",
+          "rationale": "The selected Master of Harmony target chooses Celestial Infusion. Wowhead describes Celestial Brew/Celestial Infusion as the Aspect of Harmony trigger, so this is a selected-target synergy inference.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/the-war-within-guide",
+          "spellURL": "https://www.raidbots.com/static/data/live/talents.json",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 129834,
+          "spellID": 196736,
+          "englishName": "Blackout Combo",
+          "priority": 75,
+          "shortReason": "Selected rotation passive that Wowhead says is important to use well.",
+          "rationale": "The selected SBA-compatible build includes Blackout Combo, and Wowhead's rotation guide calls it important to use effectively. Its acquisition position is inferred, not source-prescribed.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/rotation-cooldowns-pve-tank",
+          "spellURL": "https://www.raidbots.com/static/data/live/talents.json",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 129839,
+          "spellID": 325153,
+          "englishName": "Exploding Keg",
+          "priority": 70,
+          "shortReason": "Selected burst/threat cooldown with a short melee-damage reduction.",
+          "rationale": "Wowhead recommends it once unlocked for burst, threat and a brief enemy melee reduction; it is kept below the rotational and survival foundation as an optional selected-target cooldown.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/monk/brewmaster/tank-leveling-tips",
+          "spellURL": "https://www.wowhead.com/spell=325153/exploding-keg",
+          "checkdate": "2026-09-24"
+        }
+      ]
+    },
+    {
+      "targetBuildID": "WH-SBA-COMPATIBLE-258-20260812",
+      "classToken": "PRIEST",
+      "specID": 258,
+      "specName": "Shadow",
+      "targetName": "Shadow Priest - Voidweaver (SBA-compatible)",
+      "heroTree": "Voidweaver",
+      "sourcePatch": "12.1.0",
+      "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/the-war-within-guide",
+      "checkdate": "2026-09-24",
+      "priorities": [
+        {
+          "definitionID": 108813,
+          "spellID": 335467,
+          "englishName": "Shadow Word: Madness",
+          "priority": 100,
+          "shortReason": "Selected Insanity spender; score inferred from Wowhead's rotation.",
+          "rationale": "Wowhead's rotation spends Insanity on this spell (historically named Devouring Plague); placing its selected talent definition early is an acquisition inference.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/the-war-within-guide",
+          "spellURL": "https://www.wowhead.com/spell=335467/shadow-word-madness",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 108811,
+          "spellID": 199484,
+          "englishName": "Psychic Link",
+          "priority": 95,
+          "shortReason": "Selected passive that spreads direct damage to Vampiric Touch targets.",
+          "rationale": "Wowhead describes Psychic Link as a passive that spreads direct damage to Vampiric Touch targets, so its selected talent definition is a bounded passive-SBA-synergy inference.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/the-war-within-guide",
+          "spellURL": "https://www.wowhead.com/spell=199484/psychic-link",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 122318,
+          "spellID": 450405,
+          "englishName": "Void Blast",
+          "priority": 90,
+          "shortReason": "Selected Voidweaver payoff for the guide's Void Torrent interaction.",
+          "rationale": "Wowhead says Voidweaver uses Void Torrent to transform Mind Blast into Void Blast. The selected Void Blast definition is therefore a target-specific acquisition inference.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/the-war-within-guide",
+          "spellURL": "https://www.raidbots.com/static/data/live/talents.json",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 108818,
+          "spellID": 375888,
+          "englishName": "Shadowy Insight",
+          "priority": 85,
+          "shortReason": "Selected proc talent named in Wowhead's Shadow priority list.",
+          "rationale": "Wowhead explicitly calls out Shadowy Insight procs in the rotation. Turning that importance into a selected-talent acquisition score remains an inference.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/the-war-within-guide",
+          "spellURL": "https://www.raidbots.com/static/data/live/talents.json",
+          "checkdate": "2026-09-24"
+        },
+        {
+          "definitionID": 108814,
+          "spellID": 238558,
+          "englishName": "Misery",
+          "priority": 80,
+          "shortReason": "Selected DoT synergy inferred from Wowhead's maintain-your-DoTs guidance.",
+          "rationale": "Wowhead emphasizes maintaining Shadow's DoTs. The selected Misery definition is a bounded quality-of-life acquisition inference, not a published leveling recommendation.",
+          "evidenceType": "inference",
+          "sourceURL": "https://www.wowhead.com/guide/classes/priest/shadow/the-war-within-guide",
+          "spellURL": "https://www.raidbots.com/static/data/live/talents.json",
+          "checkdate": "2026-09-24"
+        }
+      ]
+    }
+  ]
+}

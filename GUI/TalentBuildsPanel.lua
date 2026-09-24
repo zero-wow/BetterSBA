@@ -189,7 +189,8 @@ local function EnsureURLPopup(owner)
     end
 
     local popup = CreateBackdropFrame(NS.UIParent)
-    popup:SetSize(560, 118)
+    popup:SetSize(560, 300)
+    popup:SetClampedToScreen(true)
     popup:SetFrameStrata("DIALOG")
     popup:SetFrameLevel(100)
     popup:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.98)
@@ -199,6 +200,9 @@ local function EnsureURLPopup(owner)
     local title = popup:CreateFontString(nil, "OVERLAY")
     title:SetFont(NS.GetConfigFontPath(), 10, "OUTLINE")
     title:SetPoint("TOPLEFT", 12, -10)
+    title:SetPoint("RIGHT", popup, "RIGHT", -12, 0)
+    title:SetHeight(14)
+    title:SetWordWrap(false)
     title:SetTextColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3])
     title:SetText("Source Page")
 
@@ -228,6 +232,26 @@ local function EnsureURLPopup(owner)
     hint:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
     hint:SetText("Ctrl+C copies the page URL for manual review.")
 
+    local sourceScroll = NS.CreateFrame("ScrollFrame", nil, popup)
+    sourceScroll:SetPoint("TOPLEFT", 14, -96)
+    sourceScroll:SetSize(532, 164)
+    sourceScroll:EnableMouseWheel(true)
+    local sourceContent = NS.CreateFrame("Frame", nil, sourceScroll)
+    sourceContent:SetSize(532, 164)
+    sourceScroll:SetScrollChild(sourceContent)
+    local provenance = sourceContent:CreateFontString(nil, "OVERLAY")
+    provenance:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "")
+    provenance:SetPoint("TOPLEFT", 0, 0)
+    provenance:SetWidth(532)
+    provenance:SetJustifyH("LEFT")
+    provenance:SetJustifyV("TOP")
+    provenance:SetWordWrap(true)
+    provenance:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+    sourceScroll:SetScript("OnMouseWheel", function(self, delta)
+        local maximum = math.max(0, sourceContent:GetHeight() - self:GetHeight())
+        self:SetVerticalScroll(math.max(0, math.min(maximum, self:GetVerticalScroll() - delta * 24)))
+    end)
+
     local close = CreateTextButton(popup, "CLOSE", 54, function()
         popup:Hide()
     end)
@@ -235,6 +259,8 @@ local function EnsureURLPopup(owner)
 
     popup._title = title
     popup._editBox = editBox
+    popup._provenance = provenance
+    popup._sourceScroll, popup._sourceContent = sourceScroll, sourceContent
     owner._talentBuildURLPopup = popup
     return popup
 end
@@ -244,6 +270,18 @@ local function ShowURLPopup(owner, row)
         return
     end
     local popup = EnsureURLPopup(owner)
+    local evidence = row.verificationStatus == "source-sba" and "Source supplies an assist-specific build"
+        or (row.verificationStatus == "source-compatible" and "Source recommends this build for SBA")
+        or (row.verificationStatus == "guide-adapted" and "Guide-adapted: source-informed targeted choice")
+        or (row.verificationStatus == "legacy-unverified" and "Legacy entry: SBA suitability unverified")
+        or "SBA suitability unverified"
+    popup._provenance:SetText(evidence .. "\nPatch: " .. ((row.patch and row.patch ~= "") and row.patch or "unverified")
+        .. "   Checked: " .. (row.checkedAt or "not recorded")
+        .. "\nHero tree: " .. (row.heroTree or "not recorded")
+        .. "\n\n" .. (row.notes or "")
+        .. "\n\nGuide-informed priorities only influence matched talents in this selected target. Legal prerequisites always apply; this is not an optimality claim.")
+    popup._sourceContent:SetHeight(math.max(164, popup._provenance:GetStringHeight() + 6))
+    popup._sourceScroll:SetVerticalScroll(0)
     popup._title:SetText((row.name or "Source Page") .. " - Source Page")
     popup._editBox:SetText(row.sourceURL)
     popup._editBox:SetCursorPosition(0)
@@ -252,6 +290,138 @@ local function ShowURLPopup(owner, row)
     popup:Show()
     popup._editBox:SetFocus()
     popup._editBox:HighlightText()
+end
+
+local sbaWarningPopup
+local sbaWarningDismissedSignature
+
+local function SBAWarningSignature(assessment)
+    if assessment and assessment.signature and assessment.signature ~= "" then
+        return assessment.signature
+    end
+    if not assessment then return nil end
+    return table.concat({
+        tostring(assessment.specID or "?"),
+        tostring(assessment.buildID or "?"),
+        tostring(assessment.targetName or "?"),
+        tostring(assessment.message or "?"),
+    }, "\31")
+end
+
+local function EnsureSBAWarningPopup()
+    if sbaWarningPopup then return sbaWarningPopup end
+
+    local popup = CreateBackdropFrame(NS.UIParent)
+    popup:SetSize(500, 284)
+    popup:SetClampedToScreen(true)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetFrameLevel(120)
+    popup:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.98)
+    popup:SetBackdropBorderColor(T.DANGER[1], T.DANGER[2], T.DANGER[3], 0.8)
+    popup:Hide()
+
+    local title = popup:CreateFontString(nil, "OVERLAY")
+    title:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
+    title:SetPoint("TOPLEFT", 14, -12)
+    title:SetPoint("RIGHT", -14, 0)
+    title:SetJustifyH("LEFT")
+    title:SetTextColor(T.DANGER[1], T.DANGER[2], T.DANGER[3])
+    title:SetText("SBA TALENT MISMATCH")
+
+    local target = popup:CreateFontString(nil, "OVERLAY")
+    target:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "OUTLINE")
+    target:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
+    target:SetPoint("RIGHT", -14, 0)
+    target:SetHeight(14)
+    target:SetWordWrap(false)
+    target:SetJustifyH("LEFT")
+    target:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
+
+    local bodyScroll = NS.CreateFrame("ScrollFrame", nil, popup)
+    bodyScroll:SetPoint("TOPLEFT", target, "BOTTOMLEFT", 0, -8)
+    bodyScroll:SetSize(472, 160)
+    bodyScroll:EnableMouseWheel(true)
+    local bodyContent = NS.CreateFrame("Frame", nil, bodyScroll)
+    bodyContent:SetSize(472, 160)
+    bodyScroll:SetScrollChild(bodyContent)
+    local body = bodyContent:CreateFontString(nil, "OVERLAY")
+    body:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "")
+    body:SetPoint("TOPLEFT", 0, 0)
+    body:SetWidth(472)
+    body:SetJustifyH("LEFT")
+    body:SetJustifyV("TOP")
+    body:SetWordWrap(true)
+    body:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+    bodyScroll:SetScript("OnMouseWheel", function(self, delta)
+        local maximum = math.max(0, bodyContent:GetHeight() - self:GetHeight())
+        self:SetVerticalScroll(math.max(0, math.min(maximum, self:GetVerticalScroll() - delta * 24)))
+    end)
+
+    local dismiss = CreateTextButton(popup, "DISMISS", 58, function() end)
+    dismiss:SetPoint("BOTTOMRIGHT", -14, 12)
+    local respec = CreateTextButton(popup, "RESPEC TO SBA", 104, function() end)
+    respec:SetPoint("RIGHT", dismiss, "LEFT", -24, 0)
+
+    popup._title, popup._target, popup._body = title, target, body
+    popup._bodyScroll, popup._bodyContent = bodyScroll, bodyContent
+    popup._dismiss, popup._respec = dismiss, respec
+    dismiss:SetCallback(function()
+        sbaWarningDismissedSignature = popup._signature
+        popup:Hide()
+    end)
+    respec:SetCallback(function()
+        local ok, message = NS.RequestTalentSBARespec()
+        if ok then
+            popup._body:SetText(message or "Respec requested. Waiting for Blizzard to apply the selected SBA target.")
+            popup._respec:SetEnabledState(false)
+        else
+            popup._body:SetText(message or "Unable to respec to the SBA target. Recheck the current talent tree and try again.")
+            popup._body:SetTextColor(T.DANGER[1], T.DANGER[2], T.DANGER[3])
+        end
+        popup._bodyContent:SetHeight(math.max(160, popup._body:GetStringHeight() + 6))
+        popup._bodyScroll:SetVerticalScroll(0)
+        if NS.RefreshTalentBuildPanels then NS.RefreshTalentBuildPanels() end
+    end)
+
+    sbaWarningPopup = popup
+    return popup
+end
+
+-- The backend calls this after a settled assessment.  It may run before the
+-- config panel exists, so the alert owns no panel state and is created lazily.
+function NS.CheckTalentSBAWarning(assessment)
+    if not assessment or assessment.warningEnabled ~= true then
+        if sbaWarningPopup then sbaWarningPopup:Hide() end
+        sbaWarningDismissedSignature = nil
+        return
+    end
+    if assessment.settled == false and not assessment.failure then
+        if sbaWarningPopup then sbaWarningPopup:Hide() end
+        return
+    end
+    if assessment.hasMismatch ~= true and not assessment.failure then
+        if sbaWarningPopup then sbaWarningPopup:Hide() end
+        sbaWarningDismissedSignature = nil
+        return
+    end
+    local signature = SBAWarningSignature(assessment)
+    if assessment.failure then signature = signature .. ":failure:" .. assessment.failure end
+    if signature and signature == sbaWarningDismissedSignature then return end
+
+    local popup = EnsureSBAWarningPopup()
+    popup._signature = signature
+    popup._title:SetText(assessment.failure and "SBA TALENT CHANGE FAILED" or "SBA TALENT MISMATCH")
+    popup._target:SetText("Target: " .. (assessment.targetName or "Selected SBA build"))
+    popup._body:SetText((assessment.failure or assessment.message or "Your learned talents do not match the selected SBA target.")
+        .. "\n\n" .. (assessment.detail or "")
+        .. "\n\nRESPEC TO SBA resets your class, specialization, and hero talent points, then applies the selected target at your current level. This only happens after you press the button.")
+    popup._bodyContent:SetHeight(math.max(160, popup._body:GetStringHeight() + 6))
+    popup._bodyScroll:SetVerticalScroll(0)
+    popup._body:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+    popup._respec:SetEnabledState(assessment.settled ~= false and assessment.canRespec == true)
+    popup:ClearAllPoints()
+    popup:SetPoint("CENTER", NS.UIParent, "CENTER", 0, 0)
+    popup:Show()
 end
 
 local function CreateSortResetButton(parent, onClick)
@@ -852,10 +1022,11 @@ function NS.BuildTalentBuildsConfigSection(parent)
     local detailsW = 200
     local gutter = 12
     local tableW = innerW - detailsW - gutter
-    local headerY = -8
-    local actionY = -506
-    local bottomNoteY = -528
-    local sectionH = 560
+    -- The leveling assistant occupies its own fixed block.  Keep the catalog
+    -- below it instead of letting wrapped filters overlap the controls.
+    local headerY = -250
+    local actionY = -748
+    local sectionH = 802
     local rowH = 24
     local searchW = math.max(260, tableW - 340)
     local chipStartX = 14 + searchW + 16
@@ -864,12 +1035,78 @@ function NS.BuildTalentBuildsConfigSection(parent)
     parent._sectionColorBright = sectionBright
     parent._sectionColorDim = sectionDim
 
+    CreateSubHeader(parent, "LEVELING ASSIST", -8)
     CreateSubHeader(parent, "BUILD CATALOG", headerY)
-    local selectedHdr = CreateSubHeader(parent, "SELECTED BUILD", -76)
+    local selectedHdr = nil
+
+    local levelingPanel = CreateBackdropFrame(parent)
+    levelingPanel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -30)
+    levelingPanel:SetSize(innerW, 200)
+    levelingPanel:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 0.92)
+    levelingPanel:SetBackdropBorderColor(sectionColor[1], sectionColor[2], sectionColor[3], 0.55)
+
+    local levelingTitle = levelingPanel:CreateFontString(nil, "OVERLAY")
+    levelingTitle:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
+    levelingTitle:SetPoint("TOPLEFT", 12, -10)
+    levelingTitle:SetTextColor(sectionBright[1], sectionBright[2], sectionBright[3])
+    levelingTitle:SetText("LEVELING TARGET")
+
+    local levelingSpec = levelingPanel:CreateFontString(nil, "OVERLAY")
+    levelingSpec:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
+    levelingSpec:SetPoint("TOPLEFT", levelingTitle, "BOTTOMLEFT", 0, -8)
+    levelingSpec:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+
+    local levelingTarget = levelingPanel:CreateFontString(nil, "OVERLAY")
+    levelingTarget:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
+    levelingTarget:SetPoint("TOPLEFT", levelingSpec, "BOTTOMLEFT", 0, -3)
+    levelingTarget:SetPoint("RIGHT", levelingPanel, "TOPRIGHT", -138, 0)
+    levelingTarget:SetHeight(14)
+    levelingTarget:SetWordWrap(false)
+    levelingTarget:SetJustifyH("LEFT")
+    levelingTarget:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+
+    local levelingNext = levelingPanel:CreateFontString(nil, "OVERLAY")
+    levelingNext:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "")
+    levelingNext:SetPoint("TOPLEFT", levelingTarget, "BOTTOMLEFT", 0, -4)
+    levelingNext:SetPoint("RIGHT", levelingPanel, "TOPRIGHT", -138, 0)
+    levelingNext:SetHeight(14)
+    levelingNext:SetWordWrap(false)
+    levelingNext:SetJustifyH("LEFT")
+    levelingNext:SetTextColor(T.TEXT_DIM[1], T.TEXT_DIM[2], T.TEXT_DIM[3])
+
+    local levelingStatus = levelingPanel:CreateFontString(nil, "OVERLAY")
+    levelingStatus:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
+    levelingStatus:SetPoint("TOPLEFT", levelingNext, "BOTTOMLEFT", 0, -6)
+    levelingStatus:SetSize(math.max(270, innerW - 330), 60)
+    levelingStatus:SetJustifyH("LEFT")
+    levelingStatus:SetJustifyV("TOP")
+    levelingStatus:SetWordWrap(true)
+    levelingStatus:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+
+    local useForLevelingBtn = CreateTextButton(levelingPanel, "USE FOR LEVELING", 112, function() end)
+    useForLevelingBtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -14, -12)
+    local autoSpendBtn = CreateTextButton(levelingPanel, "AUTO-SPEND: OFF", 112, function() end)
+    autoSpendBtn:SetPoint("TOPRIGHT", useForLevelingBtn, "BOTTOMRIGHT", 0, -9)
+    local spendNextBtn = CreateTextButton(levelingPanel, "SPEND NEXT", 84, function() end)
+    spendNextBtn:SetPoint("TOPRIGHT", autoSpendBtn, "BOTTOMRIGHT", 0, -9)
+    local sbaWarningBtn = CreateTextButton(levelingPanel, "SBA ALERT: OFF", 112, function() end)
+    sbaWarningBtn:SetPoint("TOPRIGHT", spendNextBtn, "BOTTOMRIGHT", 0, -9)
+    local respecSBABtn = CreateTextButton(levelingPanel, "RESPEC TO SBA", 104, function() end)
+    respecSBABtn:SetPoint("TOPRIGHT", sbaWarningBtn, "BOTTOMRIGHT", 0, -9)
+
+    local levelingHint = levelingPanel:CreateFontString(nil, "OVERLAY")
+    levelingHint:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
+    levelingHint:SetPoint("TOPRIGHT", respecSBABtn, "BOTTOMLEFT", 0, -4)
+    levelingHint:SetSize(214, 24)
+    levelingHint:SetJustifyH("RIGHT")
+    levelingHint:SetJustifyV("TOP")
+    levelingHint:SetWordWrap(true)
+    levelingHint:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
+    levelingHint:SetText("When enabled, points spend without a per-point approval.")
 
     local title = parent:CreateFontString(nil, "OVERLAY")
     title:SetFont(NS.GetConfigFontPath(), TITLE_FONT_SIZE, "OUTLINE")
-    title:SetPoint("TOPLEFT", 14, -30)
+    title:SetPoint("TOPLEFT", 14, -272)
     title:SetTextColor(sectionColor[1], sectionColor[2], sectionColor[3])
     title:SetText("TALENT BUILDS")
 
@@ -887,7 +1124,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
 
     local searchLabel = NS.CreateFrame("Frame", nil, parent)
     searchLabel:SetSize(searchW, 14)
-    searchLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -94)
+    searchLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -336)
     local searchLabelText = searchLabel:CreateFontString(nil, "OVERLAY")
     searchLabelText:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "OUTLINE")
     searchLabelText:SetPoint("BOTTOMLEFT", searchLabel, "TOPLEFT", 0, 2)
@@ -896,7 +1133,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
 
     local searchBox = NS.CreateFrame("EditBox", nil, parent, "BackdropTemplate")
     searchBox:SetSize(searchW, 24)
-    searchBox:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -110)
+    searchBox:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -352)
     searchBox:SetBackdrop(BACKDROP)
     searchBox:SetBackdropColor(T.TOGGLE_OFF[1], T.TOGGLE_OFF[2], T.TOGGLE_OFF[3], 1)
     searchBox:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 1)
@@ -921,7 +1158,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     filterLabel:SetText("Filters")
 
     local allChip = CreateChipButton(parent, "ALL", 44, function() end)
-    allChip:SetPoint("TOPLEFT", parent, "TOPLEFT", chipStartX, -110)
+    allChip:SetPoint("TOPLEFT", parent, "TOPLEFT", chipStartX, -352)
     local builtInChip = CreateChipButton(parent, "BUILT-IN", 74, function() end)
     builtInChip:SetPoint("LEFT", allChip, "RIGHT", 8, 0)
     local userChip = CreateChipButton(parent, "USER", 52, function() end)
@@ -946,16 +1183,19 @@ function NS.BuildTalentBuildsConfigSection(parent)
     sortReset:SetPoint("LEFT", defaultSortLabel, "RIGHT", 8, 0)
 
     local tablePanel = CreateBackdropFrame(parent)
-    tablePanel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -158)
+    tablePanel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -400)
     tablePanel:SetSize(tableW, 330)
     tablePanel:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 0.92)
     tablePanel:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.85)
 
     local detailsPanel = CreateBackdropFrame(parent)
     detailsPanel:SetPoint("TOPLEFT", tablePanel, "TOPRIGHT", gutter, 0)
-    detailsPanel:SetSize(detailsW, 248)
+    detailsPanel:SetSize(detailsW, 330)
     detailsPanel:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 0.92)
     detailsPanel:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.85)
+    detailsPanel:EnableMouse(true)
+    local detailTooltip = {}
+    NS.AddTooltip(detailsPanel, "Build details", detailTooltip, parent)
 
     local detailsTitle = detailsPanel:CreateFontString(nil, "OVERLAY")
     detailsTitle:SetFont(NS.GetConfigFontPath(), 8, "OUTLINE")
@@ -967,6 +1207,9 @@ function NS.BuildTalentBuildsConfigSection(parent)
     detailsName:SetFont(NS.GetConfigFontPath(), 10, "OUTLINE")
     detailsName:SetPoint("TOPLEFT", detailsTitle, "BOTTOMLEFT", 0, -12)
     detailsName:SetPoint("RIGHT", -14, 0)
+    detailsName:SetHeight(32)
+    detailsName:SetWordWrap(true)
+    detailsName:SetMaxLines(2)
     detailsName:SetJustifyH("LEFT")
     detailsName:SetJustifyV("TOP")
     detailsName:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
@@ -999,6 +1242,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
         value:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
         value:SetPoint("LEFT", label, "RIGHT", 16, 0)
         value:SetPoint("RIGHT", -14, 0)
+        value:SetHeight(14)
+        value:SetWordWrap(false)
         value:SetJustifyH("LEFT")
         value:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
         value:SetText("")
@@ -1018,6 +1263,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
     behaviorText:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
     behaviorText:SetPoint("TOPLEFT", behaviorLabel, "BOTTOMLEFT", 0, -4)
     behaviorText:SetPoint("RIGHT", -14, 0)
+    behaviorText:SetHeight(70)
+    behaviorText:SetWordWrap(true)
     behaviorText:SetJustifyH("LEFT")
     behaviorText:SetJustifyV("TOP")
     behaviorText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
@@ -1095,6 +1342,16 @@ function NS.BuildTalentBuildsConfigSection(parent)
     state.sectionColor = sectionColor
     state.defaultSortLabel = defaultSortLabel
     state.selectedHdr = selectedHdr
+    state.levelingSpec = levelingSpec
+    state.levelingTarget = levelingTarget
+    state.levelingNext = levelingNext
+    state.levelingStatus = levelingStatus
+    state.levelingHint = levelingHint
+    state.useForLevelingBtn = useForLevelingBtn
+    state.autoSpendBtn = autoSpendBtn
+    state.spendNextBtn = spendNextBtn
+    state.sbaWarningBtn = sbaWarningBtn
+    state.respecSBABtn = respecSBABtn
 
     local headerButtons = {}
     local headerArrows = {}
@@ -1148,7 +1405,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     actionsRule:SetPoint("TOPLEFT", tablePanel, "BOTTOMLEFT", 0, -8)
     actionsRule:SetPoint("RIGHT", detailsPanel, "LEFT", -12, 0)
 
-    local applyBtn = CreateTextButton(parent, "APPLY", 36, function() end)
+    local applyBtn = CreateTextButton(parent, "APPLY BUILD", 82, function() end)
     applyBtn:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, actionY)
     local createBtn = CreateTextButton(parent, "CREATE", 46, function() end)
     createBtn:SetPoint("LEFT", applyBtn, "RIGHT", 28, 0)
@@ -1165,9 +1422,9 @@ function NS.BuildTalentBuildsConfigSection(parent)
 
     local footerNote = parent:CreateFontString(nil, "OVERLAY")
     footerNote:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
-    footerNote:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, bottomNoteY)
+    footerNote:SetPoint("TOPLEFT", applyBtn, "BOTTOMLEFT", 0, -8)
     footerNote:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.85)
-    footerNote:SetText("Single click applies active-spec rows. LOAD ANYWAY appears only for an off-spec selection.")
+    footerNote:SetText("Click a row to inspect it. APPLY BUILD imports the selected full build. LOAD ANYWAY remains for an off-spec selection.")
 
     local bottomRule = parent:CreateTexture(nil, "ARTWORK")
     bottomRule:SetHeight(2)
@@ -1473,7 +1730,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
             end
             btn:SetWidth(btnW)
             btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", parent, "TOPLEFT", cursorX, -110 - (rowIndex - 1) * 30)
+            btn:SetPoint("TOPLEFT", parent, "TOPLEFT", cursorX, -322 - (rowIndex - 1) * 30)
             btn:SetActive((NS.db.talentBuildSourceFilter or NS.TALENT_BUILD_FILTER_ALL) == source)
             btn:Show()
             lastVisible = btn
@@ -1487,14 +1744,14 @@ function NS.BuildTalentBuildsConfigSection(parent)
             cursorX = chipStartX
         end
         defaultSortLabel:ClearAllPoints()
-        defaultSortLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", cursorX, -110 - (rowIndex - 1) * 30)
+        defaultSortLabel:SetPoint("TOPLEFT", parent, "TOPLEFT", cursorX, -322 - (rowIndex - 1) * 30)
         sortReset:ClearAllPoints()
         sortReset:SetPoint("LEFT", defaultSortLabel, "RIGHT", 8, 0)
         local delta = (rowIndex - 1) * 30
         tablePanel:ClearAllPoints()
-        tablePanel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -158 - delta)
+        tablePanel:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -370 - delta)
         applyBtn:ClearAllPoints()
-        applyBtn:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -506 - delta)
+        applyBtn:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, -718 - delta)
         createBtn:ClearAllPoints()
         createBtn:SetPoint("LEFT", applyBtn, "RIGHT", 28, 0)
         editBtn:ClearAllPoints()
@@ -1622,11 +1879,6 @@ function NS.BuildTalentBuildsConfigSection(parent)
         row:SetScript("OnClick", function()
             self.selectedID = data.id
             self.selectedSpecID = data.specID
-            NS.RequestTalentBuildApply(data.id, {
-                specID = data.specID,
-                reason = "config-row",
-                loadAnyway = false,
-            })
             self:Refresh()
         end)
 
@@ -1649,6 +1901,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
 
     function state:UpdateDetails()
         local row = self.selectedRow
+        for i = #detailTooltip, 1, -1 do detailTooltip[i] = nil end
         if not row then
             detailsName:SetText("No build selected")
             fieldValues.spec:SetText("-")
@@ -1658,7 +1911,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
             fieldValues.rating:SetText("-")
             fieldValues.type:SetText("-")
             fieldValues.status:SetText("-")
-            behaviorText:SetText("Select a build to view details.")
+            behaviorText:SetText("Select a build to inspect it.")
             sourceBtn:SetEnabledState(false)
             sourceBtn:Hide()
             loadAnywayBtn:Hide()
@@ -1687,13 +1940,22 @@ function NS.BuildTalentBuildsConfigSection(parent)
         fieldValues.status:SetText(statusText)
         local statusColor = GetStatusColor(statusKind, sectionColor)
         fieldValues.status:SetTextColor(statusColor[1], statusColor[2], statusColor[3])
+        detailTooltip[1] = row.name or "Custom"
+        detailTooltip[2] = "Patch: " .. ((row.patch and row.patch ~= "") and row.patch or "unverified")
+        detailTooltip[3] = "Hero tree: " .. (row.heroTree or "not recorded")
+        detailTooltip[4] = "Status: " .. statusText
+        detailTooltip[5] = row.notes or ""
 
         local activeSpecID = NS.GetTalentBuildCurrentSpecID()
         if row.specID == activeSpecID then
-            behaviorText:SetText("Single click applies active-spec rows.")
+            local patchNote = ""
+            if row.id ~= NS.TALENT_BUILD_CUSTOM_ID and (not row.patch or row.patch == "") then
+                patchNote = " Patch: unverified (catalog entry has no patch value)."
+            end
+            behaviorText:SetText("Click to inspect. APPLY BUILD imports this full active-spec build." .. patchNote)
             loadAnywayBtn:Hide()
         else
-            behaviorText:SetText("This build belongs to another specialization. LOAD ANYWAY will switch specs and apply it.")
+            behaviorText:SetText("Click to inspect. This build belongs to another specialization; LOAD ANYWAY switches specs and imports it.")
             loadAnywayBtn:Show()
             loadAnywayBtn:SetEnabledState(true)
         end
@@ -1710,7 +1972,40 @@ function NS.BuildTalentBuildsConfigSection(parent)
     function state:RefreshSubtitle()
         local className = select(1, UnitClass("player")) or (NS.GetTalentBuildClassToken() or "")
         local activeSpecName = NS.GetTalentBuildSpecName(NS.GetTalentBuildCurrentSpecID()) or "Unknown"
-        subtitle:SetText(("%s builds using live catalog data. Active specialization: %s."):format(className, activeSpecName))
+        subtitle:SetText(("%s builds from the bundled catalog. Active specialization: %s."):format(className, activeSpecName))
+    end
+
+    function state:UpdateLevelingAssist()
+        local activeSpecID = NS.GetTalentBuildCurrentSpecID()
+        local info = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or nil
+        local targetState = NS.GetTalentLevelingState and NS.GetTalentLevelingState(activeSpecID) or nil
+        local assessment = NS.GetTalentSBAAssessment and NS.GetTalentSBAAssessment() or nil
+        info = info or targetState or {}
+
+        local targetID = info.buildID or (targetState and targetState.buildID) or NS.TALENT_BUILD_CUSTOM_ID
+        local enabled = info.enabled == true or (targetState and targetState.enabled == true)
+        local specName = info.specName or NS.GetTalentBuildSpecName(activeSpecID) or "Unknown"
+        local targetName = info.targetName
+        if not targetName or targetName == "" then
+            targetName = targetID == NS.TALENT_BUILD_CUSTOM_ID and "No leveling target selected" or tostring(targetID)
+        end
+        local nextName = info.nextName
+        local status = info.status or (targetID == NS.TALENT_BUILD_CUSTOM_ID and "Choose a current-spec catalog build, then use it for leveling." or "Waiting for the next available talent point.")
+        local qualification = info.detail or "Source freshness is unverified. Max-level imports follow prerequisite order unless this catalog build supplies a curated leveling order."
+
+        levelingSpec:SetText("Active spec: " .. specName)
+        levelingTarget:SetText("Target: " .. targetName)
+        levelingNext:SetText(nextName and nextName ~= "" and ("Next recommended talent: " .. nextName) or "Next recommended talent: unavailable")
+        levelingStatus:SetText(status .. "\n" .. qualification)
+        autoSpendBtn._text:SetText(enabled and "AUTO-SPEND: ON" or "AUTO-SPEND: OFF")
+        sbaWarningBtn._text:SetText(assessment and assessment.warningEnabled == true and "SBA ALERT: ON" or "SBA ALERT: OFF")
+
+        local selectedCurrentSpec = self.selectedRow and self.selectedRow.specID == activeSpecID
+        useForLevelingBtn:SetEnabledState(selectedCurrentSpec and true or false)
+        autoSpendBtn:SetEnabledState(targetID ~= NS.TALENT_BUILD_CUSTOM_ID)
+        spendNextBtn:SetEnabledState(not enabled and info.canSpend == true)
+        sbaWarningBtn:SetEnabledState(activeSpecID ~= nil)
+        respecSBABtn:SetEnabledState(assessment and assessment.hasMismatch == true and assessment.canRespec == true)
     end
 
     function state:Refresh()
@@ -1721,6 +2016,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
         self:UpdateHeaderSort()
         self:UpdateRows()
         self:UpdateDetails()
+        self:UpdateLevelingAssist()
         self:RefreshSubtitle()
 
         applyBtn:SetEnabledState(self.selectedRow ~= nil)
@@ -1777,6 +2073,56 @@ function NS.BuildTalentBuildsConfigSection(parent)
             end
         end)
     end
+
+    useForLevelingBtn:SetCallback(function()
+        local row = state.selectedRow
+        local activeSpecID = NS.GetTalentBuildCurrentSpecID()
+        if not row or row.specID ~= activeSpecID then
+            return
+        end
+        local ok, message = NS.SetTalentLevelingTarget(row.id)
+        state:Refresh()
+        if not ok and message and message ~= "" then
+            levelingStatus:SetText(message)
+        end
+    end)
+
+    autoSpendBtn:SetCallback(function()
+        local info = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or nil
+        local targetState = NS.GetTalentLevelingState and NS.GetTalentLevelingState(NS.GetTalentBuildCurrentSpecID()) or nil
+        local enabled = (info and info.enabled == true) or (targetState and targetState.enabled == true)
+        local ok, message = NS.SetTalentLevelingEnabled(not enabled)
+        state:Refresh()
+        if not ok and message and message ~= "" then
+            levelingStatus:SetText(message)
+        end
+    end)
+
+    spendNextBtn:SetCallback(function()
+        local ok, message = NS.SpendNextTalentPoint()
+        state:Refresh()
+        if not ok then
+            levelingStatus:SetText(message or "No talent point was spent. Check the leveling status above.")
+        end
+    end)
+
+    sbaWarningBtn:SetCallback(function()
+        local assessment = NS.GetTalentSBAAssessment and NS.GetTalentSBAAssessment() or nil
+        local enabled = assessment and assessment.warningEnabled == true
+        local ok, message = NS.SetTalentSBAWarningEnabled(not enabled)
+        state:Refresh()
+        if not ok and message and message ~= "" then
+            levelingStatus:SetText(message)
+        end
+    end)
+
+    respecSBABtn:SetCallback(function()
+        local ok, message = NS.RequestTalentSBARespec()
+        state:Refresh()
+        if not ok then
+            levelingStatus:SetText(message or "Unable to respec to the selected SBA target. Recheck the current talent tree and try again.")
+        end
+    end)
 
     applyBtn:SetCallback(function()
         if not state.selectedRow then
