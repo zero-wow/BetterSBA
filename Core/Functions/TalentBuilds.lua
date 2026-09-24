@@ -366,6 +366,9 @@ local function BuildImportEntryInfo(importString, specID, configID)
     if not importString or importString == "" then
         return nil, "Build string missing"
     end
+    if importString:match("^!GRIP%d+!") or importString:match("^!EMS%d+!") then
+        return nil, "This is a GRIP-EMS rotation sequence. Copy the separate Talent build string from its LazyGrip page."
+    end
     if not ExportUtil or not ExportUtil.MakeImportDataStream then
         return nil, "Import stream unavailable"
     end
@@ -403,6 +406,9 @@ end
 function NS.ValidateTalentBuildImportString(importString, specID)
     if not importString or importString == "" then
         return false, "Build string missing"
+    end
+    if importString:match("^!GRIP%d+!") or importString:match("^!EMS%d+!") then
+        return false, "This is a GRIP-EMS rotation sequence. Copy the separate Talent build string from its LazyGrip page."
     end
     if not specID then
         return false, "Specialization unavailable"

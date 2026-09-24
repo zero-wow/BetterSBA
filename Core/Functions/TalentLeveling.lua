@@ -204,6 +204,7 @@ local function Inspect(options)
     if not entry then return info end
     info.targetName = entry.name
     local evidence = entry.verificationStatus == "source-sba" and "Assist-specific source build. "
+        or (entry.verificationStatus == "source-talent" and "Source-published talent export; SBA suitability is unverified. ")
         or (entry.verificationStatus == "source-compatible" and "Source-recommended SBA-compatible build. ")
         or (entry.verificationStatus == "guide-adapted" and "Guide-adapted SBA build. ")
         or (entry.verificationStatus == "guide-inferred" and "Guide-discussed SBA spec; this exact import is not SBA-verified. ")

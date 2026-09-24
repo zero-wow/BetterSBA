@@ -17,6 +17,7 @@ NS.TALENT_BUILD_SOURCES = {
     "Icy Veins",
     "Noxxic",
     "Wowhead",
+    "LazyGrip",
     "Discord",
     "Custom",
 }
@@ -24,11 +25,12 @@ NS.TALENT_BUILD_SOURCE_URLS = {
     ["Icy Veins"] = "https://www.icy-veins.com/wow/news/single-button-assistant-and-assisted-highlight-design-intentions/",
     ["Noxxic"] = "https://www.noxxic.com/wow/",
     ["Wowhead"] = "https://www.wowhead.com/guide/classes",
+    ["LazyGrip"] = "https://lazygrip.net/",
     ["Discord"] = "",
     ["Custom"] = "",
 }
 NS.TALENT_BUILD_CATALOG = {
-    version = 4,
+    version = 5,
     checkedAt = "2026-09-24",
     entries = {
         {

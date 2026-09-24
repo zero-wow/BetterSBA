@@ -271,6 +271,7 @@ local function ShowURLPopup(owner, row)
     local popup = EnsureURLPopup(owner)
     local hasSourceURL = row.sourceURL and row.sourceURL ~= ""
     local evidence = row.verificationStatus == "source-sba" and "Source supplies an assist-specific build"
+        or (row.verificationStatus == "source-talent" and "Source supplies this WoW talent export; SBA suitability is unverified")
         or (row.verificationStatus == "source-compatible" and "Source recommends this build for SBA")
         or (row.verificationStatus == "guide-adapted" and "Guide-adapted: source-informed targeted choice")
         or (row.verificationStatus == "guide-inferred" and "Guide discusses SBA for this spec; exact import is unverified")
@@ -533,6 +534,9 @@ local function GetBuildSourceColor(row, sectionColor)
     end
     if source == "Wowhead" then
         return { 0.85, 0.55, 0.25, 1 }
+    end
+    if source == "LazyGrip" then
+        return { 0.50, 0.78, 0.72, 1 }
     end
     return { 0.50, 0.64, 0.90, 1 }
 end

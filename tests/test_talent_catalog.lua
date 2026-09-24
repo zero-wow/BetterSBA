@@ -2,7 +2,14 @@
 -- characters, not the conventional byte-oriented base64 encoding.
 local NS = {}
 assert(loadfile("Core/TalentBuildData.lua"))("BetterSBA", NS)
+assert(loadfile("Core/LazyGripTalentBuildData.lua"))("BetterSBA", NS)
 assert(loadfile("Core/TalentPriorityData.lua"))("BetterSBA", NS)
+local hasLazyGripSource = false
+for _, source in ipairs(NS.TALENT_BUILD_SOURCES) do
+    if source == "LazyGrip" then hasLazyGripSource = true end
+end
+assert(hasLazyGripSource and NS.TALENT_BUILD_SOURCE_URLS.LazyGrip == "https://lazygrip.net/",
+    "LazyGrip talent exports need a visible source filter and source link")
 local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 local values = {}
 for i = 1, #alphabet do values[alphabet:sub(i, i)] = i - 1 end
@@ -28,7 +35,8 @@ local classes = {
 }
 local classBySpec = {}
 for class, specs in pairs(classes) do for _, id in ipairs(specs) do classBySpec[id] = class end end
-local ids, count, inferred, supplied, legacy = {}, 0, 0, 0, 0
+local ids, count, inferred, supplied, legacy, lazygrip = {}, 0, 0, 0, 0, 0
+local lazygripCodes = {}
 for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
     assert(not ids[entry.id], "duplicate catalog ID: " .. entry.id)
     ids[entry.id] = entry
@@ -41,6 +49,17 @@ for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
             "supplied target needs a catalog review date")
         assert(entry.rating == "", "a player-supplied target is not a comparative ranking")
         supplied = supplied + 1
+    elseif entry.verificationStatus == "source-talent" then
+        assert(entry.source == "LazyGrip" and entry.catalogSource == "LazyGrip"
+            and entry.sourceURL:match("^https://lazygrip%.net/sequences/")
+            and entry.patch == "12.1" and entry.checkedAt == "2026-09-24",
+            "LazyGrip snapshot needs exact current-patch provenance")
+        assert(entry.notes:find("not independently verified for Blizzard SBA", 1, true)
+            and not entry.importString:match("^!GRIP") and not entry.importString:match("^!EMS"),
+            "GRIP sequence exports must not be presented as SBA talent imports")
+        assert(not lazygripCodes[entry.importString], "duplicate LazyGrip talent export")
+        lazygripCodes[entry.importString] = true
+        lazygrip = lazygrip + 1
     elseif entry.verificationStatus == "source-sba" or entry.verificationStatus == "source-compatible"
         or entry.verificationStatus == "guide-adapted" or entry.verificationStatus == "guide-inferred" then
         assert(entry.sourceURL:match("^https://"), "reviewed entry needs its exact guide URL")
@@ -60,7 +79,8 @@ for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
 end
 assert(legacy == 6, "preserve the six existing Druid imports")
 assert(count == 9 and inferred == 14, "reviewed and inferred catalog coverage changed; update the audit alongside the data")
-print(("talent catalog: %d source-supported, %d guide-inferred, %d user-provided, and %d legacy exports have valid identities and provenance"):format(count, inferred, supplied, legacy))
+assert(lazygrip == 28, "the current LazyGrip 12.1 talent snapshot changed; review its source audit")
+print(("talent catalog: %d source-supported, %d guide-inferred, %d LazyGrip 12.1 talent exports, %d user-provided, and %d legacy exports have valid identities and provenance"):format(count, inferred, lazygrip, supplied, legacy))
 
 local rules, profiles = 0, 0
 for spec, guidance in pairs(NS.TALENT_SBA_PRIORITIES) do

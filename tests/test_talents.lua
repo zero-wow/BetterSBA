@@ -132,6 +132,14 @@ streamMode = "hash-mismatch"
 assert(NS.ValidateTalentBuildImportString("hash", 100) == false)
 streamMode = "valid"
 assert(NS.ValidateTalentBuildImportString("zero-hash", 100) == true)
+for _, prefix in ipairs({ "!GRIP1!", "!EMS1!" }) do
+    local ok, message = NS.ValidateTalentBuildImportString(prefix .. "payload", 100)
+    assert(not ok and message:find("separate Talent build string", 1, true),
+        "LazyGrip rotation strings need a clear talent-only import instruction")
+    local rows, reason = NS.DecodeTalentBuildTarget({ specID = 100, importString = prefix .. "payload" }, 42)
+    assert(not rows and reason:find("GRIP-EMS rotation sequence", 1, true),
+        "a GRIP/EMS sequence must never reach the WoW talent decoder")
+end
 
 -- Exercise the real pending-import event path. A staged update must not be
 -- treated as a commit; only a subsequent clean update completes ownership.
