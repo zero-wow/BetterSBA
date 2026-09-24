@@ -653,6 +653,7 @@ function NS.UpdateNow()
     if not NS.db.enabled then
         UpdateVisibility()
         if NS.UpdateLDBText then NS.UpdateLDBText() end
+        if NS.UpdateManualCooldownReminder then NS.UpdateManualCooldownReminder() end
         return
     end
 
@@ -752,6 +753,10 @@ function NS.UpdateNow()
     if NS.UpdatePriorityDisplay then
         NS.UpdatePriorityDisplay()
     end
+
+    -- Read the manual spell while cooldown caches are still marked dirty for
+    -- this tick, so its reminder cannot reuse a pre-event cached cooldown.
+    if NS.UpdateManualCooldownReminder then NS.UpdateManualCooldownReminder() end
 
     -- Clear cooldown dirty flag — all queries this tick have refreshed
     NS.EndUpdate()

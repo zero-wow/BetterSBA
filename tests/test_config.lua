@@ -103,8 +103,10 @@ local sbaAssessment = {
     message="Your learned talents differ from the selected SBA target.", detail="The selected target can be reset and applied at your current level.",
     canRespec=true,
 }
-local warningSetCalls, respecCalls = 0, 0
+local warningSetCalls, respecCalls, undoCalls = 0, 0, 0
+local undoAvailable = false
 NS.GetTalentSBAAssessment = function() return sbaAssessment end
+NS.GetTalentSBAUndoInfo = function() return { canUndo = undoAvailable } end
 NS.SetTalentSBAWarningEnabled = function(enabled)
     warningSetCalls = warningSetCalls + 1
     sbaAssessment.warningEnabled = enabled and true or false
@@ -114,6 +116,11 @@ NS.RequestTalentSBARespec = function()
     respecCalls = respecCalls + 1
     if not sbaAssessment.canRespec then return false, "Cannot respec while the talent tree is changing." end
     return true, "SBA respec requested."
+end
+NS.RequestTalentSBAUndo = function()
+    undoCalls = undoCalls + 1
+    if not undoAvailable then return false, "Talent allocation changed since the respec." end
+    return true, "Restoring prior talents."
 end
 NS.GetInterceptBlockReason = function() return nil end
 UnitClass = function() return "Mage", "MAGE", 8 end
@@ -405,6 +412,14 @@ assert(warningSetCalls == 1 and sbaAssessment.warningEnabled
     and rawget(talentState.sbaWarningBtn._text, "_text") == "SBA ALERT: ON",
     "SBA alert must remain an explicit per-spec opt-in")
 assert(not talentState.respecSBABtn._enabled, "RESPEC TO SBA must stay unavailable without a mismatch")
+assert(not talentState.undoRespecBtn._enabled, "UNDO RESPEC must stay unavailable without a saved prior allocation")
+undoAvailable = true
+talentState:Refresh()
+assert(talentState.undoRespecBtn._enabled, "confirmed unchanged respec must expose UNDO RESPEC")
+talentState.undoRespecBtn:GetScript("OnClick")(talentState.undoRespecBtn)
+assert(undoCalls == 1, "UNDO RESPEC must invoke the explicit backend action")
+undoAvailable = false
+talentState:Refresh()
 sbaAssessment.hasMismatch = true
 talentState:Refresh()
 assert(talentState.respecSBABtn._enabled, "RESPEC TO SBA must become available for a settled actionable mismatch")
@@ -435,6 +450,10 @@ assert(rawget(warningPopup._target, "_text"):find("Very Long Custom SBA Target",
     and warningPopup._target:GetHeight() == 14,
     "long SBA target names must stay in the reserved single-line alert target slot")
 sbaAssessment.targetName = "Arcane SBA"
+sbaAssessment.mismatchDetails = "Spell 999 is learned but outside the selected SBA target."
+NS.CheckTalentSBAWarning(sbaAssessment)
+assert(rawget(warningPopup._body, "_text"):find("Spell 999", 1, true),
+    "warning popup must show the specific learned talent mismatch")
 local dismissWarning = assert(warningPopup._dismiss:GetScript("OnClick"), "warning alert needs dismissal")
 dismissWarning(warningPopup._dismiss)
 assert(not warningPopup:IsShown(), "dismiss must hide the current SBA mismatch alert")
@@ -495,7 +514,7 @@ local assistPanel = talentState.useForLevelingBtn:GetParent()
 local apl, apt, apr, apb = mock.rect(assistPanel)
 for _, control in ipairs({talentState.levelingTarget, talentState.levelingNext, talentState.levelingStatus,
     talentState.useForLevelingBtn, talentState.autoSpendBtn, talentState.spendNextBtn,
-    talentState.sbaWarningBtn, talentState.respecSBABtn, talentState.levelingHint}) do
+    talentState.sbaWarningBtn, talentState.respecSBABtn, talentState.undoRespecBtn, talentState.levelingHint}) do
     local l, t, r, b = mock.rect(control)
     assert(l >= apl + 8 and r <= apr - 8 and t <= apt - 8 and b >= apb + 8,
         "leveling labels and controls must stay inside an explicit gutter")

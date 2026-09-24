@@ -1,7 +1,7 @@
 {
   "checkedOn": "2026-09-24",
   "scope": "All 40 current Wowhead class/spec basics guides plus 81 linked rotation/talent guide URLs. Dvalin public descriptions checked for 13 SBA videos.",
-  "policy": "Only candidates are supported for SBA-compatible labeling. Coverage imports are generic starter builds retained for research, not automatically catalog eligible. None is claimed optimal, simulation-verified, or tested in game.",
+  "policy": "Initial strict audit: only candidates support source-compatible labeling. Coverage imports are general builds, not exact SBA endorsements. A later bounded pass separately promotes documented guide-inferred targets in expansionAudit; original exclusion flags below describe this initial audit. None is claimed optimal, simulated, or tested in game.",
   "dedicatedSbaOptimizedCandidates": [],
   "candidates": [
     {
@@ -27,7 +27,7 @@
         "valid": true,
         "matchesPageSpec": true
       },
-      "evidenceSummary": "The author discusses the displayed beginner build with SBA, using targeted Flamestrike and requiring manual Combustion.",
+      "evidenceSummary": "The author discusses SBA and recommends targeted Flamestrike in prose, but this preserved original export selects the ground-targeted choice. The runtime uses a separately documented BetterSBA guide adaptation; manual Combustion remains required.",
       "notes": "Author-recommended SBA-compatible starter; not an SBA optimization result. Manually use Combustion, trinkets, racials and other items.",
       "treeCompatibility": "Not checked in-game; validate against the live talent tree before spending."
     },
@@ -1662,5 +1662,6 @@
       "sourceURL": "https://www.wowhead.com/guide/classes/rogue/assassination/basics",
       "decision": "No embedded Blizzard import string found on the basics page."
     }
-  ]
+  ],
+  "expansionAudit": "sba-catalog-expansion-20260924.json"
 }

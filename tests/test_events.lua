@@ -32,4 +32,22 @@ eventHandler(nil,"UNIT_AURA","target")
 eventHandler(nil,"SPELL_UPDATE_CHARGES")
 eventHandler(nil,"SPELL_UPDATE_COOLDOWN")
 assert(#timers==1 and invalidations==2)
-print("PASS: disabled ticker, event coalescing, aura filtering, charge invalidation")
+
+-- A spec can use a different SBA action-bar slot.  Cache invalidation must
+-- happen before the scan that rebuilds secure interception for the new spec.
+local specOrder = {}
+ns.ClearSBASlotCache = function() specOrder[#specOrder + 1] = "slot" end
+ns.ClearBaseCDCache = function() specOrder[#specOrder + 1] = "base" end
+ns.ResetVirtualCooldowns = function() specOrder[#specOrder + 1] = "virtual" end
+ns.InvalidateRotationCache = function() specOrder[#specOrder + 1] = "rotation" end
+ns.InvalidateResolveCache = function() specOrder[#specOrder + 1] = "resolve" end
+ns.InvalidateTextureCache = function() specOrder[#specOrder + 1] = "texture" end
+ns.InvalidateCooldownCache = function() specOrder[#specOrder + 1] = "cooldown" end
+ns.RebuildMacroText = function() specOrder[#specOrder + 1] = "macro" end
+ns.ScanKeybinds = function() specOrder[#specOrder + 1] = "scan" end
+ns.UpdateNow = function() specOrder[#specOrder + 1] = "update" end
+eventHandler(nil, "PLAYER_SPECIALIZATION_CHANGED", "player")
+assert(specOrder[1] == "slot" and specOrder[#specOrder - 1] == "scan" and specOrder[#specOrder] == "update",
+    "spec swap must clear the cached SBA slot before rebuilding interception")
+
+print("PASS: disabled ticker, event coalescing, aura filtering, charge invalidation, spec slot reset")

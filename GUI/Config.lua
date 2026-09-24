@@ -2272,7 +2272,7 @@ function NS.Config:Create()
 
     local btnHdr = CreateSubHeader(c, "BUTTON LAYOUT", y)
     CreateDefaultBtn(c, btnHdr, {
-        "buttonSize", "scale", "showKeybind", "showCooldown", "rangeColoring",
+        "buttonSize", "scale", "showKeybind", "showCooldown", "manualCooldownReminders", "rangeColoring",
         "outOfRangeSound", "spellUsability", "keybindFontSize",
         "keybindOffsetX", "keybindOffsetY", "keybindAnchor",
     })
@@ -2348,6 +2348,17 @@ function NS.Config:Create()
         "Display a " .. V .. "cooldown sweep" .. R .. " animation on the",
         U .. "Active Display" .. R .. " when the recommended spell",
         "is on cooldown (over " .. N .. "1.5s" .. R .. " duration).",
+    }, c)
+    y = y - 24
+    local manualCooldownRow = NS.CreateToggle(c, "Manual Cooldown Reminders", "manualCooldownReminders", y, function()
+        if NS.RefreshManualCooldownReminder then NS.RefreshManualCooldownReminder() end
+    end)
+    NS.AddTooltip(manualCooldownRow, "Manual Cooldown Reminders", {
+        "Shows a separate reminder only when your active specialization has a",
+        "selected catalog SBA target with a reviewed manual cooldown.",
+        " ",
+        "The reminder never casts the spell. It uses Blizzard's native cooldown",
+        "sweep and says cooldown unknown when the client cannot verify readiness.",
     }, c)
     y = y - 24
     local rcRow = NS.CreateToggle(c, "Range Coloring", "rangeColoring", y, function() NS.UpdateNow() end)

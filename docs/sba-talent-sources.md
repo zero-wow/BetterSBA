@@ -1,6 +1,6 @@
 # SBA talent source research
 
-Checked: **2026-09-24**. Nine source-informed targets were added to the runtime catalog: eight exact publisher imports and one Fire Mage adaptation matching written guide advice. These are source checks and project inferences, not in-game or simulation tests. A page's patch label is not proof that its talent data or every hero variant was retested for that patch.
+Checked: **2026-09-24**. The runtime catalog contains 23 source-informed targets: 22 exact publisher imports and one Fire Mage adaptation matching written guide advice, alongside six preserved legacy Druid imports. Fourteen of the exact imports were added in the bounded expansion described below and carry the weaker `guide-inferred` status. These are source checks and project inferences, not in-game or simulation tests. A page's patch label is not proof that its talent data or every hero variant was retested for that patch.
 
 ## Recommended source strategy
 
@@ -21,13 +21,25 @@ Use **SBA-specific creator builds as candidates**, **current class guides for va
 
 ## Catalog coverage after this research
 
-The runtime catalog now contains **nine source-informed targets across seven specializations**: four publisher-designated assistant alternatives (Havoc and Devourer, two each), four author-endorsed SBA-compatible starters from Wowhead (Frost Death Knight, Beast Mastery Hunter, Brewmaster Monk and Shadow Priest), and one guide-adapted Fire Mage target. The six existing Dvalin imports remain intact as **legacy-unverified**. That is **15 runtime entries across 10 specs**: four `source-sba`, four `source-compatible`, one `guide-adapted`, and six `legacy-unverified`. It is not complete SBA coverage.
+The runtime catalog contains **29 entries across 15 specializations**: four publisher-designated assistant alternatives (Havoc and Devourer, two each), four author-endorsed SBA-compatible starters from Wowhead (Frost Death Knight, Beast Mastery Hunter, Brewmaster Monk and Shadow Priest), one guide-adapted Fire Mage target, fourteen guide-inferred targets, and six original Dvalin imports preserved as legacy-unverified. The status counts are **4 `source-sba`, 4 `source-compatible`, 1 `guide-adapted`, 14 `guide-inferred`, and 6 `legacy-unverified`**. Twenty-five of the 40 specs still have no bundled target, and hero/content coverage remains incomplete.
 
-`source-sba` means the publisher explicitly provides that exact export for assisted play. `source-compatible` means the author connects the exact starter build or its talent choices to SBA. `guide-adapted` means BetterSBA changed an export to follow specific written guide advice, with the original and change recorded. None of these statuses means this project simulated the build, tested it in game, or proved it best. The four Icy Veins codes require manual actions documented in their notes. The publishers did not provide level-by-level acquisition orders. BetterSBA separately derives guide-informed priority weights from their class and SBA guidance, restricted to talents already in the selected build; these are project inferences rather than publisher-authored leveling orders.
+`source-sba` means the publisher explicitly provides that exact export for assisted play. `source-compatible` means the author connects the exact starter build or its talent choices to SBA. `guide-adapted` means BetterSBA changed an export to follow specific written guide advice, with the original and change recorded. `guide-inferred` means the export is an unchanged general publisher build and the accompanying guide discusses SBA at spec level; choosing that exact whole build for assisted play is BetterSBA's inference. It is not an exact-build SBA endorsement. None of these statuses means this project simulated the build, tested it in game, or proved it best. The publishers did not provide level-by-level acquisition orders. BetterSBA separately derives guide-informed priority weights for covered targets, restricted to talents already in the selected build; these are project inferences rather than publisher-authored leveling orders.
 
 The [Fire Mage basics guide](https://www.wowhead.com/guide/classes/mage/fire/basics) recommends targeted Flamestrike in its prose, but its published starter export selects the ground-targeted variant. BetterSBA's Fire target changes only this choice: node `109409`, from spell `2120` to spell `1254851` / entry `135602`. The [adaptation record](sba-priorities-dk-hunter-mage.json) retains the original, proposed export and comparison showing the other selected entries, ranks, hero selection and header unchanged. The author does not say the targeted variant is technically required by SBA. This is a transparent guide-alignment inference, not a publisher export or an in-game-verified improvement.
 
-[The Icy Veins audit](icy-veins-sba-candidates.json) records every one of the 40 inspected pages, its observed update date, classification and limitations. [The Wowhead audit](wowhead-sba-candidates.json) records 40 basics pages, linked-guide checks, exact candidate exports and source evidence. Four additional Feral main-page imports are retained only in the Icy Veins research JSON as `meta-candidate`; their identity with the easy-page builds could not be established.
+[The Icy Veins audit](icy-veins-sba-candidates.json) records every one of the 40 inspected pages, its observed update date, classification and limitations. [The Wowhead audit](wowhead-sba-candidates.json) records the initial strict review of 40 basics pages, linked-guide checks, exact candidate exports and source evidence. Its original exclusion flags describe that initial pass. The [bounded expansion record](sba-catalog-expansion-20260924.json) separately records fourteen later additions under the weaker `guide-inferred` standard, their exact export, hero identity and offline checks. Four additional Feral main-page imports remain research-only `meta-candidate`; their identity with the easy-page builds could not be established.
+
+The expansion covers both hero variants for five previously absent specs:
+
+| Spec | Exact publisher targets added | Source freshness and SBA limits |
+| --- | --- | --- |
+| Destruction | Diabolist and Hellcaller AoE | [Talent guide](https://www.wowhead.com/guide/classes/warlock/destruction/talent-builds-pve-dps), Loozy, updated 2026-08-29, 12.1.0. Both unchanged exports already select Mayhem, matching the [rotation guide's advice](https://www.wowhead.com/guide/classes/warlock/destruction/rotation-cooldowns-pve-dps) when Havoc would otherwise go unused. Infernal and other cooldowns remain manual. |
+| Devastation | Scalecommander and Flameshaper, each raid and Mythic+ | [Talent guide](https://www.wowhead.com/guide/classes/evoker/devastation/talent-builds-pve-dps), Preheat, updated 2026-09-23, 12.1.0. The [basics guide](https://www.wowhead.com/guide/classes/evoker/devastation/basics) describes SBA as suitable at spec level; manual cooldowns and rapid-input empower/channel cancellation still matter. |
+| Arms | Slayer and Colossus, each single-target raid and Mythic+ | [Talent guide](https://www.wowhead.com/guide/classes/warrior/arms/talent-builds-pve-dps), Archimtiros, updated 2026-08-12, 12.1.0. The [basics guide](https://www.wowhead.com/guide/classes/warrior/arms/basics) describes capable SBA behavior with manual defensive, mobility and utility use. |
+| Assassination | Deathstalker and Fatebound, single-target raid only | [Talent guide](https://www.wowhead.com/guide/classes/rogue/assassination/talent-builds-pve-dps), Whispyr, updated 2026-09-06, 12.1.0. The [basics guide](https://www.wowhead.com/guide/classes/rogue/assassination/basics) distinguishes stronger single-target behavior from missing AoE bleed-spreading behavior; no AoE candidate is promoted here. |
+| Augmentation | Chronowarden general raid and Scalecommander Mythic+/Delves | [Easy-mode guide](https://www.icy-veins.com/wow/augmentation-evoker-pve-dps-easy-mode), Saeldur, updated 2026-08-10, 12.1. Includes manual cooldown requirements and empower cancellation concerns. Its historical assistant-related simplification note does not prove current per-hero SBA retesting. |
+
+These additions provide choices to inspect and follow, without representing every new target as author-endorsed for SBA. Their whole-build suitability remains inferred and their rating is blank. The existing guide-priority profiles do not automatically extend to these new IDs; uncovered targets use the normal legal path until separate priority evidence is added.
 
 | Class | Spec / inspected Icy Veins page | New sourced imports | Preserved legacy imports | Icy Veins outcome |
 | --- | --- | --- | --- | --- |
@@ -41,9 +53,9 @@ The [Fire Mage basics guide](https://www.wowhead.com/guide/classes/mage/fire/bas
 | Druid | [Feral (103)](https://www.icy-veins.com/wow/feral-druid-pve-dps-easy-mode) | 0 | 2 | Compatibility evidence; exact widget unavailable |
 | Druid | [Guardian (104)](https://www.icy-veins.com/wow/guardian-druid-pve-tank-easy-mode) | 0 | 2 | General talents; no dedicated SBA export |
 | Druid | [Restoration (105)](https://www.icy-veins.com/wow/restoration-druid-pve-healing-easy-mode) | 0 | 0 | Damage-only assistant; healing build not qualified |
-| Evoker | [Devastation (1467)](https://www.icy-veins.com/wow/devastation-evoker-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
+| Evoker | [Devastation (1467)](https://www.icy-veins.com/wow/devastation-evoker-pve-dps-easy-mode) | 4 inferred (Wowhead; both heroes) | 0 | General talents; no dedicated SBA export |
 | Evoker | [Preservation (1468)](https://www.icy-veins.com/wow/preservation-evoker-pve-healing-easy-mode) | 0 | 0 | Damage-only assistant; healing build not qualified |
-| Evoker | [Augmentation (1473)](https://www.icy-veins.com/wow/augmentation-evoker-pve-dps-easy-mode) | 0 | 0 | Further comparison needed |
+| Evoker | [Augmentation (1473)](https://www.icy-veins.com/wow/augmentation-evoker-pve-dps-easy-mode) | 2 inferred (both heroes) | 0 | Exact general exports plus SBA guidance; whole-build suitability inferred |
 | Hunter | [Beast Mastery (253)](https://www.icy-veins.com/wow/beast-mastery-hunter-pve-dps-easy-mode) | 1 compatible (Wowhead) | 0 | General talents; no dedicated SBA export |
 | Hunter | [Marksmanship (254)](https://www.icy-veins.com/wow/marksmanship-hunter-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
 | Hunter | [Survival (255)](https://www.icy-veins.com/wow/survival-hunter-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
@@ -59,7 +71,7 @@ The [Fire Mage basics guide](https://www.wowhead.com/guide/classes/mage/fire/bas
 | Priest | [Discipline (256)](https://www.icy-veins.com/wow/discipline-priest-pve-healing-easy-mode) | 0 | 0 | Damage-only assistant; healing build not qualified |
 | Priest | [Holy (257)](https://www.icy-veins.com/wow/holy-priest-pve-healing-easy-mode) | 0 | 0 | Damage-only assistant; healing build not qualified |
 | Priest | [Shadow (258)](https://www.icy-veins.com/wow/shadow-priest-pve-dps-easy-mode) | 1 compatible (Wowhead) | 0 | General talents; no dedicated SBA export |
-| Rogue | [Assassination (259)](https://www.icy-veins.com/wow/assassination-rogue-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
+| Rogue | [Assassination (259)](https://www.icy-veins.com/wow/assassination-rogue-pve-dps-easy-mode) | 2 inferred ST (Wowhead; both heroes) | 0 | General talents; no dedicated SBA export |
 | Rogue | [Outlaw (260)](https://www.icy-veins.com/wow/outlaw-rogue-pve-dps-easy-mode) | 0 | 0 | Publisher documents SBA limitations |
 | Rogue | [Subtlety (261)](https://www.icy-veins.com/wow/subtlety-rogue-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
 | Shaman | [Elemental (262)](https://www.icy-veins.com/wow/elemental-shaman-pve-dps-easy-mode) | 0 | 0 | Publisher documents SBA limitations |
@@ -67,8 +79,8 @@ The [Fire Mage basics guide](https://www.wowhead.com/guide/classes/mage/fire/bas
 | Shaman | [Restoration (264)](https://www.icy-veins.com/wow/restoration-shaman-pve-healing-easy-mode) | 0 | 0 | Damage-only assistant; healing build not qualified |
 | Warlock | [Affliction (265)](https://www.icy-veins.com/wow/affliction-warlock-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
 | Warlock | [Demonology (266)](https://www.icy-veins.com/wow/demonology-warlock-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
-| Warlock | [Destruction (267)](https://www.icy-veins.com/wow/destruction-warlock-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
-| Warrior | [Arms (71)](https://www.icy-veins.com/wow/arms-warrior-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
+| Warlock | [Destruction (267)](https://www.icy-veins.com/wow/destruction-warlock-pve-dps-easy-mode) | 2 inferred AoE (Wowhead; both heroes) | 0 | General talents; no dedicated SBA export |
+| Warrior | [Arms (71)](https://www.icy-veins.com/wow/arms-warrior-pve-dps-easy-mode) | 4 inferred (Wowhead; both heroes) | 0 | General talents; no dedicated SBA export |
 | Warrior | [Fury (72)](https://www.icy-veins.com/wow/fury-warrior-pve-dps-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
 | Warrior | [Protection (73)](https://www.icy-veins.com/wow/protection-warrior-pve-tank-easy-mode) | 0 | 0 | General talents; no dedicated SBA export |
 
@@ -85,7 +97,7 @@ For a validated order, record individual rank purchases and choice entries. Resp
 
 ## Guide-informed priorities in this build
 
-The runtime includes **72 priority rules across the 10 catalog specs**. All numeric acquisition weights are project inferences. They favor documented resource engines, relevant passive synergies, survival tools and selected cooldowns; they do not automatically discard talents just because SBA requires a manual cast. A priority is eligible only when its current definition spell ID matches an entry in the selected full target. The score can promote the selected prerequisite path toward that talent, but cannot add another choice, another hero tree or an out-of-target talent.
+The existing priority research includes **72 rules across 10 of the 15 catalog specs**. All numeric acquisition weights are project inferences. They favor documented resource engines, relevant passive synergies, survival tools and selected cooldowns; they do not automatically discard talents just because SBA requires a manual cast. A priority is eligible only when its supported build ID and current definition spell ID match the selected full target. The score can promote the selected prerequisite path toward that talent, but cannot add another choice, another hero tree or an out-of-target talent.
 
 | Evidence artifact | Specs | Runtime rules |
 | --- | --- | --- |
@@ -117,7 +129,7 @@ New records implement source/date, `heroTree`, `contentType` and verification fi
 | `importString`, `treeID`, `treeHash`, `serializationVersion` | Exact target and compatibility evidence. Third-party exports may contain a zero hash, which is not validation. |
 | `sourceURL`, `author`, `sourceUpdatedAt`, `checkedAt` | Trace the specific guide or Discord message, not a generic home page/invite. |
 | `patch`, `testedClientBuild`, `catalogRevision` | Separate game compatibility from addon/content revision. Preserve the actual checked client build. |
-| `verificationStatus`, `evidenceURL`, `assumptions` | Runtime statuses used here: `source-sba`, `source-compatible`, `guide-adapted`, `legacy-unverified`. Inactive research uses `meta-candidate`. Simulated/gameplay-validated/stale statuses require corresponding evidence. Keep provenance separate from S/A/B ratings. |
+| `verificationStatus`, `evidenceURL`, `assumptions` | Runtime statuses used here: `source-sba`, `source-compatible`, `guide-adapted`, `guide-inferred`, `legacy-unverified`. Inactive research uses `meta-candidate`. Simulated/gameplay-validated/stale statuses require corresponding evidence. Keep provenance separate from S/A/B ratings. |
 | `levelingOrder`, `orderSourceURL`, `orderVerifiedAt` | Per-step `{nodeID, rank}` records, with explicit author priority and gates. Empty means no validated leveling order. |
 
 The six original built-in Druid records in `Core/TalentBuildData.lua` had blank patch/source URLs and no leveling order at the start of this research. Their existing letter ratings are not verification evidence. Retain their imports as attributed candidates without presenting them as current-patch, researched best builds.
@@ -139,3 +151,5 @@ Icy Veins' sitemap provided the 40 exact specialization URLs. Direct class-page 
 The existing `.scripts/extract-icy-veins-sba-builds.js` had accepted every generic talent widget on any page mentioning Combat Assistant. It now requires an assistant-specific widget label before collection, and no longer invents an A rating for Icy Veins records. It was syntax-checked and its classifier checked against the actual dedicated and generic labels. Its remote crawler was not rerun through the Cloudflare block. Its Lua output remains extraction output for review, not a replacement for the merged catalog and preserved legacy entries.
 
 `tests/test_talent_catalog.lua` validates unique IDs, export alphabet, serialization version, class/spec identity and provenance for all runtime records. Full node allocation compatibility and actual purchase behavior still require the addon/client checks; header validation alone is not enough. The extractor is explicitly included in this change; downloaded page caches and temporary research helpers are excluded.
+
+The expansion pass fetched Wowhead's publisher HTML directly and extracted its marked copy-code widgets; Icy Veins' public guide text exposed the two Augmentation codes. All fourteen codes retain the publisher's bytes. An offline decoder checked serialization version 2, the expected spec ID, purchased node identities, rank and choice encoding, and selected hero identity against Raidbots' live `talents.json`. The Devastation exports additionally encode one granted node (`98931`) outside that active-spec data view; this is recorded in the audit rather than treated as a purchased talent. These checks do not certify prerequisite legality, point budgets or in-game behavior. The catalog header/spec check passed for all 29 entries.

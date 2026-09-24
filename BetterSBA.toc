@@ -1,6 +1,6 @@
 ## Interface: 110207, 120001, 120100
 ## Title: |cFF66B8D9Better|r|cFFFFFFFFSBA|r
-## Version: R1.23023.4c4b3e1.0008.27
+## Version: R1.24116.b42f274.0008.28
 ## Notes: Enhanced Single-Button Assistant with auto-targeting, pet attack, and priority display.
 ## Author: |cFF9B59B6fostot|r
 ## SavedVariables: BetterSBA_DB
@@ -17,6 +17,7 @@ Register.lua
 Core\Constants.lua
 Core\TalentBuildData.lua
 Core\TalentPriorityData.lua
+Core\ManualCooldownData.lua
 Core\Palettes.lua
 Core\Database.lua
 Core\Functions.lua
@@ -39,6 +40,7 @@ Core\LDB.lua
 GUI\Framework.lua
 GUI\MainButton.lua
 GUI\PriorityDisplay.lua
+GUI\ManualCooldownReminders.lua
 GUI\TalentBuildsPanel.lua
 GUI\Config.lua
 

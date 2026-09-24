@@ -420,6 +420,8 @@ do
     check(assessment.hasMismatch and assessment.canRespec and not assessment.warningEnabled,
         "mismatch assessment must work with auto-spend and warnings off")
     check(assessment.signature and assessment.message:find("chosen SBA build", 1, true), "warning must identify a target difference")
+    check(assessment.mismatchDetails and assessment.mismatchDetails:find("Talent 99 is learned", 1, true),
+        "warning must name the off-target talent and explain the mismatch")
     h:runDue(.25)
     check(alerts == 0, "warning must default off")
     h.NS.SetTalentSBAWarningEnabled(true)
@@ -440,6 +442,68 @@ do
     check(hides == 3, "clearing the target must hide its old warning")
     h.character = "Other-Realm"
     check(not h.NS.GetTalentSBAAssessment().warningEnabled, "warning opt-in must not leak across characters")
+end
+
+-- Undo restores the saved ranks and exact prior choice after a confirmed
+-- respec. It becomes unavailable if another talent edit changes the result.
+do
+    local function fixture()
+        local h = makeHarness({ rows = {
+            { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+            { nodeID = 7, ranksPurchased = 1, selectionEntryID = 701 },
+        }, treeNodes = { 1, 7, 99 } })
+        h.useBudgets = true
+        h.nodes[7] = { ranksPurchased = 1, type = Enum.TraitNodeType.SubTreeSelection,
+            activeEntry = { entryID = 702 }, entryIDs = { 701, 702 },
+            canPurchaseRank = true, isAvailable = true, posY = 2 }
+        h.nodes[99] = { ranksPurchased = 1, type = 1, entryIDs = { 991 },
+            canPurchaseRank = true, isAvailable = true, posY = 1 }
+        h.costs[7], h.costs[99] = { { ID = 1, amount = 1 } }, { { ID = 1, amount = 1 } }
+        h.currencies[10][1].quantity = 0
+        h:selectTarget("A")
+        return h
+    end
+
+    local h = fixture()
+    local assessment = h.NS.GetTalentSBAAssessment()
+    check(assessment.hasMismatch and assessment.mismatchDetails:find("Spell 702 is selected", 1, true)
+        and assessment.mismatchDetails:find("Spell 701", 1, true),
+        "choice warning must name both the learned and target entries")
+    h.NS.SetTalentLevelingEnabled(true)
+    check(h.NS.RequestTalentSBARespec(), "fixture respec must start")
+    h:confirm()
+    check(h.NS.GetTalentSBAUndoInfo().canUndo, "confirmed respec must expose undo")
+    check(h.NS.RequestTalentSBAUndo(), "unchanged respec allocation must be restorable")
+    check(h.resets == 2 and h.commits == 2 and h.nodes[99].ranksPurchased == 1
+        and h.nodes[7].activeEntry and h.nodes[7].activeEntry.entryID == 702
+        and h.nodes[1].ranksPurchased == 0,
+        "undo must stage the original off-target rank and exact hero choice in one commit")
+    h:confirm(); h:runDue(.25)
+    check(not h.NS.IsTalentLevelingBusy() and not h.NS.GetTalentSBAUndoInfo().canUndo
+        and not h.NS.GetTalentLevelingState().enabled,
+        "confirmed undo must clear its snapshot and pause automatic reapplication")
+
+    local changed = fixture()
+    check(changed.NS.RequestTalentSBARespec(), "second respec fixture must start")
+    changed:confirm()
+    changed.nodes[99].ranksPurchased = 1
+    check(not changed.NS.GetTalentSBAUndoInfo().canUndo and not changed.NS.RequestTalentSBAUndo()
+        and changed.resets == 1, "intervening talent edits must block undo before a reset")
+
+    local otherCharacter = fixture()
+    check(otherCharacter.NS.RequestTalentSBARespec(), "character-isolation fixture respec must start")
+    otherCharacter:confirm()
+    otherCharacter.character = "Other-Realm"
+    check(not otherCharacter.NS.GetTalentSBAUndoInfo().canUndo and not otherCharacter.NS.RequestTalentSBAUndo(),
+        "the saved prior allocation must remain on the character that made the respec")
+
+    local rejected = fixture()
+    check(rejected.NS.RequestTalentSBARespec(), "failure fixture respec must start")
+    rejected:confirm()
+    rejected.readyForCommit = false
+    check(not rejected.NS.RequestTalentSBAUndo() and rejected.rollbacks == 1
+        and rejected.nodes[99].ranksPurchased == 0 and rejected.NS.GetTalentSBAUndoInfo().canUndo,
+        "failed undo must roll back to the SBA allocation and preserve its undo snapshot")
 end
 
 -- A deliberate respec uses the same guide priorities and live point budget,

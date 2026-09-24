@@ -28,7 +28,7 @@ local classes = {
 }
 local classBySpec = {}
 for class, specs in pairs(classes) do for _, id in ipairs(specs) do classBySpec[id] = class end end
-local ids, count, legacy = {}, 0, 0
+local ids, count, inferred, legacy = {}, 0, 0, 0
 for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
     assert(not ids[entry.id], "duplicate catalog ID: " .. entry.id)
     ids[entry.id] = entry
@@ -36,20 +36,25 @@ for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do
     assert(version == 2 and spec == entry.specID, "export header/spec mismatch: " .. entry.id)
     assert(classBySpec[spec] == entry.classToken, "class/spec mismatch: " .. entry.id)
     if entry.verificationStatus == "source-sba" or entry.verificationStatus == "source-compatible"
-        or entry.verificationStatus == "guide-adapted" then
+        or entry.verificationStatus == "guide-adapted" or entry.verificationStatus == "guide-inferred" then
         assert(entry.sourceURL:match("^https://"), "reviewed entry needs its exact guide URL")
         assert(entry.patch ~= "" and entry.checkedAt:match("^%d%d%d%d%-%d%d%-%d%d$"), "review metadata missing")
         assert(entry.heroTree and entry.notes ~= "", "hero and SBA limitations must be recorded")
         assert(entry.rating == "", "source evidence is not a comparative letter rating")
-        count = count + 1
+        if entry.verificationStatus == "guide-inferred" then
+            assert(entry.evidenceURL:match("^https://"), "inferred entry needs the related SBA guidance URL")
+            inferred = inferred + 1
+        else
+            count = count + 1
+        end
     else
         assert(entry.verificationStatus == "legacy-unverified", "unclassified catalog evidence")
         legacy = legacy + 1
     end
 end
 assert(legacy == 6, "preserve the six existing Druid imports")
-assert(count > 0, "the catalog needs usable source-supported SBA builds")
-print(("talent catalog: %d source-supported exports and %d legacy exports have valid identities and provenance"):format(count, legacy))
+assert(count == 9 and inferred == 14, "reviewed and inferred catalog coverage changed; update the audit alongside the data")
+print(("talent catalog: %d source-supported, %d guide-inferred, and %d legacy exports have valid identities and provenance"):format(count, inferred, legacy))
 
 local rules, profiles = 0, 0
 for spec, guidance in pairs(NS.TALENT_SBA_PRIORITIES) do

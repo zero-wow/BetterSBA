@@ -72,4 +72,39 @@ assert(ns.GetCooldownDurationCached(202) == normalDurationB, "invalidation repla
 ns.EndUpdate()
 assert(calls.charge[202] == 2 and calls.cooldown[202] == 2, "invalidation refreshes duration cache")
 
-print("PASS: native cooldown duration objects, charge recharge, secret unknowns, and zero base cooldown caching")
+-- Exercise the real priority update: unknown/restricted cooldowns must not be
+-- converted into a ready glow. Blizzard's explicit next-cast remains distinct.
+local mock = assert(loadfile("tests/wow_ui_mock.lua"))()
+mock.install()
+local restricted = setmetatable({}, { __index = function() error("secret cooldown") end })
+local cooldowns = { [502] = restricted, [503] = { duration = 120 }, [504] = { duration = 0 }, [505] = { duration = 1 } }
+ns.THEME.NEON_NEXT, ns.THEME.TEXT_DIM, ns.THEME.BG_DARK = { .2, .8, 1 }, { .5, .5, .5 }, { 0, 0, 0 }
+ns.db = { showPriority = true, showActiveGlow = true, priorityIconSize = 30, prioritySpacing = 4,
+    priorityBorderColor = { .1, .1, .1 }, priorityBgColor = { 0, 0, 0 }, priorityLabelFontSize = 10, priorityKeybindFontSize = 10 }
+ns.CreateFrame, ns.UIParent, ns.unpack, ns.ipairs = CreateFrame, UIParent, table.unpack, ipairs
+ns.ICON_TEXCOORD = { 0, 1, 0, 1 }
+ns.ResolveFontPath = function() return "font" end
+ns.ResolveFontOutline = function() return "OUTLINE" end
+ns.ApplyButtonStyle = function() end
+ns.CollectNextSpell = function() return 506 end
+ns.CollectRotationSpells = function() return { 501, 502, 503, 504, 505, 506 } end
+ns.GetSpellBaseCooldown = function() return 120 end
+ns.GetSpellImportanceKey = function() return "MAJOR_CD" end
+ns.GetSpellBorderColorBright = function() return { 1, .5, 0 } end
+ns.GetCooldownCached = function(id) return cooldowns[id] end
+ns.GetSpellTextureCached = function() return "texture" end
+assert(loadfile("GUI/PriorityDisplay.lua"))("BetterSBA", ns)
+ns:CreatePriorityDisplay()
+for _, icon in ipairs(ns._priorityIcons) do icon.Border = false end -- No Masque regions in this fixture.
+ns.UpdatePriorityDisplay()
+local icons = {}
+for _, icon in ipairs(ns._priorityIcons) do icons[icon.spellID] = icon end
+assert(not icons[501]._wantGlow and not icons[502]._wantGlow, "missing and secret cooldowns must never glow as ready")
+assert(not icons[503]._wantGlow, "a known active long cooldown must not glow")
+assert(icons[504]._wantGlow and icons[505]._wantGlow, "known ready/GCD-only cooldowns retain their glow")
+assert(icons[506]._wantGlow, "Blizzard's next-cast recommendation retains its explicit highlight")
+ns.IsCooldownShortOrReady = nil
+ns.UpdatePriorityDisplay()
+assert(not icons[504]._wantGlow and icons[506]._wantGlow, "missing readiness helper must fail closed without suppressing next-cast")
+
+print("PASS: native cooldown visuals/cache and real priority glows fail closed for unknown or secret cooldowns")

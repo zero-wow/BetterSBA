@@ -128,6 +128,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         or event == "UPDATE_VEHICLE_ACTIONBAR" or event == "UPDATE_SHAPESHIFT_FORM"
         or event == "UPDATE_SHAPESHIFT_FORMS" then
         if event == "PLAYER_SPECIALIZATION_CHANGED" then
+            -- Specializations may put SBA on different action-bar slots.  Do
+            -- not let the next binding/overlay refresh reuse the prior spec.
+            NS.ClearSBASlotCache()
             NS.ClearBaseCDCache()
             NS.ResetVirtualCooldowns()
             NS.InvalidateRotationCache()
@@ -176,6 +179,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             local top = NS.GetTrinketStatus and NS.GetTrinketStatus(13)
             local bottom = NS.GetTrinketStatus and NS.GetTrinketStatus(14)
             if not ((top and top.itemID == id) or (bottom and bottom.itemID == id)) then return end
+            if NS.OnTrinketItemDataLoadResult then
+                NS.OnTrinketItemDataLoadResult(id, select(2, ...))
+                return
+            end
         end
         if NS.InCombatLockdown() then
             NS._pendingTrinketRefresh = true

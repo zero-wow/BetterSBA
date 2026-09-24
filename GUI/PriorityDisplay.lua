@@ -14,10 +14,6 @@ local function GetBaseCooldown(spellID)
     return NS.GetSpellBaseCooldown and NS.GetSpellBaseCooldown(spellID) or 0
 end
 
-local function IsLongCooldown(cdInfo)
-    return NS.IsCooldownLong and NS.IsCooldownLong(cdInfo) == true
-end
-
 -- Sort rotation spells by priority.
 -- Pre-computes all sort keys in one O(N) pass so the comparator
 -- does zero API calls, zero CleanNumber/tostring, zero closures.
@@ -496,7 +492,9 @@ function NS.UpdatePriorityDisplay()
                 local impKey = NS.GetSpellImportanceKey(spellID)
                 if impKey == "LONG_CD" or impKey == "MAJOR_CD" then
                     local cdInfo = NS.GetCooldownCached(spellID)
-                    local isReady = not IsLongCooldown(cdInfo)
+                    -- The helper is tri-state: nil is unavailable/restricted,
+                    -- not evidence that a non-next cooldown is ready.
+                    local isReady = NS.IsCooldownShortOrReady and NS.IsCooldownShortOrReady(cdInfo) == true
                     if isReady then
                         local brightColor = NS.GetSpellBorderColorBright(spellID)
                             or NS.SPELL_IMPORTANCE_BRIGHT[impKey]

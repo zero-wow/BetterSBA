@@ -40,7 +40,7 @@ function NS.GetTalentLevelingState(specID)
 end
 
 local function NodeName(configID, nodeID, entryID)
-    local entry = C_Traits.GetEntryInfo(configID, entryID)
+    local entry = entryID and C_Traits.GetEntryInfo(configID, entryID)
     if entry and entry.subTreeID and C_Traits.GetSubTreeInfo then
         local tree = C_Traits.GetSubTreeInfo(configID, entry.subTreeID)
         if tree and tree.name then return tree.name end
@@ -205,6 +205,7 @@ local function Inspect(options)
     local evidence = entry.verificationStatus == "source-sba" and "Assist-specific source build. "
         or (entry.verificationStatus == "source-compatible" and "Source-recommended SBA-compatible build. ")
         or (entry.verificationStatus == "guide-adapted" and "Guide-adapted SBA build. ")
+        or (entry.verificationStatus == "guide-inferred" and "Guide-discussed SBA spec; this exact import is not SBA-verified. ")
         or "SBA suitability unverified. "
     info.detail = evidence .. (entry.patch and entry.patch ~= "" and ("Source patch: " .. entry.patch) or "Source patch unverified")
         .. ". " .. (entry.levelingOrder and "Source priority; legal prerequisites first." or "Follows the build in prerequisite order; not an SBA-tested leveling order.")
@@ -239,7 +240,7 @@ local function Inspect(options)
     local nodes = C_Traits.GetTreeNodes(treeID)
     if not nodes then return Block("Waiting for talent nodes.") end
     info.settled = true
-    local differences = {}
+    local differences, mismatchDetails = {}, {}
     -- Missing future ranks are normal while leveling. Only allocations outside
     -- the selected target (including conflicting choices) are mismatches.
     for _, nodeID in ipairs(nodes) do
@@ -250,12 +251,26 @@ local function Inspect(options)
                 (IsChoice(node) and (not node.activeEntry or node.activeEntry.entryID ~= target.entries[1].entryID)) then
                 differences[#differences + 1] = tostring(nodeID) .. ":" .. tostring(node.ranksPurchased)
                     .. ":" .. tostring(node.activeEntry and node.activeEntry.entryID or 0)
+                local currentEntry = node.activeEntry and node.activeEntry.entryID or (node.entryIDs and node.entryIDs[1])
+                local currentName = NodeName(configID, nodeID, currentEntry)
+                if not target then
+                    mismatchDetails[#mismatchDetails + 1] = currentName .. " is learned but is outside the selected SBA target."
+                elseif node.ranksPurchased > target.ranks then
+                    mismatchDetails[#mismatchDetails + 1] = currentName .. " has " .. node.ranksPurchased
+                        .. " ranks; the selected SBA target uses " .. target.ranks .. "."
+                else
+                    mismatchDetails[#mismatchDetails + 1] = currentName .. " is selected; the SBA target uses "
+                        .. NodeName(configID, nodeID, target.entries[1].entryID) .. "."
+                end
             end
         end
     end
     if #differences > 0 then
         table.sort(differences)
         info.hasMismatch = true
+        info.mismatches = mismatchDetails
+        info.mismatchSummary = mismatchDetails[1]
+        info.mismatchDetails = table.concat(mismatchDetails, "\n")
         info.signature = NS.GetCharKey() .. ":" .. tostring(specID) .. ":" .. tostring(state.buildID)
             .. ":" .. entry.importString .. ":" .. table.concat(differences, ",")
         info.canRespec = C_Traits.ResetTree ~= nil and C_Traits.RollbackConfig ~= nil
@@ -433,6 +448,53 @@ local function AllocationMatches(request)
     return next(current) == nil
 end
 
+local function SavedAllocationMatches(configID, treeID, expected)
+    if type(expected) ~= "table" then return false end
+    return AllocationMatches({ configID = configID, treeID = treeID, expected = expected })
+end
+
+local function InspectUndo()
+    local specID = NS.GetTalentBuildCurrentSpecID()
+    if not specID then return { canUndo = false, status = "Specialization unavailable." } end
+    local state = NS.GetTalentLevelingState(specID)
+    local undo = state.respecUndo
+    if not undo then return { canUndo = false, status = "No previous respec to undo." } end
+    if pending or NS.IsTalentBuildImportPending() then
+        return { canUndo = false, status = "Wait for the current talent change to finish." }
+    end
+    if not APIsReady() or not C_Traits.ResetTree or not C_Traits.RollbackConfig or not C_Traits.IsReadyForCommit then
+        return { canUndo = false, status = "Talent APIs are not ready." }
+    end
+    local configID = C_ClassTalents.GetActiveConfigID()
+    local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
+    if not configID or not treeID then return { canUndo = false, status = "Waiting for the active talent tree." } end
+    local okStamp, treeStamp = pcall(TreeStamp, treeID)
+    if not okStamp then return { canUndo = false, status = "Waiting for talent tree data." } end
+    if undo.character ~= NS.GetCharKey() or undo.specID ~= specID or undo.configID ~= configID
+        or undo.treeID ~= treeID or undo.buildID ~= state.buildID
+        or undo.importString ~= state.importString or undo.clientStamp ~= ClientStamp()
+        or undo.treeStamp ~= treeStamp then
+        return { canUndo = false, status = "The spec, build, or talent tree changed since the respec." }
+    end
+    local okAllocation, matches = pcall(SavedAllocationMatches, configID, treeID, undo.after)
+    if not okAllocation or not matches then
+        return { canUndo = false, status = "Talents changed since the respec; undo cannot safely replace them." }
+    end
+    if InCombatLockdown() then return { canUndo = false, status = "Wait for combat to end." } end
+    if C_Traits.ConfigHasStagedChanges(configID) then
+        return { canUndo = false, status = "Apply or discard your pending talent edits first." }
+    end
+    local editable, reason = C_ClassTalents.CanEditTalents()
+    if not editable then return { canUndo = false, status = reason or "Talents cannot be edited right now." } end
+    return { canUndo = true, status = "Restore the talents you had before the SBA respec.", targetName = undo.targetName }
+end
+
+function NS.GetTalentSBAUndoInfo()
+    local ok, info = pcall(InspectUndo)
+    if ok then return info end
+    return { canUndo = false, status = "Talent data is unavailable; try again when the tree settles." }
+end
+
 local function Fail(request, text)
     if pending ~= request then return faults[request.specID] end
     pending = nil
@@ -440,9 +502,10 @@ local function Fail(request, text)
         local ok, restored = pcall(C_Traits.RollbackConfig, request.configID)
         if not ok or not restored then text = text .. " WoW could not roll back the staged respec; review pending talents." end
     end
-    faults[request.specID] = text .. (request.respec and " Review pending talents, then retry the respec."
+    faults[request.specID] = text .. (request.restore and " Review pending talents, then retry undo."
+        or request.respec and " Review pending talents, then retry the respec."
         or " Review pending talents, then toggle auto-spend off/on to retry.")
-    if request.respec then NotifyWarning(NS.GetTalentSBAAssessment(), true) end
+    if request.respec or request.restore then NotifyWarning(NS.GetTalentSBAAssessment(), true) end
     Refresh()
     return faults[request.specID]
 end
@@ -455,7 +518,7 @@ local function Finish(request)
     end
     if C_Traits.ConfigHasStagedChanges(request.configID) then return false end
     local confirmed
-    if request.respec then
+    if request.respec or request.restore then
         confirmed = AllocationMatches(request)
     else
         local node = C_Traits.GetNodeInfo(request.configID, request.pick.nodeID)
@@ -468,6 +531,16 @@ local function Finish(request)
     end
     pending = nil
     faults[request.specID] = nil
+    local state = NS.GetTalentLevelingState(request.specID)
+    if request.respec then
+        state.respecUndo = { before = request.before, after = request.expected,
+            character = request.character, specID = request.specID, configID = request.configID,
+            treeID = request.treeID, buildID = request.buildID, importString = request.importString,
+            clientStamp = request.clientStamp, treeStamp = request.treeStamp, targetName = request.targetName }
+    elseif request.restore then
+        state.respecUndo = nil
+        state.enabled = false -- Do not immediately auto-spend into the just-restored allocation.
+    end
     if NS.ClearBaseCDCache then NS.ClearBaseCDCache() end
     if NS.InvalidateRotationCache then NS.InvalidateRotationCache() end
     if NS.RebuildMacroText then NS.RebuildMacroText() end
@@ -529,6 +602,7 @@ function NS.RequestTalentSBARespec()
     if not info.canRespec or not info.hasMismatch then return false, info.message end
     local request = NewRequest(info)
     request.respec = true
+    request.targetName = info.targetName
     faults[request.specID] = nil
     pending = request -- Block normal spending and imports before reset emits events.
     local ok, result = pcall(function()
@@ -541,6 +615,8 @@ function NS.RequestTalentSBARespec()
             originalCurrencies[currency.traitCurrencyID] = currency.quantity
         end
         assert(next(originalCurrencies), "Talent currency data is not ready.")
+        request.before = ReadAllocation(request.configID, request.treeID)
+        assert(request.before, "Unable to save the original talent allocation.")
         request.ownsChanges = true
         assert(C_Traits.ResetTree(request.configID, request.treeID), "WoW could not reset the talent tree.")
         request.expected = ReadAllocation(request.configID, request.treeID)
@@ -613,6 +689,120 @@ function NS.RequestTalentSBARespec()
     end
     Refresh()
     return true, "Applying " .. tostring(result) .. " talent ranks to " .. info.targetName .. "."
+end
+
+function NS.RequestTalentSBAUndo()
+    local availability = NS.GetTalentSBAUndoInfo()
+    if not availability.canUndo then return false, availability.status end
+    local specID = NS.GetTalentBuildCurrentSpecID()
+    local undo = NS.GetTalentLevelingState(specID).respecUndo
+    local request = { specID = specID, configID = undo.configID, treeID = undo.treeID,
+        buildID = undo.buildID, character = undo.character, importString = undo.importString,
+        clientStamp = undo.clientStamp, treeStamp = undo.treeStamp, expected = undo.before,
+        restore = true }
+    pending = request -- Own only changes staged from this point forward.
+    local ok, result = pcall(function()
+        assert(RequestMatches(request) and SavedAllocationMatches(request.configID, request.treeID, undo.after),
+            "The talent allocation changed before undo started.")
+        local originalCurrencies = {}
+        for _, currency in ipairs(C_Traits.GetTreeCurrencyInfo(request.configID, request.treeID, false) or {}) do
+            assert(type(currency.quantity) == "number", "Talent currency data is not ready.")
+            originalCurrencies[currency.traitCurrencyID] = currency.quantity
+        end
+        assert(next(originalCurrencies), "Talent currency data is not ready.")
+        request.ownsChanges = true
+        assert(C_Traits.ResetTree(request.configID, request.treeID), "WoW could not reset the talent tree for undo.")
+        local blank = ReadAllocation(request.configID, request.treeID)
+        assert(blank, "Unable to read the reset talent tree.")
+        for _, allocation in pairs(blank) do
+            assert(allocation.ranks == 0, "The talent reset left paid ranks behind.")
+        end
+        local purchased = 0
+        for _ = 1, MAX_CHAIN do
+            assert(RequestMatches(request), "The active talent configuration changed.")
+            local currencies = {}
+            for _, currency in ipairs(C_Traits.GetTreeCurrencyInfo(request.configID, request.treeID, false) or {}) do
+                currencies[currency.traitCurrencyID] = currency.quantity or 0
+            end
+            local candidates = {}
+            for nodeID, desired in pairs(request.expected) do
+                local node = C_Traits.GetNodeInfo(request.configID, nodeID)
+                assert(node and type(node.ranksPurchased) == "number", "The talent tree changed during undo.")
+                assert(node.ranksPurchased <= desired.ranks, "A staged talent exceeds the original allocation.")
+                if node.ranksPurchased < desired.ranks then
+                    local choice = IsChoice(node)
+                    local entryID = choice and desired.entryID
+                        or (node.nextEntry and node.nextEntry.entryID)
+                        or (node.entryIDs and node.entryIDs[1])
+                    if entryID and node.canPurchaseRank and node.isAvailable ~= false
+                        and C_Traits.CanPurchaseRank(request.configID, nodeID, entryID)
+                        and CanAfford(request.configID, nodeID, currencies) then
+                        candidates[#candidates + 1] = { nodeID = nodeID, node = node,
+                            entryID = entryID, choice = choice }
+                    end
+                end
+            end
+            if #candidates == 0 then break end
+            table.sort(candidates, function(a, b)
+                local ay, by = a.node.posY or 0, b.node.posY or 0
+                if ay ~= by then return ay < by end
+                local ax, bx = a.node.posX or 0, b.node.posX or 0
+                if ax ~= bx then return ax < bx end
+                return a.nodeID < b.nodeID
+            end)
+            local pick = candidates[1]
+            local before = pick.node.ranksPurchased
+            if pick.choice and (not pick.node.activeEntry or pick.node.activeEntry.entryID ~= pick.entryID) then
+                assert(C_Traits.SetSelection(request.configID, pick.nodeID, pick.entryID) ~= false,
+                    "Unable to restore an original talent choice.")
+            end
+            local node = C_Traits.GetNodeInfo(request.configID, pick.nodeID)
+            if node and node.ranksPurchased == before then
+                assert(C_Traits.PurchaseRank(request.configID, pick.nodeID) ~= false,
+                    "Unable to restore an original talent rank.")
+            end
+            node = C_Traits.GetNodeInfo(request.configID, pick.nodeID)
+            assert(node and node.ranksPurchased == before + 1
+                and (not pick.choice or (node.activeEntry and node.activeEntry.entryID == pick.entryID)),
+                "Unable to verify a restored talent rank.")
+            purchased = purchased + 1
+        end
+        assert(SavedAllocationMatches(request.configID, request.treeID, request.expected),
+            "The original allocation cannot be reconstructed at this level.")
+        local remaining = C_Traits.GetTreeCurrencyInfo(request.configID, request.treeID, false)
+        assert(remaining, "Talent currency data is not ready.")
+        for _, currency in ipairs(remaining) do
+            assert(type(currency.quantity) == "number" and currency.quantity >= 0
+                and currency.quantity <= (originalCurrencies[currency.traitCurrencyID] or 0),
+                "Undo cannot reuse the existing talent points.")
+            originalCurrencies[currency.traitCurrencyID] = nil
+        end
+        assert(not next(originalCurrencies), "Talent currency data changed during undo.")
+        assert(C_Traits.ConfigHasStagedChanges(request.configID) and C_Traits.IsReadyForCommit(),
+            "WoW did not accept the restored talent plan.")
+        return purchased
+    end)
+    if not ok or pending ~= request then
+        local message = ok and "The active talent configuration changed." or tostring(result):gsub("^.-:%d+: ", "")
+        local failure = Fail(request, message)
+        return false, failure or message
+    end
+    request.commitSent = true
+    local called, success = pcall(C_ClassTalents.CommitConfig)
+    if not called or not success then
+        return false, Fail(request, "WoW could not apply the restored talent plan.")
+    end
+    request.commitAccepted = true
+    if pending == request then
+        NS.C_Timer_After(COMMIT_TIMEOUT, function()
+            if pending == request and not Finish(request) then
+                Fail(request, "Timed out waiting for WoW to confirm undo.")
+            end
+        end)
+        NS.ScheduleTalentLevelingCheck()
+    end
+    Refresh()
+    return true, "Restoring " .. tostring(result) .. " talent ranks from before the SBA respec."
 end
 
 function NS.ScheduleTalentLevelingCheck()

@@ -1,10 +1,17 @@
 local combat, requests, rebuilds = false, 0, 0
+local timers = {}
+local function runRetries()
+    local due = timers
+    timers = {}
+    for _, callback in ipairs(due) do callback() end
+end
 local equipment = { [13] = 101, [14] = 102 }
 local data = {
     [101] = { name = "Instant", spell = 201, cast = 0, cached = true },
     [102] = { name = "Passive", cached = true },
     [103] = { name = "Cast time", spell = 203, cast = 1500, cached = true },
     [104] = { name = "Loading", spell = 204, cast = 0, cached = false },
+    [105] = { name = "Combat loading", spell = 206, cast = 0, cached = false },
 }
 GetInventoryItemID = function(_, slot) return equipment[slot] end
 C_Item = {
@@ -26,6 +33,7 @@ local ns = {
     db={trinketMode="Off", trinketApproved={}}, C_Spell=C_Spell,
     InCombatLockdown=function() return combat end,
     RebuildMacroText=function() rebuilds=rebuilds+1 end,
+    C_Timer_After=function(_, callback) timers[#timers+1]=callback end,
     pcall=pcall, table_concat=table.concat, SBA_SPELL_ID=999,
     CONVOKE_THE_SPIRITS_ID=1001, IRONFUR_SPELL_ID=1002,
 }
@@ -46,9 +54,40 @@ equipment[13] = 104
 ns.RefreshTrinkets(); ns.RefreshTrinkets()
 assert(requests == 1, "Missing item data requested only once")
 assert(ns.GetTrinketStatus(13).status == "Loading")
-data[104].cached = true
+assert(ns.OnTrinketItemDataLoadResult(104, false))
 ns.RefreshTrinkets()
+assert(requests == 1 and #timers == 1, "failed load must schedule one retry without immediate refresh spam")
+assert(not ns.OnTrinketItemDataLoadResult(104, false) and #timers == 1, "duplicate failures cannot create duplicate retries")
+runRetries()
+assert(requests == 2, "first failed load must be retried")
+ns.OnTrinketItemDataLoadResult(104, false); runRetries()
+assert(requests == 3, "second failed load must receive the final bounded retry")
+ns.OnTrinketItemDataLoadResult(104, false)
+ns.RefreshTrinkets(); ns.RefreshTrinkets(); runRetries()
+assert(requests == 3 and ns.GetTrinketStatus(13).status == "Manual", "exhausted loads must stop retrying and explain unavailability")
+assert(not ns.GetTrinketStatus(13).eligible and not ns.GetTrinketStatus(13).canApprove,
+    "failed data must never enter the macro or be approvable")
+equipment[13] = 101; ns.RefreshTrinkets()
+equipment[13] = 104; ns.RefreshTrinkets()
+assert(requests == 4, "re-equipping after removal must allow a fresh bounded attempt")
+data[104].cached = true
+assert(ns.OnTrinketItemDataLoadResult(104, true))
 assert(not ns.GetTrinketStatus(13).eligible, "Approval cannot follow a slot swap")
+equipment[13] = 105; ns.RefreshTrinkets()
+local combatRequestCount, combatRebuildCount = requests, rebuilds
+combat = true
+ns.OnTrinketItemDataLoadResult(105, false); runRetries()
+assert(requests == combatRequestCount and rebuilds == combatRebuildCount and ns._pendingTrinketRefresh,
+    "failed events in combat must record failure but defer requests and secure rebuilds")
+combat = false; ns.RefreshTrinkets()
+assert(requests == combatRequestCount + 1, "deferred retry must resume once combat ends")
+ns.OnTrinketItemDataLoadResult(105, false)
+equipment[13] = 101; ns.RefreshTrinkets()
+local removedRequestCount, removedRebuildCount = requests, rebuilds
+runRetries()
+assert(requests == removedRequestCount and rebuilds == removedRebuildCount, "retry timer must ignore a removed item")
+assert(not ns.OnTrinketItemDataLoadResult(105, true) and rebuilds == removedRebuildCount,
+    "late completion for removed gear must not refresh current trinkets")
 equipment[13] = 101
 combat=true
 local previous=rebuilds
@@ -75,4 +114,4 @@ assert(trinketAt > macro:find("Spell999",1,true), "SBA precedes trinket")
 local preview={}
 for i, action in ipairs(ns.GetMacroActions()) do preview[i]=action.text end
 assert(table.concat(preview,"\n")==macro, "Preview and secure macro agree")
-print("PASS: trinket detection, approval identity, loading, deferral, and macro ordering")
+print("PASS: trinket approval identity, bounded failed-load retries, combat/removal deferral, and macro ordering")

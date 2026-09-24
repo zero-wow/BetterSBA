@@ -797,6 +797,7 @@ local function HideClickInterceptOverlay(clearPoints)
     if not clickOverlay then return end
     local wasActive = clickOverlay:IsShown() or clickOverlay._slot ~= nil
     clickOverlay._slot = nil
+    clickOverlay._barBtn = nil
     clickOverlay:Hide()
     if clearPoints then clickOverlay:ClearAllPoints() end
     if wasActive then NS.UpdateKeybindStatus() end
@@ -845,7 +846,7 @@ function NS.RefreshSBAInterception()
 end
 
 local function ResolveSBABarButton()
-    if clickOverlay and clickOverlay._barBtn then
+    if clickOverlay and clickOverlay:IsShown() and clickOverlay._barBtn then
         return clickOverlay._barBtn
     end
     local slot = sbaActionSlot or NS.FindSBAActionSlot()

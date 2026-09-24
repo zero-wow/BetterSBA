@@ -273,6 +273,7 @@ local function ShowURLPopup(owner, row)
     local evidence = row.verificationStatus == "source-sba" and "Source supplies an assist-specific build"
         or (row.verificationStatus == "source-compatible" and "Source recommends this build for SBA")
         or (row.verificationStatus == "guide-adapted" and "Guide-adapted: source-informed targeted choice")
+        or (row.verificationStatus == "guide-inferred" and "Guide discusses SBA for this spec; exact import is unverified")
         or (row.verificationStatus == "legacy-unverified" and "Legacy entry: SBA suitability unverified")
         or "SBA suitability unverified"
     popup._provenance:SetText(evidence .. "\nPatch: " .. ((row.patch and row.patch ~= "") and row.patch or "unverified")
@@ -413,6 +414,7 @@ function NS.CheckTalentSBAWarning(assessment)
     popup._title:SetText(assessment.failure and "SBA TALENT CHANGE FAILED" or "SBA TALENT MISMATCH")
     popup._target:SetText("Target: " .. (assessment.targetName or "Selected SBA build"))
     popup._body:SetText((assessment.failure or assessment.message or "Your learned talents do not match the selected SBA target.")
+        .. (assessment.mismatchDetails and ("\n\nDifferences from this target:\n" .. assessment.mismatchDetails) or "")
         .. "\n\n" .. (assessment.detail or "")
         .. "\n\nRESPEC TO SBA resets your class, specialization, and hero talent points, then applies the selected target at your current level. This only happens after you press the button.")
     popup._bodyContent:SetHeight(math.max(160, popup._body:GetStringHeight() + 6))
@@ -1093,6 +1095,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
     sbaWarningBtn:SetPoint("TOPRIGHT", spendNextBtn, "BOTTOMRIGHT", 0, -9)
     local respecSBABtn = CreateTextButton(levelingPanel, "RESPEC TO SBA", 104, function() end)
     respecSBABtn:SetPoint("TOPRIGHT", sbaWarningBtn, "BOTTOMRIGHT", 0, -9)
+    local undoRespecBtn = CreateTextButton(levelingPanel, "UNDO RESPEC", 104, function() end)
+    undoRespecBtn:SetPoint("RIGHT", respecSBABtn, "LEFT", -10, 0)
 
     local levelingHint = levelingPanel:CreateFontString(nil, "OVERLAY")
     levelingHint:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
@@ -1352,6 +1356,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     state.spendNextBtn = spendNextBtn
     state.sbaWarningBtn = sbaWarningBtn
     state.respecSBABtn = respecSBABtn
+    state.undoRespecBtn = undoRespecBtn
 
     local headerButtons = {}
     local headerArrows = {}
@@ -1996,7 +2001,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
         levelingSpec:SetText("Active spec: " .. specName)
         levelingTarget:SetText("Target: " .. targetName)
         levelingNext:SetText(nextName and nextName ~= "" and ("Next recommended talent: " .. nextName) or "Next recommended talent: unavailable")
-        levelingStatus:SetText(status .. "\n" .. qualification)
+        levelingStatus:SetText((assessment and assessment.mismatchSummary or status) .. "\n" .. qualification)
         autoSpendBtn._text:SetText(enabled and "AUTO-SPEND: ON" or "AUTO-SPEND: OFF")
         sbaWarningBtn._text:SetText(assessment and assessment.warningEnabled == true and "SBA ALERT: ON" or "SBA ALERT: OFF")
 
@@ -2006,6 +2011,12 @@ function NS.BuildTalentBuildsConfigSection(parent)
         spendNextBtn:SetEnabledState(not enabled and info.canSpend == true)
         sbaWarningBtn:SetEnabledState(activeSpecID ~= nil)
         respecSBABtn:SetEnabledState(assessment and assessment.hasMismatch == true and assessment.canRespec == true)
+        local undoInfo = NS.GetTalentSBAUndoInfo and NS.GetTalentSBAUndoInfo()
+        undoRespecBtn:SetEnabledState(undoInfo and undoInfo.canUndo == true)
+        levelingHint:SetText(undoInfo and undoInfo.canUndo
+            and "Undo restores the allocation saved before your last SBA respec."
+            or (targetState and targetState.respecUndo and undoInfo and undoInfo.status)
+            or "When enabled, points spend without a per-point approval.")
     end
 
     function state:Refresh()
@@ -2122,6 +2133,12 @@ function NS.BuildTalentBuildsConfigSection(parent)
         if not ok then
             levelingStatus:SetText(message or "Unable to respec to the selected SBA target. Recheck the current talent tree and try again.")
         end
+    end)
+
+    undoRespecBtn:SetCallback(function()
+        local ok, message = NS.RequestTalentSBAUndo()
+        state:Refresh()
+        if not ok then levelingStatus:SetText(message or "Unable to restore the previous talents.") end
     end)
 
     applyBtn:SetCallback(function()

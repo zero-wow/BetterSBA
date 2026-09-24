@@ -4,6 +4,28 @@ local ADDON_NAME, NS = ...
 -- An item use-spell alone does not prove that it is off the GCD or non-channeling.
 -- Approval records both IDs; a different item or changed effect stays manual.
 local slots, requested = {}, {}
+local MAX_LOAD_ATTEMPTS, LOAD_RETRY_DELAY = 3, 0.5
+
+local function IsEquipped(itemID)
+    return GetInventoryItemID and (GetInventoryItemID("player", 13) == itemID or GetInventoryItemID("player", 14) == itemID)
+end
+
+local function RetryFailedLoad(itemID, request)
+    request.pending = false
+    if request.attempts >= MAX_LOAD_ATTEMPTS or not NS.C_Timer_After then
+        request.failed = true
+        return
+    end
+    request.retryScheduled = true
+    NS.C_Timer_After(LOAD_RETRY_DELAY * request.attempts, function()
+        if requested[itemID] ~= request or not IsEquipped(itemID) then return end
+        request.retryScheduled = false
+        -- RefreshTrinkets defers both a new request and secure macro changes
+        -- until combat ends. This timer is a bounded retry, not polling.
+        NS.RefreshTrinkets()
+    end)
+end
+
 local function InspectSlot(slot)
     local itemID = GetInventoryItemID and GetInventoryItemID("player", slot)
     local info = { slot = slot, itemID = itemID, name = "Empty slot", status = "Empty", eligible = false }
@@ -19,12 +41,24 @@ local function InspectSlot(slot)
     end
     if api.IsItemDataCachedByID and not api.IsItemDataCachedByID(itemID) then
         info.status, info.reason = "Loading", "Waiting for item information; excluded from the macro."
-        if not requested[itemID] and api.RequestLoadItemDataByID then
-            requested[itemID] = true
-            api.RequestLoadItemDataByID(itemID)
+        local request = requested[itemID]
+        if not request then request = { attempts = 0 }; requested[itemID] = request end
+        if not request.pending and not request.retryScheduled and not request.failed then
+            if api.RequestLoadItemDataByID then
+                request.attempts, request.pending = request.attempts + 1, true
+                local ok = pcall(api.RequestLoadItemDataByID, itemID)
+                if not ok then RetryFailedLoad(itemID, request) end
+            else
+                request.failed = true
+            end
+        end
+        if request.failed then
+            info.status = "Manual"
+            info.reason = "Item information could not be loaded; excluded from the macro. Re-equip the item or reload to retry."
         end
         return info
     end
+    requested[itemID] = nil -- Cached data also cancels any stale retry timer.
     local spellName, spellID = api.GetItemSpell(itemID)
     info.spellID = spellID
     if not spellID then
@@ -77,8 +111,29 @@ function NS.RefreshTrinkets()
         NS._pendingTrinketRefresh = true
         return
     end
+    for itemID in pairs(requested) do
+        if not IsEquipped(itemID) then requested[itemID] = nil end
+    end
     slots[13], slots[14] = InspectSlot(13), InspectSlot(14)
     NS._pendingTrinketRefresh = false
     if NS.RebuildMacroText then NS.RebuildMacroText() end
     if NS.RefreshTrinketConfig then NS.RefreshTrinketConfig() end
+end
+
+function NS.OnTrinketItemDataLoadResult(itemID, success)
+    if not IsEquipped(itemID) then
+        requested[itemID] = nil
+        return false
+    end
+    if success == true then
+        requested[itemID] = nil
+    else
+        local request = requested[itemID]
+        -- Ignore duplicate/unrelated failures; each outstanding request gets
+        -- one completion and at most one subsequent retry.
+        if not request or not request.pending then return false end
+        RetryFailedLoad(itemID, request)
+    end
+    NS.RefreshTrinkets()
+    return true
 end
