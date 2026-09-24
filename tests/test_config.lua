@@ -392,12 +392,25 @@ assert(selectedCatalogRow:GetScript("OnClick"), "catalog row requires an inspect
 selectedCatalogRow:GetScript("OnClick")(selectedCatalogRow)
 assert(applyCalls == 0, "browsing a catalog row must never import or apply it")
 assert(talentState.selectedRow.id == "BUILD-1", "catalog click must only select the build for inspection")
+assert(talentState.autoSpendBtn._enabled, "AUTO-SPEND must be available when a valid build is selected but no target is saved")
+local autoSpend = assert(talentState.autoSpendBtn:GetScript("OnClick"), "AUTO-SPEND needs a handler")
+local selectTarget = NS.SetTalentLevelingTarget
+NS.SetTalentLevelingTarget = function() return false, "Invalid purchased rank count" end
+autoSpend(talentState.autoSpendBtn)
+assert(leveling.buildID == "CUSTOM" and not leveling.enabled
+    and rawget(talentState.levelingStatus, "_text") == "Invalid purchased rank count",
+    "a failed target decode must leave AUTO-SPEND off and show the error")
+NS.SetTalentLevelingTarget = selectTarget
+autoSpend(talentState.autoSpendBtn)
+assert(leveling.buildID == "BUILD-1" and leveling.enabled and applyCalls == 0,
+    "enabling AUTO-SPEND must set the selected build as target without importing a full loadout")
+autoSpend(talentState.autoSpendBtn)
+assert(not leveling.enabled, "AUTO-SPEND must toggle off after its one-click setup")
 local useForLeveling = assert(talentState.useForLevelingBtn:GetScript("OnClick"), "USE FOR LEVELING needs a handler")
 useForLeveling(talentState.useForLevelingBtn)
 assert(leveling.buildID == "BUILD-1" and rawget(talentState.levelingNext, "_text") == "Next recommended talent: Arcane Surge",
     "USE FOR LEVELING must set the selected active-spec build without importing it")
 assert(applyCalls == 0, "setting a leveling target must not import a full build")
-local autoSpend = assert(talentState.autoSpendBtn:GetScript("OnClick"), "AUTO-SPEND needs a handler")
 autoSpend(talentState.autoSpendBtn)
 assert(leveling.enabled and rawget(talentState.autoSpendBtn._text, "_text") == "AUTO-SPEND: ON",
     "AUTO-SPEND must be an explicit per-spec option")

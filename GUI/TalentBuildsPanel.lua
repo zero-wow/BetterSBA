@@ -2045,6 +2045,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
             status = "Selected build is off-spec. Select a " .. specName .. " catalog build for leveling."
         elseif selectedRow and selectedRow.id == NS.TALENT_BUILD_CUSTOM_ID then
             status = "Select a current-spec catalog build for leveling. Custom clears the leveling target."
+        elseif selectedRow and selectedRow.specID == activeSpecID and targetID == NS.TALENT_BUILD_CUSTOM_ID then
+            status = "Click AUTO-SPEND to use the selected build and spend available points."
         end
 
         levelingSpec:SetText("Active spec: " .. specName)
@@ -2066,7 +2068,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
             and selectedRow.specID == activeSpecID
             and selectedRow.id ~= NS.TALENT_BUILD_CUSTOM_ID
         useForLevelingBtn:SetEnabledState(selectedUsableBuild and true or false)
-        autoSpendBtn:SetEnabledState(targetID ~= NS.TALENT_BUILD_CUSTOM_ID)
+        autoSpendBtn:SetEnabledState(targetID ~= NS.TALENT_BUILD_CUSTOM_ID or selectedUsableBuild == true)
         spendNextBtn:SetEnabledState(not enabled and info.canSpend == true)
         sbaWarningBtn:SetEnabledState(activeSpecID ~= nil)
         respecSBABtn:SetEnabledState(assessment and assessment.hasMismatch == true and assessment.canRespec == true)
@@ -2161,6 +2163,21 @@ function NS.BuildTalentBuildsConfigSection(parent)
         local info = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or nil
         local targetState = NS.GetTalentLevelingState and NS.GetTalentLevelingState(NS.GetTalentBuildCurrentSpecID()) or nil
         local enabled = (info and info.enabled == true) or (targetState and targetState.enabled == true)
+        local targetID = (targetState and targetState.buildID) or (info and info.buildID)
+        if not enabled and (not targetID or targetID == NS.TALENT_BUILD_CUSTOM_ID) then
+            local row = state.selectedRow
+            if not row or row.specID ~= NS.GetTalentBuildCurrentSpecID() or row.id == NS.TALENT_BUILD_CUSTOM_ID then
+                state:Refresh()
+                levelingStatus:SetText("Select a current-spec build before enabling AUTO-SPEND.")
+                return
+            end
+            local selected, reason = NS.SetTalentLevelingTarget(row.id)
+            if not selected then
+                state:Refresh()
+                levelingStatus:SetText(reason or "Unable to set this leveling target.")
+                return
+            end
+        end
         local ok, message = NS.SetTalentLevelingEnabled(not enabled)
         state:Refresh()
         if not ok and message and message ~= "" then
