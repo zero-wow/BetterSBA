@@ -71,7 +71,7 @@ eventFrame.scripts.OnEvent(eventFrame, "ADDON_LOADED", "Blizzard_PlayerSpells")
 local button = frames[2]
 assert(button and button.name == "BetterSBA_SpendAllTalentsButton" and button.parent == talents,
     "the control must appear on the active Blizzard talent tab")
-assert(button.text == "SBA: SPEND ALL" and button.width == 144 and button.height == 22,
+assert(button.text == "SBA: Spend All" and button.width == 144 and button.height == 22,
     "the action needs an explicit readable hit target")
 assert(button._altText:find("Spend all available", 1, true)
     and button.normal.path:find("TalentSpendAll", 1, true)

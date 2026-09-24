@@ -133,18 +133,22 @@ end
 local function Targets(entry, configID)
     local rows, err = NS.DecodeTalentBuildTarget(entry, configID)
     if not rows then return nil, err end
-    local map, ordered = {}, {}
+    local map, ordered, deferred = {}, {}, 0
     for _, row in ipairs(rows) do
-        local target = map[row.nodeID]
-        if not target then
-            target = { nodeID = row.nodeID, ranks = 0, entries = {} }
-            map[row.nodeID] = target
-            ordered[#ordered + 1] = target
+        if row.deferred then
+            deferred = deferred + 1
+        else
+            local target = map[row.nodeID]
+            if not target then
+                target = { nodeID = row.nodeID, ranks = 0, entries = {} }
+                map[row.nodeID] = target
+                ordered[#ordered + 1] = target
+            end
+            target.ranks = target.ranks + row.ranksPurchased
+            target.entries[#target.entries + 1] = { entryID = row.selectionEntryID, throughRank = target.ranks }
         end
-        target.ranks = target.ranks + row.ranksPurchased
-        target.entries[#target.entries + 1] = { entryID = row.selectionEntryID, throughRank = target.ranks }
     end
-    if #ordered == 0 then return nil, "The target build contains no spendable talents." end
+    if #ordered == 0 and deferred == 0 then return nil, "The target build contains no talents." end
     -- Authored priorities are optional and must refer to nodes in this target.
     -- Otherwise use a stable, top-to-bottom prerequisite traversal like ZugZug.
     local priority, occurrences = {}, {}
@@ -175,7 +179,7 @@ local function Targets(entry, configID)
         if ax ~= bx then return ax < bx end
         return a.nodeID < b.nodeID
     end)
-    return map, ordered
+    return map, ordered, deferred
 end
 
 local function NextEntry(target, rank)
@@ -199,7 +203,8 @@ local function Inspect(options)
     local state = NS.GetTalentLevelingState(specID)
     local info = {
         specID = specID, specName = NS.GetTalentBuildSpecName(specID) or "Unknown",
-        buildID = state.buildID, enabled = state.enabled == true, canSpend = false,
+        buildID = state.buildID, enabled = state.enabled == true,
+        autoRespecEnabled = state.autoRespec == true, canSpend = false,
         warningEnabled = state.warnMismatch == true and NS.IsTalentBuildSystemEnabled(),
         hasMismatch = false, canRespec = false, settled = false,
         targetName = "Choose a build below", nextName = "—", status = "Choose a leveling target.",
@@ -239,7 +244,7 @@ local function Inspect(options)
     end
     local editable, editReason = C_ClassTalents.CanEditTalents()
     if not editable then return Block(editReason or "Talents cannot be edited right now.") end
-    local map, ordered = Targets(entry, configID)
+    local map, ordered, deferred = Targets(entry, configID)
     if not map then return Block(ordered or "The build is not compatible with this talent tree.") end
     local guidance = GetGuidance(specID, entry.id)
     if guidance and not entry.levelingOrder then
@@ -316,7 +321,10 @@ local function Inspect(options)
             end
         end
     end
-    if not missing then return Block("Target build complete.") end
+    if not missing then
+        return Block(deferred > 0 and "Waiting for unavailable talents in this build to unlock."
+            or "Target build complete.")
+    end
     return Block(hasPoints and "Waiting for an eligible talent in this build (level, prerequisite, or currency)." or "Waiting for your next talent point.")
 end
 
@@ -324,7 +332,8 @@ function NS.GetTalentLevelingInfo()
     local ok, info = pcall(Inspect)
     if ok then return info end
     local state = NS.GetTalentLevelingState()
-    return { enabled = state.enabled, buildID = state.buildID, canSpend = false,
+    return { enabled = state.enabled, autoRespecEnabled = state.autoRespec == true,
+        buildID = state.buildID, canSpend = false,
         warningEnabled = state.warnMismatch == true and NS.IsTalentBuildSystemEnabled(),
         hasMismatch = false, canRespec = false, settled = false,
         targetName = "Talent data unavailable", nextName = "—", status = "Unable to read the talent tree. No points were spent.",
@@ -376,6 +385,13 @@ end
 function NS.SetTalentSBAWarningEnabled(enabled)
     NS.GetTalentLevelingState().warnMismatch = enabled == true
     NotifyWarning(NS.GetTalentSBAAssessment(), true)
+    Refresh()
+    return true
+end
+
+function NS.SetTalentAutoRespecEnabled(enabled)
+    NS.GetTalentLevelingState().autoRespec = enabled == true
+    if enabled then NS.ScheduleTalentLevelingCheck() end
     Refresh()
     return true
 end
@@ -451,9 +467,12 @@ local function ReadAllocation(configID, treeID)
     local allocation = {}
     for _, nodeID in ipairs(nodes) do
         local node = C_Traits.GetNodeInfo(configID, nodeID)
-        if not node or type(node.ranksPurchased) ~= "number" then return nil end
-        allocation[nodeID] = { ranks = node.ranksPurchased,
-            entryID = node.ranksPurchased > 0 and IsChoice(node, configID) and node.activeEntry and node.activeEntry.entryID or nil }
+        -- A level-locked node can be listed in the tree before this config
+        -- exposes NodeInfo. It has no purchased rank to save or restore yet.
+        if node and type(node.ranksPurchased) ~= "number" then return nil end
+        local ranks = node and node.ranksPurchased or 0
+        allocation[nodeID] = { ranks = ranks,
+            entryID = ranks > 0 and IsChoice(node, configID) and node.activeEntry and node.activeEntry.entryID or nil }
     end
     return allocation
 end
@@ -525,7 +544,7 @@ local function Fail(request, text)
     end
     faults[request.specID] = text .. (request.restore and " Review pending talents, then retry undo."
         or request.respec and " Review pending talents, then retry the respec."
-        or request.bulk and " Review pending talents, then retry SPEND ALL."
+        or request.bulk and " Review pending talents, then retry Spend All."
         or " Review pending talents, then toggle auto-spend off/on to retry.")
     if request.respec or request.restore then NotifyWarning(NS.GetTalentSBAAssessment(), true) end
     Refresh()
@@ -710,6 +729,16 @@ function NS.RequestTalentSBARespec()
         for _, allocation in pairs(request.expected) do
             assert(allocation.ranks == 0, "The talent reset left paid ranks behind.")
         end
+        local resetCurrencies = {}
+        for _, currency in ipairs(C_Traits.GetTreeCurrencyInfo(request.configID, request.treeID, false) or {}) do
+            local before = originalCurrencies[currency.traitCurrencyID]
+            assert(type(currency.quantity) == "number" and before ~= nil and currency.quantity >= before,
+                "The talent reset did not preserve the available point budget.")
+            resetCurrencies[currency.traitCurrencyID] = currency.quantity
+        end
+        for currencyID in pairs(originalCurrencies) do
+            assert(resetCurrencies[currencyID] ~= nil, "Talent currency data changed during the reset.")
+        end
         local purchased = 0
         for _ = 1, MAX_CHAIN do
             assert(RequestMatches(request), "The active talent configuration changed.")
@@ -734,7 +763,6 @@ function NS.RequestTalentSBARespec()
             expected.ranks, expected.entryID = pick.before + 1, pick.choice and pick.entryID or nil
             purchased = purchased + 1
         end
-        assert(purchased > 0, "No eligible talent ranks could be allocated.")
         assert(RequestMatches(request), "The active talent configuration changed.")
         local finalInfo = Inspect({ request = request })
         assert(finalInfo.settled and not finalInfo.hasMismatch and not finalInfo.canSpend,
@@ -744,11 +772,12 @@ function NS.RequestTalentSBARespec()
         assert(remainingCurrencies, "Talent currency data is not ready.")
         for _, currency in ipairs(remainingCurrencies) do
             assert(type(currency.quantity) == "number" and currency.quantity >= 0
-                and currency.quantity <= (originalCurrencies[currency.traitCurrencyID] or 0),
-                "The target cannot reuse all existing talent points at this level.")
-            originalCurrencies[currency.traitCurrencyID] = nil
+                and resetCurrencies[currency.traitCurrencyID] ~= nil
+                and currency.quantity <= resetCurrencies[currency.traitCurrencyID],
+                "The staged talent plan exceeded the available point budget.")
+            resetCurrencies[currency.traitCurrencyID] = nil
         end
-        assert(not next(originalCurrencies), "Talent currency data changed during the respec.")
+        assert(not next(resetCurrencies), "Talent currency data changed during the respec.")
         assert(C_Traits.ConfigHasStagedChanges(request.configID) and C_Traits.IsReadyForCommit(),
             "WoW did not accept the staged talent plan.")
         return purchased
@@ -774,6 +803,9 @@ function NS.RequestTalentSBARespec()
         NS.ScheduleTalentLevelingCheck()
     end
     Refresh()
+    if result == 0 then
+        return true, "Resetting conflicting talents. The target has no ranks available at this level yet."
+    end
     return true, "Applying " .. tostring(result) .. " talent ranks to " .. info.targetName .. "."
 end
 
@@ -824,9 +856,10 @@ function NS.RequestTalentSBAUndo()
             local candidates = {}
             for nodeID, desired in pairs(request.expected) do
                 local node = C_Traits.GetNodeInfo(request.configID, nodeID)
-                assert(node and type(node.ranksPurchased) == "number", "The talent tree changed during undo.")
-                assert(node.ranksPurchased <= desired.ranks, "A staged talent exceeds the original allocation.")
-                if node.ranksPurchased < desired.ranks then
+                assert(desired.ranks == 0 or (node and type(node.ranksPurchased) == "number"),
+                    "The talent tree changed during undo.")
+                assert(not node or node.ranksPurchased <= desired.ranks, "A staged talent exceeds the original allocation.")
+                if node and node.ranksPurchased < desired.ranks then
                     local choice = IsChoice(node, request.configID)
                     local entryID = choice and desired.entryID
                         or (node.nextEntry and node.nextEntry.entryID)
@@ -913,7 +946,10 @@ function NS.ScheduleTalentLevelingCheck()
             return
         end
         local info = NS.GetTalentLevelingInfo()
-        if info.enabled and info.canSpend then
+        if info.enabled and info.autoRespecEnabled and info.hasMismatch and info.canRespec then
+            local ok = NS.RequestTalentSBARespec()
+            if not ok then NotifyWarning(NS.GetTalentSBAAssessment()); Refresh() end
+        elseif info.enabled and info.canSpend then
             NS.SpendNextTalentPoint(true)
         else
             chainCount = 0

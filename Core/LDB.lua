@@ -20,7 +20,7 @@ function NS.InitLDB()
                 ReloadUI()
                 return
             elseif button == "LeftButton" then
-                NS.Config:Toggle()
+                NS.ToggleSettingsPanel()
             elseif button == "RightButton" then
                 NS.db.locked = not NS.db.locked
                 print("|cFF66B8D9BetterSBA|r: Position " .. (NS.db.locked and "locked" or "unlocked"))
@@ -183,7 +183,7 @@ function NS.GetInterceptBlockReason()
         return "Possess Bar"
     end
     if NS.IsSkyridingActive and NS.IsSkyridingActive() then
-        return "SkyRiding"
+        return "Skyriding"
     end
     if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then
         return "Flight Form"
@@ -191,7 +191,7 @@ function NS.GetInterceptBlockReason()
     if HasBonusActionBar and HasBonusActionBar()
         and not (NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()) then
         if IsMounted and IsMounted() then
-            return "SkyRiding"
+            return "Skyriding"
         end
         return "Bonus Bar"
     end

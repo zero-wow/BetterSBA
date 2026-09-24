@@ -6,6 +6,31 @@ local wasOnSpecialBar = false
 local lastRescanTime = nil
 local PRESS_DURATION = 0.09
 
+local function LayoutPauseVisual(button)
+    local pause = button and button.pauseOverlay
+    if not pause then return end
+    local size = button:GetWidth()
+    local barHeight = math.min(math.floor(size * 0.58),
+        math.max(11, math.floor((NS.db.pauseSymbolFontSize or 14) * 1.15)))
+    local barWidth = math.max(3, math.floor(barHeight * 0.23))
+    local gap = math.max(3, math.floor(barWidth * 0.9))
+    for i, bar in ipairs(pause.bars) do
+        local x = i == 1 and -(gap / 2 + barWidth) or gap / 2
+        bar.shadow:SetSize(barWidth + 2, barHeight + 2)
+        bar.shadow:ClearAllPoints()
+        bar.shadow:SetPoint("CENTER", pause, "CENTER", x + 1, -1)
+        bar.fill:SetSize(barWidth, barHeight)
+        bar.fill:ClearAllPoints()
+        bar.fill:SetPoint("CENTER", pause, "CENTER", x, 0)
+    end
+    local emblem = NS.db.pauseSymbolStyle ~= "Text"
+    pause.symbolText:SetShown(not emblem)
+    for _, bar in ipairs(pause.bars) do
+        bar.shadow:SetShown(emblem)
+        bar.fill:SetShown(emblem)
+    end
+end
+
 local function ClearButtonPressVisual(button)
     if not button then return end
     button._pressUntil = nil
@@ -189,42 +214,50 @@ function NS:CreateMainButton()
     btn.hotkey:SetPoint(db.keybindAnchor or "TOPRIGHT", db.keybindOffsetX or -5, db.keybindOffsetY or -5)
     btn.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
-    -- Pause overlay (text-based with outline for clarity)
+    -- A quiet translucent scrim keeps the spell recognizable. The simple
+    -- pause mark reads cleanly without another badge over the icon.
     local pauseGroup = NS.CreateFrame("Frame", nil, btn)
     pauseGroup:SetAllPoints()
     pauseGroup:SetFrameLevel(btn:GetFrameLevel() + 3)
     pauseGroup:Hide()
 
-    -- Dark background behind the "II" text
     local pauseBg = pauseGroup:CreateTexture(nil, "ARTWORK", nil, 1)
     pauseGroup.background = pauseBg
-    pauseBg:SetColorTexture(0, 0, 0, 0.7)
-    local bgSize = math.max(18, math.floor(size * 0.45))
-    pauseBg:SetSize(bgSize, bgSize)
-    pauseBg:SetPoint("CENTER")
+    pauseBg:SetColorTexture(0.025, 0.03, 0.065, 0.32)
+    pauseBg:SetAllPoints(btn.icon)
+    pauseGroup.bars = {}
+    for i = 1, 2 do
+        local shadow = pauseGroup:CreateTexture(nil, "ARTWORK", nil, 2)
+        shadow:SetColorTexture(0.01, 0.01, 0.025, 0.9)
+        local fill = pauseGroup:CreateTexture(nil, "OVERLAY")
+        fill:SetColorTexture(0.94, 0.95, 1, 0.98)
+        pauseGroup.bars[i] = { shadow = shadow, fill = fill }
+    end
 
-    -- "II" pause symbol text
     local pauseText = pauseGroup:CreateFontString(nil, "OVERLAY")
     pauseText:SetFont(
         NS.ResolveFontPath("pauseSymbolFont"),
         db.pauseSymbolFontSize or 14,
         NS.ResolveFontOutline("pauseSymbolFont", "pauseSymbolOutline"))
     pauseText:SetText("II")
-    pauseText:SetTextColor(1.0, 0.53, 0.0, 1.0)
-    pauseText:SetPoint("CENTER", 1, 0)
-
-    -- Pause reason text below the button (e.g. "SKYRIDING")
+    pauseText:SetTextColor(0.94, 0.95, 1, 1)
+    pauseText:SetPoint("CENTER")
     local pauseReason = pauseGroup:CreateFontString(nil, "OVERLAY")
     pauseReason:SetFont(
         NS.ResolveFontPath("pauseReasonFont"),
         db.pauseReasonFontSize or 9,
         NS.ResolveFontOutline("pauseReasonFont", "pauseReasonOutline"))
-    pauseReason:SetTextColor(1.0, 0.53, 0.0, 0.9)
-    pauseReason:SetPoint("TOP", btn, "BOTTOM", 0, -2)
+    pauseReason:SetTextColor(0.94, 0.95, 1, 1)
+    pauseReason:SetShadowColor(0, 0, 0, 0.95)
+    pauseReason:SetShadowOffset(1, -1)
+    pauseReason:SetPoint("TOP", btn, "BOTTOM", 0, -3)
+    pauseReason:SetWordWrap(false)
+    pauseReason:SetMaxLines(1)
     pauseGroup.symbolText = pauseText
     pauseGroup.reasonText = pauseReason
 
     btn.pauseOverlay = pauseGroup
+    LayoutPauseVisual(btn)
 
     -- Current spell ID
     btn.spellID = nil
@@ -726,11 +759,14 @@ function NS.UpdateNow()
         local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
         if reason then
             btn.pauseOverlay:Show()
-            if btn.pauseOverlay.reasonText then
+            if btn.pauseOverlay.currentReason ~= reason and btn.pauseOverlay.reasonText then
+                btn.pauseOverlay.currentReason = reason
                 btn.pauseOverlay.reasonText:SetText(reason)
+                LayoutPauseVisual(btn)
             end
         else
             btn.pauseOverlay:Hide()
+            btn.pauseOverlay.currentReason = nil
             if btn.pauseOverlay.reasonText then
                 btn.pauseOverlay.reasonText:SetText("")
             end
@@ -814,6 +850,7 @@ function NS.ApplyButtonSettings()
                 NS.db.pauseReasonFontSize or 9,
                 NS.ResolveFontOutline("pauseReasonFont", "pauseReasonOutline"))
         end
+        LayoutPauseVisual(btn)
     end
     if not NS.masque and btn.bg then
         local bgColor = NS.db.buttonBgColor

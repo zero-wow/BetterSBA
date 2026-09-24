@@ -334,6 +334,20 @@ function NS.Config:Create()
 
     NS.CreateCloseButton(f)
 
+    local tryNew = NS.CreateFrame("Button", nil, titleBar, "BackdropTemplate")
+    tryNew:SetSize(132, 24)
+    tryNew:SetPoint("RIGHT", titleBar, "RIGHT", -205, 0)
+    tryNew:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    tryNew:SetBackdropColor(0.13, 0.11, 0.18, 1)
+    tryNew:SetBackdropBorderColor(0.58, 0.43, 0.74, 0.9)
+    local tryNewText = tryNew:CreateFontString(nil, "OVERLAY")
+    tryNewText:SetFont(NS.GetConfigFontPath(), 10, "")
+    tryNewText:SetPoint("CENTER")
+    tryNewText:SetTextColor(0.88, 0.78, 0.98)
+    tryNewText:SetText("Try New Panel")
+    tryNew:SetScript("OnClick", function() NS.SwitchSettingsPanel("studio") end)
+
     ----------------------------------------------------------------
     -- Title click → GitHub URL popup
     ----------------------------------------------------------------
@@ -2194,13 +2208,21 @@ function NS.Config:Create()
     end)
     y = y - 46
 
-    -- Row 6: Pause Symbol (Font + Outline + Size + override checkbox)
+    local pauseStyleRow = NS.CreateOptionsDropdown(c, "Pause Symbol Style", "pauseSymbolStyle",
+        {"Emblem", "Text"}, y, function() NS.ApplyButtonSettings() end)
+    NS.AddTooltip(pauseStyleRow, "Pause Symbol Style", {
+        "Emblem uses translucent artwork over the spell icon.",
+        "Text uses the configured pause symbol font.",
+    }, c)
+    y = y - 46
+
+    -- Pause Symbol (Font + Outline + Size + override checkbox)
     local psFontRow = NS.CreateFontDropdown(c, "Pause Symbol", "pauseSymbolFont", y, function()
         NS.ApplyButtonSettings()
     end, fontW3)
     NS.AddTooltip(psFontRow, "Pause Symbol Font", {
-        "Font for the " .. V .. "II" .. R .. " pause symbol shown on",
-        "the " .. U .. "Active Display" .. R .. " when paused.",
+        "Font for the " .. V .. "II" .. R .. " pause symbol in Text style.",
+        "Size also controls the bars in Emblem style.",
         " ",
         "Size: " .. N .. "8" .. R .. " to " .. N .. "28" .. R .. " px.",
     }, c)
@@ -2221,13 +2243,13 @@ function NS.Config:Create()
     end)
     y = y - 46
 
-    -- Row 7: Pause Reason (Font + Outline + Size + override checkbox)
+    -- Pause Reason (Font + Outline + Size + override checkbox)
     local prFontRow = NS.CreateFontDropdown(c, "Pause Reason", "pauseReasonFont", y, function()
         NS.ApplyButtonSettings()
     end, fontW3)
     NS.AddTooltip(prFontRow, "Pause Reason Font", {
         "Font for the pause " .. V .. "reason text" .. R .. " shown below",
-        "the button (e.g. " .. U .. "SKYRIDING" .. R .. ", " .. U .. "MOUNTED" .. R .. ").",
+        "the button (e.g. " .. U .. "Skyriding" .. R .. ", " .. U .. "Mounted" .. R .. ").",
         " ",
         "Size: " .. N .. "6" .. R .. " to " .. N .. "14" .. R .. " px.",
     }, c)
@@ -4294,16 +4316,16 @@ function NS.Config:Create()
         { label = "Label Y Offset", section = 4 },
         { label = "Talent Builds", section = 5, isSection = true },
         { label = "Search Builds", section = 5 },
-        { label = "ALL", section = 5 },
-        { label = "BUILT-IN", section = 5 },
-        { label = "USER", section = 5 },
-        { label = "APPLY", section = 5 },
-        { label = "LOAD ANYWAY", section = 5 },
-        { label = "CREATE", section = 5 },
-        { label = "EDIT", section = 5 },
-        { label = "DELETE", section = 5 },
-        { label = "COPY", section = 5 },
-        { label = "VIEW SOURCE", section = 5 },
+        { label = "All", section = 5 },
+        { label = "Built-In", section = 5 },
+        { label = "User", section = 5 },
+        { label = "Apply", section = 5 },
+        { label = "Load Anyway", section = 5 },
+        { label = "Create", section = 5 },
+        { label = "Edit", section = 5 },
+        { label = "Delete", section = 5 },
+        { label = "Copy", section = 5 },
+        { label = "View Source", section = 5 },
         { label = "Visibility", section = 6, isSection = true },
         { label = "Combat Only", section = 6 },
         { label = "Hide In Vehicle", section = 6 },

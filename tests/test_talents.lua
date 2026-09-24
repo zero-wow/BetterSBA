@@ -235,6 +235,50 @@ end
 rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "locked-hero-choice" }, 42))
 assert(#rows == 1 and rows[1].ranksPurchased == 1 and rows[1].selectionEntryID == 8001,
     "a level-locked hero selector must remain a future target instead of blocking leveling")
+-- Some low-level configs omit hero entry IDs altogether. Preserve the full
+-- encoded choice for leveling, but never pass an unresolved entry to ImportLoadout.
+C_Traits.GetTreeNodes = function() return { 7001, 99822 } end
+encodedContent, encodedBits = { 1, 1, 0, 0, 1, 1, 0, 1, 0 }, 10
+local heroUnlocked = false
+C_Traits.GetNodeInfo = function(_, nodeID)
+    if nodeID == 7001 then return { type = 0, entryIDs = { 8001 }, maxRanks = 1 } end
+    if heroUnlocked then
+        return { type = Enum.TraitNodeType.SubTreeSelection, entryIDs = { 8101, 8102 }, maxRanks = 1 }
+    end
+    return { type = Enum.TraitNodeType.SubTreeSelection, entryIDs = {}, maxRanks = 0,
+        isAvailable = false, canPurchaseRank = false }
+end
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "low-level-blood" }, 42))
+assert(#rows == 2 and rows[1].selectionEntryID == 8001 and rows[2].deferred
+    and rows[2].nodeID == 99822 and rows[2].choiceIndex == 1 and rows[2].fullRank,
+    "the decoder must retain locked hero choice bits while exposing class talents")
+-- A locked non-choice node may have no node info or zero live capacity. Both
+-- still carry the full-rank intent for later decoding when the level unlocks it.
+C_Traits.GetNodeInfo = function(_, nodeID)
+    if nodeID == 7001 then return { type = 0, entryIDs = { 8001 }, maxRanks = 1 } end
+    return nil
+end
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "missing-hero-node" }, 42))
+assert(#rows == 2 and rows[2].deferred and rows[2].fullRank,
+    "a node with no live info must not prevent choosing the leveling route")
+C_Traits.GetNodeInfo = function(_, nodeID)
+    if nodeID == 7001 then return { type = 0, entryIDs = { 8001 }, maxRanks = 1 } end
+    return { type = 0, entryIDs = { 8101 }, maxRanks = 0 }
+end
+encodedContent, encodedBits = { 1, 1, 0, 0, 1, 1, 0, 0 }, 8
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "zero-capacity-hero" }, 42))
+assert(#rows == 2 and rows[2].deferred and rows[2].fullRank,
+    "zero live rank capacity must defer the target rather than reject it")
+heroUnlocked = true
+encodedContent, encodedBits = { 1, 1, 0, 0, 1, 1, 0, 1, 0 }, 10
+C_Traits.GetNodeInfo = function(_, nodeID)
+    if nodeID == 7001 then return { type = 0, entryIDs = { 8001 }, maxRanks = 1 } end
+    return { type = Enum.TraitNodeType.SubTreeSelection, entryIDs = { 8101, 8102 }, maxRanks = 1 }
+end
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "unlocked-blood" }, 42))
+assert(#rows == 2 and not rows[2].deferred and rows[2].selectionEntryID == 8101,
+    "the preserved hero choice must resolve when its entries unlock")
+C_Traits.GetTreeNodes = function() return { 7001 } end
 encodedContent, encodedBits = { 1, 1, 1, 1, 1, 0 }, 12
 rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "full-partial" }, 42))
 assert(#rows == 1 and rows[1].ranksPurchased == 1,

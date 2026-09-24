@@ -412,7 +412,7 @@ assert(leveling.buildID == "BUILD-1" and rawget(talentState.levelingNext, "_text
     "USE FOR LEVELING must set the selected active-spec build without importing it")
 assert(applyCalls == 0, "setting a leveling target must not import a full build")
 autoSpend(talentState.autoSpendBtn)
-assert(leveling.enabled and rawget(talentState.autoSpendBtn._text, "_text") == "AUTO-SPEND: ON",
+assert(leveling.enabled and rawget(talentState.autoSpendBtn._text, "_text") == "Auto-Spend: On",
     "AUTO-SPEND must be an explicit per-spec option")
 autoSpend(talentState.autoSpendBtn)
 assert(not leveling.enabled, "AUTO-SPEND must toggle back off")
@@ -422,7 +422,7 @@ assert(leveling.status == "Spent Arcane Surge.", "SPEND NEXT must use the manual
 local warningToggle = assert(talentState.sbaWarningBtn:GetScript("OnClick"), "SBA ALERT needs an opt-in handler")
 warningToggle(talentState.sbaWarningBtn)
 assert(warningSetCalls == 1 and sbaAssessment.warningEnabled
-    and rawget(talentState.sbaWarningBtn._text, "_text") == "SBA ALERT: ON",
+    and rawget(talentState.sbaWarningBtn._text, "_text") == "SBA Alert: On",
     "SBA alert must remain an explicit per-spec opt-in")
 assert(not talentState.respecSBABtn._enabled, "RESPEC TO SBA must stay unavailable without a mismatch")
 assert(not talentState.undoRespecBtn._enabled, "UNDO RESPEC must stay unavailable without a saved prior allocation")
@@ -580,7 +580,7 @@ talentState:Refresh()
 assert(talentState.autoSpendBtn._enabled, "AUTO-SPEND must remain clickable to explain a missing target")
 autoSpend(talentState.autoSpendBtn)
 assert(not leveling.enabled and rawget(talentState.levelingStatus, "_text")
-    == "Select a current-spec build before enabling AUTO-SPEND.",
+    == "Select a current-spec build before enabling Auto-Spend.",
     "a missing target must produce feedback instead of an inert AUTO-SPEND button")
 leveling.buildID = priorTarget
 talentState:Refresh()
@@ -621,7 +621,7 @@ talentState.selectedRow.sourceURL = ""
 talentState:UpdateDetails()
 assert(rawget(talentState.behaviorText, "_text"):find("user%-provided import", 1),
     "selected user-provided imports must state their unverified SBA provenance")
-assert(talentState.sourceBtn:IsShown() and rawget(talentState.sourceBtn._text, "_text") == "BUILD NOTES",
+assert(talentState.sourceBtn:IsShown() and rawget(talentState.sourceBtn._text, "_text") == "Build Notes",
     "user-provided imports without source URLs must expose their build notes")
 talentState.sourceBtn:GetScript("OnClick")(talentState.sourceBtn)
 assert(rawget(sourcePopup._provenance, "_text"):find("User%-provided import", 1),
@@ -660,13 +660,13 @@ NS.Config.SelectSection(5)
 assertActiveSectionInScrollRegion(5)
 local compactTalent = assert(newestSection(5), "compact Talent Builds content missing")
 local compactTalentState = assert(NS.BuildTalentBuildsConfigSection(compactTalent))
-local compactAssistTitle = assert(findTextWidget(compactTalent, "LEVELING TARGET"), "compact panel must keep leveling assist visible")
-local compactCatalogTitle = assert(findTextWidget(compactTalent, "TALENT BUILDS"), "compact panel must keep catalog title visible")
+local compactAssistTitle = assert(findTextWidget(compactTalent, "Leveling Target"), "compact panel must keep leveling assist visible")
+local compactCatalogTitle = assert(findTextWidget(compactTalent, "Talent Builds"), "compact panel must keep catalog title visible")
 local _, _, _, assistBottom = mock.rect(rawget(compactAssistTitle, "_parent"))
 local _, catalogTop = mock.rect(compactCatalogTitle)
 assert(catalogTop <= assistBottom - 20, "compact panel must reserve a gutter between leveling assist and catalog")
-local compactAlert = assert(findTextWidget(compactTalent, "SBA ALERT: OFF"), "compact panel must reserve the SBA alert option")
-local compactRespec = assert(findTextWidget(compactTalent, "RESPEC TO SBA"), "compact panel must reserve the SBA respec action")
+local compactAlert = assert(findTextWidget(compactTalent, "SBA Alert: Off"), "compact panel must reserve the SBA alert option")
+local compactRespec = assert(findTextWidget(compactTalent, "Respec to SBA"), "compact panel must reserve the SBA respec action")
 for _, control in ipairs({compactAlert:GetParent(), compactRespec:GetParent()}) do
     local l, t, r, b = mock.rect(control)
     local pl, pt, pr, pb = mock.rect(rawget(compactAssistTitle, "_parent"))

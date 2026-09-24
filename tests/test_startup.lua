@@ -38,6 +38,7 @@ local function run(hasMasque)
 
     assert(loadfile("Core/Functions/ButtonStyle.lua"))("BetterSBA", NS)
     assert(loadfile("GUI/MainButton.lua"))("BetterSBA", NS)
+    assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
     SlashCmdList = {}
     local before = #ui.frames
     assert(loadfile("BetterSBA.lua"))("BetterSBA", NS)
@@ -53,6 +54,19 @@ local function run(hasMasque)
     onEvent(eventFrame, "ADDON_LOADED", "BetterSBA")
 
     assert(NS.mainButton and NS.secureButton, "main and secure buttons must finish creation")
+    local pause = assert(NS.mainButton.pauseOverlay, "pause treatment must exist")
+    assert(not pause:IsShown(), "pause treatment must stay hidden until a pause reason applies")
+    pause:Show()
+    assert(pause.background and pause.bars[1].fill:IsShown()
+        and not pause.symbolText:IsShown() and not rawget(pause, "reasonBadge"),
+        "the translucent icon and bare reason are the default pause treatment")
+    NS.db.pauseSymbolStyle = "Text"
+    NS.ApplyButtonSettings()
+    assert(pause.symbolText:IsShown() and not pause.bars[1].fill:IsShown(),
+        "Text style keeps the original configurable pause font available")
+    NS.db.pauseSymbolStyle = "Emblem"
+    NS.ApplyButtonSettings()
+    pause:Hide()
     assert(type(SlashCmdList.BETTERSBA) == "function", "/bs must be registered after startup")
     if hasMasque then
         local regions = assert(NS.mainButton._masqueRegions, "Masque supplies native regions")

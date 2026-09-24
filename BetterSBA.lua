@@ -330,8 +330,12 @@ function NS:RegisterSlashCommands()
             else
                 print("  SBA: |cFFFF4444not found on action bar|r")
             end
+        elseif msg == "new" then
+            NS.SwitchSettingsPanel("studio")
+        elseif msg == "classic" then
+            NS.SwitchSettingsPanel("classic")
         else
-            NS.Config:Toggle()
+            NS.ToggleSettingsPanel()
         end
     end
 end

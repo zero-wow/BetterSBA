@@ -252,7 +252,7 @@ local function EnsureURLPopup(owner)
         self:SetVerticalScroll(math.max(0, math.min(maximum, self:GetVerticalScroll() - delta * 24)))
     end)
 
-    local close = CreateTextButton(popup, "CLOSE", 54, function()
+    local close = CreateTextButton(popup, "Close", 54, function()
         popup:Hide()
     end)
     close:SetPoint("BOTTOMRIGHT", -12, 10)
@@ -338,7 +338,7 @@ local function EnsureSBAWarningPopup()
     title:SetPoint("RIGHT", -14, 0)
     title:SetJustifyH("LEFT")
     title:SetTextColor(T.DANGER[1], T.DANGER[2], T.DANGER[3])
-    title:SetText("SBA TALENT MISMATCH")
+    title:SetText("SBA Talent Mismatch")
 
     local target = popup:CreateFontString(nil, "OVERLAY")
     target:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "OUTLINE")
@@ -369,9 +369,9 @@ local function EnsureSBAWarningPopup()
         self:SetVerticalScroll(math.max(0, math.min(maximum, self:GetVerticalScroll() - delta * 24)))
     end)
 
-    local dismiss = CreateTextButton(popup, "DISMISS", 58, function() end)
+    local dismiss = CreateTextButton(popup, "Dismiss", 58, function() end)
     dismiss:SetPoint("BOTTOMRIGHT", -14, 12)
-    local respec = CreateTextButton(popup, "RESPEC TO SBA", 104, function() end)
+    local respec = CreateTextButton(popup, "Respec to SBA", 104, function() end)
     respec:SetPoint("RIGHT", dismiss, "LEFT", -24, 0)
 
     popup._title, popup._target, popup._body = title, target, body
@@ -427,7 +427,7 @@ function NS.CheckTalentSBAWarning(assessment)
     popup._body:SetText((assessment.failure or assessment.message or "Your learned talents do not match the selected SBA target.")
         .. (assessment.mismatchDetails and ("\n\nDifferences from this target:\n" .. assessment.mismatchDetails) or "")
         .. "\n\n" .. (assessment.detail or "")
-        .. "\n\nRESPEC TO SBA resets your class, specialization, and hero talent points, then applies the selected target at your current level. This only happens after you press the button.")
+        .. "\n\nRespec To SBA resets your class, specialization, and hero talent points, then applies the selected target at your current level. This only happens after you press the button.")
     popup._bodyContent:SetHeight(math.max(160, popup._body:GetStringHeight() + 6))
     popup._bodyScroll:SetVerticalScroll(0)
     popup._body:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
@@ -614,12 +614,12 @@ local function EnsureDeletePopup(owner)
     body:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
     body:SetText("")
 
-    local cancel = CreateTextButton(popup, "CANCEL", 52, function()
+    local cancel = CreateTextButton(popup, "Cancel", 52, function()
         popup:Hide()
     end)
     cancel:SetPoint("BOTTOMRIGHT", -12, 10)
 
-    local confirm = CreateTextButton(popup, "DELETE", 52, function()
+    local confirm = CreateTextButton(popup, "Delete", 52, function()
         if popup._onConfirm then
             popup._onConfirm()
         end
@@ -747,7 +747,7 @@ local function EnsureTalentBuildEditorPopup(owner)
     for i = 1, #specs do
         local spec = specs[i]
         local width = math.max(72, math.floor((#(spec.name or "") * 4.6) + 18))
-        local btn = CreateChipButton(popup, (spec.name or ("Spec " .. i)):upper(), width, function()
+        local btn = CreateChipButton(popup, spec.name or ("Spec " .. i), width, function()
             popup:SetSelectedSpec(spec.specID)
         end)
         if i == 1 then
@@ -768,12 +768,12 @@ local function EnsureTalentBuildEditorPopup(owner)
     statusText:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
     statusText:SetText("")
 
-    local cancelBtn = CreateTextButton(popup, "CANCEL", 48, function()
+    local cancelBtn = CreateTextButton(popup, "Cancel", 48, function()
         popup:Hide()
     end)
     cancelBtn:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -14, 12)
 
-    local saveBtn = CreateTextButton(popup, "SAVE", 34, function()
+    local saveBtn = CreateTextButton(popup, "Save", 34, function()
         if not popup._selectedSpecID then
             popup:SetStatus("Pick a specialization before saving.", "error")
             return
@@ -1066,8 +1066,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
     parent._sectionColorBright = sectionBright
     parent._sectionColorDim = sectionDim
 
-    CreateSubHeader(parent, "LEVELING ASSIST", -8)
-    CreateSubHeader(parent, "BUILD CATALOG", headerY)
+    CreateSubHeader(parent, "Leveling Assist", -8)
+    CreateSubHeader(parent, "Build Catalog", headerY)
     local selectedHdr = nil
 
     local levelingPanel = CreateBackdropFrame(parent)
@@ -1080,7 +1080,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     levelingTitle:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
     levelingTitle:SetPoint("TOPLEFT", 12, -8)
     levelingTitle:SetTextColor(sectionBright[1], sectionBright[2], sectionBright[3])
-    levelingTitle:SetText("LEVELING TARGET")
+    levelingTitle:SetText("Leveling Target")
 
     local levelingSpec = levelingPanel:CreateFontString(nil, "OVERLAY")
     levelingSpec:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
@@ -1117,17 +1117,17 @@ function NS.BuildTalentBuildsConfigSection(parent)
     local levelingTooltip = {}
     NS.AddTooltip(levelingPanel, "Leveling assistant details", levelingTooltip, parent)
 
-    local useForLevelingBtn = CreateTextButton(levelingPanel, "USE FOR LEVELING", 112, function() end)
+    local useForLevelingBtn = CreateTextButton(levelingPanel, "Use for Leveling", 112, function() end)
     useForLevelingBtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -138, -10)
-    local autoSpendBtn = CreateTextButton(levelingPanel, "AUTO-SPEND: OFF", 112, function() end)
+    local autoSpendBtn = CreateTextButton(levelingPanel, "Auto-Spend: Off", 112, function() end)
     autoSpendBtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -14, -10)
-    local spendNextBtn = CreateTextButton(levelingPanel, "SPEND NEXT", 84, function() end)
+    local spendNextBtn = CreateTextButton(levelingPanel, "Spend Next", 84, function() end)
     spendNextBtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -138, -34)
-    local sbaWarningBtn = CreateTextButton(levelingPanel, "SBA ALERT: OFF", 112, function() end)
+    local sbaWarningBtn = CreateTextButton(levelingPanel, "SBA Alert: Off", 112, function() end)
     sbaWarningBtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -14, -34)
-    local respecSBABtn = CreateTextButton(levelingPanel, "RESPEC TO SBA", 104, function() end)
+    local respecSBABtn = CreateTextButton(levelingPanel, "Respec to SBA", 104, function() end)
     respecSBABtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -138, -58)
-    local undoRespecBtn = CreateTextButton(levelingPanel, "UNDO RESPEC", 104, function() end)
+    local undoRespecBtn = CreateTextButton(levelingPanel, "Undo Respec", 104, function() end)
     undoRespecBtn:SetPoint("TOPRIGHT", levelingPanel, "TOPRIGHT", -14, -58)
 
     local levelingHint = levelingPanel:CreateFontString(nil, "OVERLAY")
@@ -1144,7 +1144,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     title:SetFont(NS.GetConfigFontPath(), TITLE_FONT_SIZE, "OUTLINE")
     title:SetPoint("TOPLEFT", 14, -184)
     title:SetTextColor(sectionColor[1], sectionColor[2], sectionColor[3])
-    title:SetText("TALENT BUILDS")
+    title:SetText("Talent Builds")
 
     local subtitle = parent:CreateFontString(nil, "OVERLAY")
     subtitle:SetFont(NS.GetConfigFontPath(), SUBTITLE_FONT_SIZE, "")
@@ -1187,11 +1187,11 @@ function NS.BuildTalentBuildsConfigSection(parent)
     searchPlaceholder:SetText("Search builds, author, source...")
     searchPlaceholder:SetShown((NS.db.talentBuildSearchText or "") == "")
 
-    local allChip = CreateChipButton(parent, "ALL", 44, function() end)
+    local allChip = CreateChipButton(parent, "All", 44, function() end)
     allChip:SetPoint("TOPLEFT", parent, "TOPLEFT", chipStartX, -298)
-    local builtInChip = CreateChipButton(parent, "BUILT-IN", 74, function() end)
+    local builtInChip = CreateChipButton(parent, "Built-In", 74, function() end)
     builtInChip:SetPoint("LEFT", allChip, "RIGHT", 8, 0)
-    local userChip = CreateChipButton(parent, "USER", 52, function() end)
+    local userChip = CreateChipButton(parent, "User", 52, function() end)
     userChip:SetPoint("LEFT", builtInChip, "RIGHT", 8, 0)
 
     local typeButtons = {
@@ -1207,7 +1207,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     defaultSortLabel:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "OUTLINE")
     defaultSortLabel:SetPoint("LEFT", userChip, "RIGHT", 16, 0)
     defaultSortLabel:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
-    defaultSortLabel:SetText("Default sort")
+    defaultSortLabel:SetText("Default Sort")
 
     local sortReset = CreateSortResetButton(parent, function() end)
     sortReset:SetPoint("LEFT", defaultSortLabel, "RIGHT", 8, 0)
@@ -1235,7 +1235,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     detailsTitle:SetFont(NS.GetConfigFontPath(), 8, "OUTLINE")
     detailsTitle:SetPoint("TOPLEFT", 14, -12)
     detailsTitle:SetTextColor(sectionColor[1], sectionColor[2], sectionColor[3])
-    detailsTitle:SetText("SELECTED BUILD")
+    detailsTitle:SetText("Selected Build")
 
     local detailsName = detailsPanel:CreateFontString(nil, "OVERLAY")
     detailsName:SetFont(NS.GetConfigFontPath(), 10, "OUTLINE")
@@ -1304,7 +1304,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     behaviorText:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
     behaviorText:SetText("")
 
-    local sourceBtn = CreateTextButton(parent, "VIEW SOURCE", 78, function() end)
+    local sourceBtn = CreateTextButton(parent, "View Source", 78, function() end)
     sourceBtn:SetPoint("TOPLEFT", detailsPanel, "BOTTOMLEFT", 4, -10)
 
     local tableHeader = CreateBackdropFrame(tablePanel)
@@ -1450,18 +1450,18 @@ function NS.BuildTalentBuildsConfigSection(parent)
     end
     state.actionsRule = actionsRule
 
-    local applyBtn = CreateTextButton(parent, "APPLY BUILD", 82, function() end)
+    local applyBtn = CreateTextButton(parent, "Apply Build", 82, function() end)
     applyBtn:SetPoint("TOPLEFT", actionsRule, "BOTTOMLEFT", 0, -10)
-    local createBtn = CreateTextButton(parent, "CREATE", 46, function() end)
+    local createBtn = CreateTextButton(parent, "Create", 46, function() end)
     createBtn:SetPoint("LEFT", applyBtn, "RIGHT", 28, 0)
-    local editBtn = CreateTextButton(parent, "EDIT", 28, function() end)
+    local editBtn = CreateTextButton(parent, "Edit", 28, function() end)
     editBtn:SetPoint("LEFT", createBtn, "RIGHT", 28, 0)
-    local deleteBtn = CreateTextButton(parent, "DELETE", 42, function() end)
+    local deleteBtn = CreateTextButton(parent, "Delete", 42, function() end)
     deleteBtn:SetPoint("LEFT", editBtn, "RIGHT", 28, 0)
-    local copyBtn = CreateTextButton(parent, "COPY", 30, function() end)
+    local copyBtn = CreateTextButton(parent, "Copy", 30, function() end)
     copyBtn:SetPoint("LEFT", deleteBtn, "RIGHT", 28, 0)
 
-    local loadAnywayBtn = CreateTextButton(parent, "LOAD ANYWAY", 92, function() end)
+    local loadAnywayBtn = CreateTextButton(parent, "Load Anyway", 92, function() end)
     loadAnywayBtn:SetPoint("TOPRIGHT", tablePanel, "BOTTOMRIGHT", 0, -10)
     loadAnywayBtn:Hide()
 
@@ -1766,7 +1766,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
                 sourceButtons[i] = btn
             end
             btn._source = source
-            btn._text:SetText(source:upper())
+            btn._text:SetText(source)
             local btnW = math.min(math.max(56, btn._text:GetStringWidth() + 20), rightEdge - chipStartX)
             if cursorX + btnW > rightEdge and cursorX > chipStartX then
                 rowIndex = rowIndex + 1
@@ -1999,7 +1999,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
         if row.id ~= NS.TALENT_BUILD_CUSTOM_ID and (row.sourceURL and row.sourceURL ~= "" or row.notes and row.notes ~= "") then
             sourceBtn:Show()
             sourceBtn:SetEnabledState(true)
-            sourceBtn._text:SetText(row.sourceURL and row.sourceURL ~= "" and "VIEW SOURCE" or "BUILD NOTES")
+            sourceBtn._text:SetText(row.sourceURL and row.sourceURL ~= "" and "View Source" or "Build Notes")
         else
             sourceBtn:Hide()
             sourceBtn:SetEnabledState(false)
@@ -2046,7 +2046,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
         elseif selectedRow and selectedRow.id == NS.TALENT_BUILD_CUSTOM_ID then
             status = "Select a current-spec catalog build for leveling. Custom clears the leveling target."
         elseif selectedRow and selectedRow.specID == activeSpecID and targetID == NS.TALENT_BUILD_CUSTOM_ID then
-            status = "Click AUTO-SPEND to use the selected build and spend available points."
+            status = "Click Auto-Spend to use the selected build and spend available points."
         end
 
         levelingSpec:SetText("Active spec: " .. specName)
@@ -2061,8 +2061,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
         local sourceSummary = qualificationLower:find("unverified", 1, true) and "source unverified" or "source noted"
         local orderSummary = qualificationLower:find("curated", 1, true) and "curated/prerequisite order" or "prerequisite order"
         levelingStatus:SetText(ShortenText(fullStatus, 38) .. " | " .. sourceSummary .. "; " .. orderSummary)
-        autoSpendBtn._text:SetText(enabled and "AUTO-SPEND: ON" or "AUTO-SPEND: OFF")
-        sbaWarningBtn._text:SetText(assessment and assessment.warningEnabled == true and "SBA ALERT: ON" or "SBA ALERT: OFF")
+        autoSpendBtn._text:SetText(enabled and "Auto-Spend: On" or "Auto-Spend: Off")
+        sbaWarningBtn._text:SetText(assessment and assessment.warningEnabled == true and "SBA Alert: On" or "SBA Alert: Off")
 
         local selectedUsableBuild = selectedRow
             and selectedRow.specID == activeSpecID
@@ -2175,7 +2175,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
             local row = state.selectedRow
             if not row or row.specID ~= NS.GetTalentBuildCurrentSpecID() or row.id == NS.TALENT_BUILD_CUSTOM_ID then
                 state:Refresh()
-                Report("Select a current-spec build before enabling AUTO-SPEND.")
+                Report("Select a current-spec build before enabling Auto-Spend.")
                 return
             end
             local selected, reason = NS.SetTalentLevelingTarget(row.id)
@@ -2192,9 +2192,9 @@ function NS.BuildTalentBuildsConfigSection(parent)
         elseif ok then
             local latest = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or nil
             local feedback = not enabled and (latest and latest.hasMismatch
-                and "AUTO-SPEND is on, but current talents conflict with the target. Use SBA: SPEND ALL to rebuild them."
-                or "AUTO-SPEND is on. " .. (latest and latest.status or "Waiting for talent data."))
-                or "AUTO-SPEND is off."
+                and "Auto-Spend is on, but current talents conflict with the target. Use SBA: Spend All to rebuild them."
+                or "Auto-Spend is on. " .. (latest and latest.status or "Waiting for talent data."))
+                or "Auto-Spend is off."
             print("|cFF66B8D9BetterSBA|r: " .. feedback)
         end
     end)

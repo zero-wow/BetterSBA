@@ -310,7 +310,7 @@ local function ReadLoadoutContent(importStream, treeID)
     return results
 end
 
-local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent)
+local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent, includeDeferred)
     local results = {}
     local treeNodes = C_Traits.GetTreeNodes(treeID)
     if not treeNodes then return nil, "Talent tree unavailable" end
@@ -319,54 +319,72 @@ local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent)
         if encoded and encoded.isNodeSelected and not encoded.isNodeGranted then
             local nodeID = treeNodes[i]
             local node = C_Traits.GetNodeInfo(configID, nodeID)
-            if not node then return nil, "Unable to read node info" end
-            local entries = node.entryIDs
-            if not entries or #entries == 0 then return nil, "Talent node has no entries" end
-            local selectedEntryID = encoded.isChoiceNode and entries[encoded.choiceNodeSelection] or entries[1]
-            if encoded.isChoiceNode and not selectedEntryID then return nil, "Invalid choice-node selection" end
-            local entryInfo = selectedEntryID and C_Traits.GetEntryInfo and C_Traits.GetEntryInfo(configID, selectedEntryID)
-            -- The live hero selector may report no spendable maxRanks while an
-            -- inactive subtree is displayed. Its entry's subTreeID identifies
-            -- the one-rank selection even if the node type is not yet stable.
-            local isSubTreeChoice = node.type == Enum.TraitNodeType.SubTreeSelection
-                or (encoded.isChoiceNode and entryInfo and entryInfo.subTreeID ~= nil)
-            local maxRanks = isSubTreeChoice and 1 or node.maxRanks
-            local missingChoiceRanks = encoded.isChoiceNode
-                and (type(maxRanks) ~= "number" or maxRanks < 1)
-            if missingChoiceRanks then maxRanks = 1 end
-            local ranks = encoded.isPartiallyRanked and encoded.partialRanksPurchased or maxRanks
-            if type(maxRanks) ~= "number" or maxRanks < 1 or type(ranks) ~= "number"
-                or ranks % 1 ~= 0 or ranks < 1 or ranks > maxRanks then
-                return nil, "Invalid purchased rank count for talent node " .. tostring(nodeID)
-                    .. " (import " .. tostring(ranks) .. ", capacity " .. tostring(maxRanks) .. ")"
-            end
-            local choice = node.type == Enum.TraitNodeType.Selection or isSubTreeChoice or missingChoiceRanks
-            if encoded.isChoiceNode ~= choice then return nil, "Build node type does not match this talent tree" end
-            if Enum.TraitNodeType.Tiered and node.type == Enum.TraitNodeType.Tiered then
-                if not C_Traits.GetEntryInfo then return nil, "Tiered talent API unavailable" end
-                local remaining = ranks
-                for j = 1, #entries do
-                    if remaining == 0 then break end
-                    local entryID = entries[j]
-                    local info = C_Traits.GetEntryInfo(configID, entryID)
-                    local capacity = info and info.maxRanks
-                    if type(capacity) ~= "number" or capacity < 1 or capacity % 1 ~= 0 then
-                        return nil, "Unable to read tiered talent ranks"
-                    end
-                    local purchased = math.min(remaining, capacity)
-                    results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = purchased, selectionEntryID = entryID }
-                    remaining = remaining - purchased
+            local entries = node and node.entryIDs
+            -- At low levels the live config omits entries for locked hero
+            -- talents, although the max-level export still selects them. The
+            -- leveling plan retains the encoded rank and choice index until
+            -- the live entries unlock; full imports omit deferred rows.
+            local deferredNoEntries = not entries or #entries == 0
+            local deferredNoRanks = node and not encoded.isChoiceNode
+                and (type(node.maxRanks) ~= "number" or node.maxRanks < 1)
+            -- No entry ID means this node cannot be purchased in this live
+            -- config, regardless of how its availability flags are reported.
+            if (deferredNoEntries or deferredNoRanks) and includeDeferred then
+                if encoded.isPartiallyRanked and (type(encoded.partialRanksPurchased) ~= "number"
+                    or encoded.partialRanksPurchased < 1 or encoded.partialRanksPurchased % 1 ~= 0) then
+                    return nil, "Invalid deferred talent rank for node " .. tostring(nodeID)
                 end
-                if remaining ~= 0 then return nil, "Tiered talent rank count exceeds its entries" end
-            else
-                results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = ranks, selectionEntryID = selectedEntryID }
+                results[#results + 1] = { nodeID = nodeID, deferred = true,
+                    ranksPurchased = encoded.isPartiallyRanked and encoded.partialRanksPurchased or nil,
+                    fullRank = not encoded.isPartiallyRanked,
+                    choiceIndex = encoded.isChoiceNode and encoded.choiceNodeSelection or nil }
+            elseif not deferredNoEntries and not deferredNoRanks then
+                local selectedEntryID = encoded.isChoiceNode and entries[encoded.choiceNodeSelection] or entries[1]
+                if encoded.isChoiceNode and not selectedEntryID then return nil, "Invalid choice-node selection" end
+                local entryInfo = selectedEntryID and C_Traits.GetEntryInfo and C_Traits.GetEntryInfo(configID, selectedEntryID)
+                -- The live hero selector may report no spendable maxRanks while an
+                -- inactive subtree is displayed. Its entry's subTreeID identifies
+                -- the one-rank selection even if the node type is not yet stable.
+                local isSubTreeChoice = node.type == Enum.TraitNodeType.SubTreeSelection
+                    or (encoded.isChoiceNode and entryInfo and entryInfo.subTreeID ~= nil)
+                local maxRanks = isSubTreeChoice and 1 or node.maxRanks
+                local missingChoiceRanks = encoded.isChoiceNode
+                    and (type(maxRanks) ~= "number" or maxRanks < 1)
+                if missingChoiceRanks then maxRanks = 1 end
+                local ranks = encoded.isPartiallyRanked and encoded.partialRanksPurchased or maxRanks
+                if type(maxRanks) ~= "number" or maxRanks < 1 or type(ranks) ~= "number"
+                    or ranks % 1 ~= 0 or ranks < 1 or ranks > maxRanks then
+                    return nil, "Invalid purchased rank count for talent node " .. tostring(nodeID)
+                        .. " (import " .. tostring(ranks) .. ", capacity " .. tostring(maxRanks) .. ")"
+                end
+                local choice = node.type == Enum.TraitNodeType.Selection or isSubTreeChoice or missingChoiceRanks
+                if encoded.isChoiceNode ~= choice then return nil, "Build node type does not match this talent tree" end
+                if Enum.TraitNodeType.Tiered and node.type == Enum.TraitNodeType.Tiered then
+                    if not C_Traits.GetEntryInfo then return nil, "Tiered talent API unavailable" end
+                    local remaining = ranks
+                    for j = 1, #entries do
+                        if remaining == 0 then break end
+                        local entryID = entries[j]
+                        local info = C_Traits.GetEntryInfo(configID, entryID)
+                        local capacity = info and info.maxRanks
+                        if type(capacity) ~= "number" or capacity < 1 or capacity % 1 ~= 0 then
+                            return nil, "Unable to read tiered talent ranks"
+                        end
+                        local purchased = math.min(remaining, capacity)
+                        results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = purchased, selectionEntryID = entryID }
+                        remaining = remaining - purchased
+                    end
+                    if remaining ~= 0 then return nil, "Tiered talent rank count exceeds its entries" end
+                else
+                    results[#results + 1] = { nodeID = nodeID, ranksGranted = 0, ranksPurchased = ranks, selectionEntryID = selectedEntryID }
+                end
             end
         end
     end
     return results
 end
 
-local function BuildImportEntryInfo(importString, specID, configID)
+local function BuildImportEntryInfo(importString, specID, configID, includeDeferred)
     if not importString or importString == "" then
         return nil, "Build string missing"
     end
@@ -402,7 +420,8 @@ local function BuildImportEntryInfo(importString, specID, configID)
     end
     local okContent, loadoutContent = pcall(ReadLoadoutContent, importStream, treeID)
     if not okContent then return nil, "Invalid or incomplete build content" end
-    local okEntries, entries, errorText = pcall(ConvertToImportLoadoutEntryInfo, configID, treeID, loadoutContent)
+    local okEntries, entries, errorText = pcall(ConvertToImportLoadoutEntryInfo,
+        configID, treeID, loadoutContent, includeDeferred)
     if not okEntries then return nil, "Unable to read build nodes" end
     return entries, errorText
 end
@@ -454,7 +473,7 @@ end
 
 -- Shared decoder: a leveling target describes purchased ranks, never a reset.
 function NS.DecodeTalentBuildTarget(entry, configID)
-    return BuildImportEntryInfo(entry.importString, entry.specID, configID)
+    return BuildImportEntryInfo(entry.importString, entry.specID, configID, true)
 end
 
 function NS.IsTalentBuildImportPending()

@@ -44,6 +44,7 @@ GUI\PriorityDisplay.lua
 GUI\ManualCooldownReminders.lua
 GUI\TalentBuildsPanel.lua
 GUI\Config.lua
+GUI\ConfigStudio.lua
 GUI\TalentTreeButton.lua
 
 # Main

@@ -245,6 +245,60 @@ do
         "the locked hero talent remains a future target after the class point commits")
 end
 
+-- A selected build still has a complete encoded hero choice even when the
+-- current level supplies no entry ID for it. Reset both sides only on the
+-- deliberate rebuild action, then stop at the last legal rank for this level.
+do
+    local h = makeHarness({ rows = {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 7, ranksPurchased = 1, deferred = true, choiceIndex = 1 },
+    }, treeNodes = { 1, 7, 99 } })
+    h.useBudgets = true
+    h.nodes[7] = { ranksPurchased = 0, canPurchaseRank = false, isAvailable = false,
+        posY = 3, type = Enum.TraitNodeType.SubTreeSelection, entryIDs = {} }
+    h.nodes[99] = { ranksPurchased = 1, canPurchaseRank = false, type = 1 }
+    h.costs[7] = { { ID = 3, amount = 1 } }
+    h.costs[99] = { { ID = 1, amount = 1 } }
+    h.currencies[10] = { { traitCurrencyID = 1, quantity = 0 }, { traitCurrencyID = 3, quantity = 0 } }
+    h:selectTarget("A")
+    local assessment = h.NS.GetTalentSBAAssessment()
+    check(assessment.hasMismatch and assessment.canRespec,
+        "a locked hero choice must not prevent identifying an off-target class talent")
+    local ok = h.NS.SpendAllOrRespecTalentPoints()
+    check(ok and h.resets == 1 and h.purchases == 1 and h.purchaseOrder[1] == 1,
+        "rebuild must reset the tree and spend only the currently legal class rank")
+    check(h.nodes[7].ranksPurchased == 0 and h.nodes[99].ranksPurchased == 0,
+        "locked hero and off-target ranks must stay unpurchased")
+    h:confirm()
+    check(h:info().status:find("Waiting for unavailable talents", 1, true),
+        "the retained hero choice must remain pending until its tree unlocks")
+end
+
+-- Some clients do not expose NodeInfo at all for a locked hero node. Saving,
+-- verifying and undoing a low-level rebuild must still cover both sides.
+do
+    local h = makeHarness({ rows = {
+        { nodeID = 1, ranksPurchased = 1, selectionEntryID = 101 },
+        { nodeID = 7, deferred = true, fullRank = true, choiceIndex = 1 },
+    }, treeNodes = { 1, 7, 99 } })
+    h.useBudgets = true
+    h.nodes[99] = { ranksPurchased = 1, type = 1, canPurchaseRank = true,
+        isAvailable = true, entryIDs = { 991 } }
+    h.costs[99] = { { ID = 1, amount = 1 } }
+    h.currencies[10][1].quantity = 0
+    h:selectTarget("A")
+    check(h.NS.GetTalentSBAAssessment().canRespec, "an absent locked node must allow a rebuild")
+    check(h.NS.RequestTalentSBARespec(), "rebuild must accept an absent locked node")
+    check(h.resets == 1 and h.purchases == 1 and h.nodes[1].ranksPurchased == 1,
+        "the refunded class point must go only to an available target rank")
+    h:confirm()
+    local undoOK, undoMessage = h.NS.RequestTalentSBAUndo()
+    check(undoOK, "undo must accept the absent locked node too: " .. tostring(undoMessage))
+    h:confirm()
+    check(h.nodes[99].ranksPurchased == 1 and h.nodes[1].ranksPurchased == 0,
+        "undo must restore the prior class allocation")
+end
+
 -- A rejected rank must roll back the entire staged batch; an incompatible
 -- current allocation must be rejected before the first purchase.
 do
@@ -497,6 +551,24 @@ local function makeRespecHarness(points)
     return h
 end
 
+-- The rebuild switch is independent of the warning. A chosen route can stay
+-- enabled without resetting anything until this separate option is turned on.
+do
+    local h = makeRespecHarness()
+    check(h.NS.SetTalentLevelingEnabled(true), "automatic spending must accept a selected route")
+    h:runDue(.25)
+    check(h.resets == 0 and h.nodes[99].ranksPurchased == 1,
+        "automatic spending alone must not reset a mismatched tree")
+    check(h.NS.SetTalentAutoRespecEnabled(true), "automatic rebuild switch must save")
+    h:runDue(.25)
+    check(h.resets == 1 and h.commits == 1 and h.purchases == 1
+        and h.nodes[99].ranksPurchased == 0,
+        "opted-in automatic rebuild must reset and spend only current-level legal ranks")
+    h:confirm(); h:runDue(.25)
+    check(h.resets == 1 and not h.NS.GetTalentSBAAssessment().hasMismatch,
+        "successful automatic rebuild must not repeat after confirmation")
+end
+
 -- Warnings assess the selected target with auto-spend off, are opt-in per
 -- character/spec, and never cause a reset or repeatedly alert on trait events.
 do
@@ -639,15 +711,10 @@ end
 -- Every failure before successful commit restores the original allocation,
 -- including APIs which return failure after partially mutating staged state.
 do
-    for _, failure in ipairs({ "reset", "purchase", "empty", "refund", "validation", "commit", "unexpected" }) do
+    for _, failure in ipairs({ "reset", "purchase", "validation", "commit", "unexpected" }) do
         local h = makeRespecHarness(1)
         if failure == "reset" then h.resetSucceeds = false
         elseif failure == "purchase" then h.failPurchaseAt = 2
-        elseif failure == "empty" then h.nodes[1].canPurchaseRank = false; h.nodes[2].canPurchaseRank = false
-        elseif failure == "refund" then
-            h.nodes[99].ranksPurchased = 2
-            h.nodes[2].canPurchaseRank = false
-            h.currencies[10][1].quantity = 0
         elseif failure == "validation" then h.readyForCommit = false
         elseif failure == "commit" then h.commitSucceeds = false
         elseif failure == "unexpected" then h.onPurchase = function() h.nodes[99].ranksPurchased = 1 end end
@@ -657,8 +724,28 @@ do
         check(h.nodes[99].ranksPurchased == beforeRank and h.nodes[1].ranksPurchased == 0
             and h.nodes[2].ranksPurchased == 0 and h.currencies[10][1].quantity == beforeCurrency and not h.staged,
             "failure must preserve original ranks and points: " .. failure)
-        check(h.commits == (failure == "commit" and 1 or 0), "invalid/empty/underallocated plan must never be committed: " .. failure)
+        check(h.commits == (failure == "commit" and 1 or 0), "an invalid plan must never be committed: " .. failure)
     end
+end
+
+-- A target may have no purchasable rank yet, or fewer current-level ranks
+-- than refunded points. Rebuild leaves those points unspent for later levels.
+do
+    local empty = makeRespecHarness(1)
+    empty.nodes[1].canPurchaseRank, empty.nodes[2].canPurchaseRank = false, false
+    local ok, message = empty.NS.RequestTalentSBARespec()
+    check(ok and message:find("no ranks available", 1, true) and empty.commits == 1
+        and empty.purchases == 0 and empty.nodes[99].ranksPurchased == 0
+        and empty.currencies[10][1].quantity == 2,
+        "rebuild must permit a clean zero-rank allocation while the target is locked")
+    empty:confirm()
+    local partial = makeRespecHarness()
+    partial.nodes[99].ranksPurchased = 2
+    partial.nodes[2].canPurchaseRank = false
+    local partialOK = partial.NS.RequestTalentSBARespec()
+    check(partialOK and partial.commits == 1 and partial.purchases == 1
+        and partial.currencies[10][1].quantity == 1,
+        "rebuild must leave a refunded point unspent when no target rank is legal")
 end
 
 -- Class, spec and hero currencies are independent; the selected hero choice

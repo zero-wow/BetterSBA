@@ -80,7 +80,7 @@ local function AttachButton()
     -- left side for loadout/search. This puts us in the gutter between them.
     button:SetPoint("RIGHT", apply, "LEFT", -16, 0)
     button:SetFrameLevel(math.max(talents:GetFrameLevel() + 1, apply:GetFrameLevel() + 1))
-    button:SetText("SBA: SPEND ALL")
+    button:SetText("SBA: Spend All")
     button._altText = "SBA: Spend all available talent points toward your selected build"
     SkinButton(button)
     button:SetScript("OnClick", function()

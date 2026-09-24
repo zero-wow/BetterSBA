@@ -225,6 +225,9 @@ NS.defaults = {
     showActiveGlow = true,
     configPanelBaseHeight = 480,
     configPanelHeight = 620,
+    configExperience = "classic",
+    configStudioWidth = 1120,
+    configStudioHeight = 790,
 
     -- Visibility
     onlyInCombat = false,
@@ -252,6 +255,7 @@ NS.defaults = {
     pauseSymbolOutline = "OUTLINE",
     pauseSymbolFontOverride = false,
     pauseSymbolFontSize = 14,
+    pauseSymbolStyle = "Emblem",
     pauseReasonFont = "Friz Quadrata TT",
     pauseReasonOutline = "OUTLINE",
     pauseReasonFontOverride = false,
@@ -497,11 +501,7 @@ NS.PARTICLE_STYLE_DEFAULTS = {
 -- AddonCompartment (minimap menu in 12.x+)
 ----------------------------------------------------------------
 function BetterSBA_OnAddonCompartmentClick(addonName, buttonName)
-    if buttonName == "RightButton" then
-        NS.Config:Toggle()
-    else
-        NS.Config:Toggle()
-    end
+    NS.ToggleSettingsPanel()
 end
 
 function BetterSBA_OnAddonCompartmentEnter(addonName, menuButtonFrame)
