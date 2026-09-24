@@ -574,6 +574,16 @@ customCatalogRow:GetScript("OnClick")(customCatalogRow)
 assert(not talentState.useForLevelingBtn._enabled
     and rawget(talentState.levelingStatus, "_text"):find("Select a current%-spec"),
     "Custom must not be usable as a leveling target")
+local priorTarget = leveling.buildID
+leveling.buildID = "CUSTOM"
+talentState:Refresh()
+assert(talentState.autoSpendBtn._enabled, "AUTO-SPEND must remain clickable to explain a missing target")
+autoSpend(talentState.autoSpendBtn)
+assert(not leveling.enabled and rawget(talentState.levelingStatus, "_text")
+    == "Select a current-spec build before enabling AUTO-SPEND.",
+    "a missing target must produce feedback instead of an inert AUTO-SPEND button")
+leveling.buildID = priorTarget
+talentState:Refresh()
 offSpecCatalogRow:GetScript("OnClick")(offSpecCatalogRow)
 assert(not talentState.useForLevelingBtn._enabled
     and rawget(talentState.behaviorText, "_text"):find("OFF%-SPEC BUILD")

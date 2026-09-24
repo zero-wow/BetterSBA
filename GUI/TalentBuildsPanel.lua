@@ -2068,7 +2068,9 @@ function NS.BuildTalentBuildsConfigSection(parent)
             and selectedRow.specID == activeSpecID
             and selectedRow.id ~= NS.TALENT_BUILD_CUSTOM_ID
         useForLevelingBtn:SetEnabledState(selectedUsableBuild and true or false)
-        autoSpendBtn:SetEnabledState(targetID ~= NS.TALENT_BUILD_CUSTOM_ID or selectedUsableBuild == true)
+        -- Keep this clickable even before a target is selected so a failed or
+        -- missing selection produces an explanation instead of a dead control.
+        autoSpendBtn:SetEnabledState(activeSpecID ~= nil)
         spendNextBtn:SetEnabledState(not enabled and info.canSpend == true)
         sbaWarningBtn:SetEnabledState(activeSpecID ~= nil)
         respecSBABtn:SetEnabledState(assessment and assessment.hasMismatch == true and assessment.canRespec == true)
@@ -2160,6 +2162,11 @@ function NS.BuildTalentBuildsConfigSection(parent)
     end)
 
     autoSpendBtn:SetCallback(function()
+        local function Report(message)
+            if not message or message == "" then return end
+            levelingStatus:SetText(message)
+            print("|cFF66B8D9BetterSBA|r: " .. message)
+        end
         local info = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or nil
         local targetState = NS.GetTalentLevelingState and NS.GetTalentLevelingState(NS.GetTalentBuildCurrentSpecID()) or nil
         local enabled = (info and info.enabled == true) or (targetState and targetState.enabled == true)
@@ -2168,20 +2175,27 @@ function NS.BuildTalentBuildsConfigSection(parent)
             local row = state.selectedRow
             if not row or row.specID ~= NS.GetTalentBuildCurrentSpecID() or row.id == NS.TALENT_BUILD_CUSTOM_ID then
                 state:Refresh()
-                levelingStatus:SetText("Select a current-spec build before enabling AUTO-SPEND.")
+                Report("Select a current-spec build before enabling AUTO-SPEND.")
                 return
             end
             local selected, reason = NS.SetTalentLevelingTarget(row.id)
             if not selected then
                 state:Refresh()
-                levelingStatus:SetText(reason or "Unable to set this leveling target.")
+                Report(reason or "Unable to set this leveling target.")
                 return
             end
         end
         local ok, message = NS.SetTalentLevelingEnabled(not enabled)
         state:Refresh()
         if not ok and message and message ~= "" then
-            levelingStatus:SetText(message)
+            Report(message)
+        elseif ok then
+            local latest = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or nil
+            local feedback = not enabled and (latest and latest.hasMismatch
+                and "AUTO-SPEND is on, but current talents conflict with the target. Use SBA: SPEND ALL to rebuild them."
+                or "AUTO-SPEND is on. " .. (latest and latest.status or "Waiting for talent data."))
+                or "AUTO-SPEND is off."
+            print("|cFF66B8D9BetterSBA|r: " .. feedback)
         end
     end)
 
