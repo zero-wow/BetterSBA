@@ -1598,11 +1598,11 @@ function NS.Config:Create()
 
     if NS.db.castFeedback == "Motion" then
         local presetRow = NS.CreateOptionsDropdown(c, "Motion Preset", "motionPreset",
-            {"Pulse", "Echo", "Sweep"}, y, function()
+            {"Pulse", "Echo", "Sweep", "Sheen", "Snap", "Orbit"}, y, function()
                 if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
             end)
         NS.AddTooltip(presetRow, "Motion Preset", {
-            "Select the effect layer shown when SBA casts.",
+            "Select the effect shown when SBA casts: ripples, icon echoes, traveling light, a diagonal sheen, a quick snap, or a rim orbit.",
         }, c)
         y = y - 46
 

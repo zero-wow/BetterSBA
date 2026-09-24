@@ -53,7 +53,7 @@ It also gives you a **rotation queue display** showing your full SBA spell pool 
 
 ## Animations
 
-The current development build adds **Motion**, a separate lightweight feedback system with **Pulse**, **Echo**, and **Sweep** presets. Choose it under **Appearance → Cast Feedback**. **Reduced Motion** uses a brief stationary rim flash; **Off** disables cast feedback. **Classic** retains the original clone and particle controls. Preview buttons play once.
+The current development build adds **Motion**, a separate lightweight feedback system with **Pulse**, **Echo**, **Sweep**, **Sheen**, **Snap**, and **Orbit** presets. Choose it under **Appearance → Cast Feedback**. Sheen moves a diagonal glint over the button, Snap gives a short compressed hit and release, and Orbit moves a small light around the rim. **Reduced Motion** uses a brief stationary rim flash for every preset; **Off** disables cast feedback. **Classic** retains the original clone and particle controls. Preview buttons play once.
 
 **Active Display → Button Style** selects **Soft** (rounded icon, quiet edge lighting, and a readable keycap) or **Classic** (the existing square/Masque appearance). The secure casting overlay stays fixed while feedback animates around the display.
 

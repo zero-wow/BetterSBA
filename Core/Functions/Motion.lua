@@ -50,6 +50,7 @@ end
 
 local function StopLayer(layer)
     if not layer then return end
+    if rawget(layer, "orbitAG") then layer.orbitAG:Stop() end
     if layer.ag then layer.ag:Stop() end
     layer:SetAlpha(1)
     layer:SetScale(1)
@@ -211,9 +212,13 @@ local function RunSweep(duration, intensity)
     local rim = motion.layers[2]
     local glow = motion.layers[3]
 
-    -- A short light moves along the lower edge, then dissolves. Its geometry
-    -- is prepared with the pool; a cast only changes animation parameters.
+    -- A short light moves along the lower edge, then dissolves. Reuse the
+    -- pooled streak after Sheen or Orbit may have repositioned it.
     sweep.tex:Hide()
+    sweep.edge:ClearAllPoints()
+    sweep.edge:SetSize(motion.width * 0.28, 4)
+    sweep.edge:SetPoint("CENTER", sweep, "BOTTOM", -motion.width * 0.36, 2)
+    sweep.edge:SetRotation(0)
     sweep.edge:SetVertexColor(r, g, b, 1)
     sweep.edge:Show()
     ConfigureLayer(sweep, duration, 0, 0.95 * intensity, 0, 1,
@@ -229,8 +234,86 @@ local function RunSweep(duration, intensity)
     PlayLayer(glow)
 end
 
--- Initializes and lays out the pool out of combat.  Integration code may call
--- this after button-size/style changes; gameplay calls never change geometry.
+local function RunSheen(duration, intensity)
+    local r, g, b = GetAccent()
+    local sheen = motion.layers[1]
+    local rim = motion.layers[2]
+    local glow = motion.layers[3]
+
+    sheen.tex:Hide()
+    sheen.edge:ClearAllPoints()
+    sheen.edge:SetSize(math.max(3, motion.width * 0.10), motion.width * 1.30)
+    sheen.edge:SetPoint("CENTER", sheen, "CENTER", -motion.width * 0.58, 0)
+    sheen.edge:SetRotation(math.pi / 9)
+    sheen.edge:SetVertexColor(r, g, b, 0.70)
+    sheen.edge:Show()
+    ConfigureLayer(sheen, duration * 0.85, 0, 0.55 * intensity, 0, 1,
+        motion.width * 1.16, 0, "IN_OUT")
+    PlayLayer(sheen)
+
+    SetLayerTexture(rim, GetRingTexture(), r, g, b, 0.30 + intensity * 0.18)
+    ConfigureLayer(rim, duration * 0.85, 0, 0.32 * intensity, 0, 1.03, 0, 0, "IN_OUT")
+    PlayLayer(rim)
+
+    SetLayerTexture(glow, GLOW, r, g, b, 0.12 + intensity * 0.12)
+    ConfigureLayer(glow, duration * 0.50, duration * 0.12, 0.25 * intensity, 0,
+        1, 0, 0, "OUT")
+    PlayLayer(glow)
+end
+
+local function RunSnap(duration, intensity)
+    local r, g, b = GetAccent()
+    local hit = motion.layers[1]
+    local release = motion.layers[2]
+    local glow = motion.layers[3]
+    local ring = GetRingTexture()
+    local hitTime = math.min(duration * 0.30, 0.12)
+
+    SetLayerTexture(hit, ring, r, g, b, 0.65 + intensity * 0.25)
+    ConfigureLayer(hit, hitTime, 0, 0.85 * intensity, 0, 0.88, 0, 0, "IN")
+    PlayLayer(hit)
+
+    SetLayerTexture(release, ring, r, g, b, 0.48 + intensity * 0.22)
+    ConfigureLayer(release, duration * 0.48, hitTime * 0.65, 0.62 * intensity, 0,
+        1.12, 0, 0, "OUT")
+    PlayLayer(release)
+
+    SetLayerTexture(glow, GLOW, r, g, b, 0.28 + intensity * 0.18)
+    ConfigureLayer(glow, duration * 0.30, 0, 0.52 * intensity, 0, 1.02, 0, 0, "OUT")
+    PlayLayer(glow)
+end
+
+local function RunOrbit(duration, intensity)
+    local r, g, b = GetAccent()
+    local spark = motion.layers[1]
+    local rim = motion.layers[2]
+    local glow = motion.layers[3]
+
+    spark.tex:Hide()
+    spark.edge:ClearAllPoints()
+    spark.edge:SetSize(motion.width * 0.22, 4)
+    spark.edge:SetPoint("CENTER", spark, "BOTTOM", 0, 2)
+    spark.edge:SetRotation(0)
+    spark.edge:SetVertexColor(r, g, b, 0.85)
+    spark.edge:Show()
+    ConfigureLayer(spark, duration, 0, 0.72 * intensity, 0, 1, 0, 0, "IN_OUT")
+    PlayLayer(spark)
+    spark.orbitRotation:SetDuration(duration)
+    spark.orbitRotation:SetDegrees(320)
+    spark.orbitAG:Play()
+
+    SetLayerTexture(rim, GetRingTexture(), r, g, b, 0.30 + intensity * 0.20)
+    ConfigureLayer(rim, duration, 0, 0.46 * intensity, 0, 1.02, 0, 0, "IN_OUT")
+    PlayLayer(rim)
+
+    SetLayerTexture(glow, GLOW, r, g, b, 0.12 + intensity * 0.12)
+    ConfigureLayer(glow, duration * 0.60, duration * 0.12, 0.22 * intensity, 0,
+        1, 0, 0, "OUT")
+    PlayLayer(glow)
+end
+
+-- Creates the pooled frames and refreshes their base size out of combat.
+-- Presets can reposition only the unprotected streak texture during combat.
 function NS.InitializeMotionFeedback()
     local button = NS.mainButton
     if not button then return false end
@@ -244,6 +327,10 @@ function NS.InitializeMotionFeedback()
         for index = 1, MAX_LAYERS do
             motion.layers[index] = CreateLayer(host)
         end
+        local spark = motion.layers[1]
+        spark.orbitAG = spark.edge:CreateAnimationGroup()
+        spark.orbitRotation = spark.orbitAG:CreateAnimation("Rotation")
+        spark.orbitRotation:SetSmoothing("NONE")
         motion.host = host
     end
 
@@ -257,6 +344,7 @@ function NS.InitializeMotionFeedback()
     -- Pulse and Echo pass behind the recommendation, keeping the icon and key readable.
     host:SetFrameLevel(math.max(0, button:GetFrameLevel() - 2))
     motion.width = button:GetWidth()
+    motion.layers[1].orbitRotation:SetOrigin("CENTER", 0, motion.width / 2 - 2)
     for _, layer in ipairs(motion.layers) do
         layer.edge:ClearAllPoints()
         layer.edge:SetSize(motion.width * 0.28, 4)
@@ -287,13 +375,12 @@ function NS.PlayMotionFeedback(spellID)
     NS.ResetMotionFeedback()
     motion.host:SetAlpha(NS.mainButton:GetAlpha())
     local preset, duration, intensity, reduced = GetSettings()
-    -- Only Sweep's narrow edge glint crosses above the icon. Its soft rim and
-    -- the other presets stay behind, so cast feedback does not cover the spell.
+    -- Traveling glints cross above the icon; soft rings remain behind it.
     local buttonLevel = NS.mainButton:GetFrameLevel()
     local behind = math.max(0, buttonLevel - 1)
     motion.host:SetFrameLevel(math.max(0, behind - 1))
     for index, layer in ipairs(motion.layers) do
-        layer:SetFrameLevel((not reduced and preset == "Sweep" and index == 1)
+        layer:SetFrameLevel((not reduced and (preset == "Sweep" or preset == "Sheen" or preset == "Orbit") and index == 1)
             and buttonLevel + 2 or behind)
     end
     if reduced then
@@ -302,6 +389,12 @@ function NS.PlayMotionFeedback(spellID)
         RunEcho(spellID, duration, intensity)
     elseif preset == "Sweep" then
         RunSweep(duration, intensity)
+    elseif preset == "Sheen" then
+        RunSheen(duration, intensity)
+    elseif preset == "Snap" then
+        RunSnap(duration, intensity)
+    elseif preset == "Orbit" then
+        RunOrbit(duration, intensity)
     else
         RunPulse(duration, intensity)
     end
