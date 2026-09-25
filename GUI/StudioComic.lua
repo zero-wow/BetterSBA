@@ -7,7 +7,7 @@ local Comic = {}
 Studio.Comic = Comic
 local ROOT = "Interface\\AddOns\\BetterSBA\\IMG\\Comic\\"
 local COMIC_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\Bangers-Regular.ttf"
-local HAND_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\Kalam-Bold.ttf"
+local COMIC_LABEL_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\CarterOne.ttf"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local unpack = NS.unpack or unpack
 local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "Horde" or "Alliance"
@@ -25,7 +25,7 @@ Comic.paths = P
 
 function Comic.StyleHeading(label,size)
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    local face = size >= 18 and COMIC_FONT or (size >= 12 and HAND_FONT or fallback)
+    local face = size >= 18 and COMIC_FONT or (size >= 12 and COMIC_LABEL_FONT or fallback)
     if not label:SetFont(face,size,"") then
         label:SetFont(fallback,size,"OUTLINE")
     end
@@ -36,7 +36,7 @@ end
 function Comic.StyleButtonText(label,size)
     if not label then return end
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    if not label:SetFont(HAND_FONT,size or 14,"") then
+    if not label:SetFont(COMIC_LABEL_FONT,size or 14,"") then
         label:SetFont(fallback,size or 14,"OUTLINE")
     end
     label:SetShadowColor(0,0,0,.95)

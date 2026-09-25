@@ -104,15 +104,15 @@ studio:SelectPage("Overview")
 overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButton)
 assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
 studio:SelectPage("Overview")
-assert(overview._groupHeaders[1]._font.path:find("Kalam-Bold", 1, true),
+assert(overview._groupHeaders[1]._font.path:find("CarterOne", 1, true),
     "small section headings need the bundled comic lettering")
-local comicFont = assert(io.open("Fonts/Comic/Kalam-Bold.ttf", "rb"),
+local comicFont = assert(io.open("Fonts/Comic/CarterOne.ttf", "rb"),
     "the comic button font must ship with the addon")
 comicFont:close()
-local comicLicense = assert(io.open("Fonts/Comic/Kalam-OFL.txt", "r"),
+local comicLicense = assert(io.open("Fonts/Comic/CarterOne-OFL.txt", "r"),
     "the bundled comic font must include its license")
 comicLicense:close()
-assert(overview._overviewTalentButton._label._font.path:find("Kalam-Bold", 1, true)
+assert(overview._overviewTalentButton._label._font.path:find("CarterOne", 1, true)
     and overview._overviewTalentButton:GetWidth() < 136,
     "action labels need comic lettering and tighter button lengths")
 local fontProbe = {
@@ -129,7 +129,7 @@ assert(fontProbe.path == NS.GetConfigFontPath(),
 local handProbe = {
     SetFont = function(self, path)
         self.path = path
-        return not path:find("Kalam-Bold", 1, true)
+        return not path:find("CarterOne", 1, true)
     end,
     SetShadowColor = function() end,
     SetShadowOffset = function() end,
