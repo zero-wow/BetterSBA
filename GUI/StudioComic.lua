@@ -13,11 +13,11 @@ local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "
 Comic.faction = faction
 local path = function(name) return ROOT .. name end
 local P = {
-    button = path(faction == "Alliance" and "AllianceButtonV2" or "HordeButton"),
+    button = path(faction .. "ButtonRounded"),
     chevron = path(faction .. "Chevron"),
     chevronHover = path(faction .. "ChevronHover"),
     ring = path(faction .. "Ring"), glint = path(faction .. "Glint"),
-    header = path(faction .. "Header"), paper = path(faction .. "Paper"),
+    paper = path(faction .. "Paper"),
     caption = path(faction .. "Caption"), cardFrame = path(faction .. "CardFrame"),
 }
 Comic.paths = P
@@ -396,10 +396,6 @@ function Comic.DecorateHeader(header)
         city:SetPoint("CENTER",header,"CENTER",45,0)
         header._comicCity=city
     end
-    local art=texture(header,"ARTWORK",P.header,.82)
-    art:SetSize(500,88)
-    art:SetPoint("RIGHT",header,"RIGHT",-24,0)
-    header._comicArt=art
 end
 
 function Comic.DecorateShell(shell)

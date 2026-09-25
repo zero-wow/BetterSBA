@@ -87,9 +87,10 @@ NS.SwitchSettingsPanel("studio")
 assert(db.configExperience == "studio" and NS.ConfigStudio.frame:IsShown())
 local studio = NS.ConfigStudio
 assert(studio.Comic.faction == previewFaction
-    and studio.Comic.paths.button:find(previewFaction == "Alliance"
-        and "AllianceButtonV2" or "HordeButton", 1, true),
-    "characters must receive faction-matched comic art")
+    and studio.Comic.paths.button:find(previewFaction .. "ButtonRounded", 1, true),
+    "characters must receive faction-matched rounded comic art")
+assert(not studio.Comic.paths.header,
+    "the top flourish must not be used by the comic header")
 assert(studio.frame._comicOuterBorder,
     "the illustrated shell needs a continuous outer frame edge")
 local overview = studio.pages.Overview

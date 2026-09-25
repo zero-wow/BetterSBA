@@ -100,6 +100,7 @@ def main() -> None:
         save(f"{faction}CardFrame", alpha_crop(source(f"{faction}CardFrame")), (512, 256))
         save(f"{faction}Header", source(f"{faction}Header"), (512, 128))
         save(f"{faction}Button", alpha_crop(source(f"{faction}Button")), (512, 64))
+        save(f"{faction}ButtonRounded", alpha_crop(source(f"{faction}ButtonRounded")), (512, 64))
         save(f"{faction}Chevron", alpha_crop(source(f"{faction}Chevron"), pad=45), (128, 128))
         save(f"{faction}Ring", alpha_crop(source(f"{faction}Ring"), pad=25), (256, 256))
         save(f"{faction}Glint", alpha_crop(source(f"{faction}Glint"), pad=22), (64, 128))
