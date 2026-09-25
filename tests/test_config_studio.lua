@@ -87,8 +87,11 @@ NS.SwitchSettingsPanel("studio")
 assert(db.configExperience == "studio" and NS.ConfigStudio.frame:IsShown())
 local studio = NS.ConfigStudio
 assert(studio.Comic.faction == previewFaction
-    and studio.Comic.paths.button:find(previewFaction .. "Button", 1, true),
+    and studio.Comic.paths.button:find(previewFaction == "Alliance"
+        and "AllianceButtonV2" or "HordeButton", 1, true),
     "characters must receive faction-matched comic art")
+assert(studio.frame._comicOuterBorder,
+    "the illustrated shell needs a continuous outer frame edge")
 local overview = studio.pages.Overview
 assert(overview._comicHero and overview._groupHeaders[1]:GetText() == "Essentials",
     "Overview must display the faction character and real section headings")
@@ -129,6 +132,13 @@ assert(talents._comicHero and studio.frame._children,
     "the talent page must keep the approved faction illustration")
 assert(talents._spend._comic and talents._spend._comic.glint,
     "Spend Available Points needs layered hover animation")
+assert(talents._spend._comicPlate,
+    "Spend Available Points must use the same faction button plate as other actions")
+for _, caption in ipairs({talents._routeCaption, talents._nextCaption,
+    talents._safetyCaption}) do
+    assert(caption._label:GetStringWidth() <= caption._label:GetWidth(),
+        "talent section captions must show their full Title Case text")
+end
 assert(talents._change._comic and not talents._change._comic.ring,
     "compact action buttons must not grow oversized swirl rings")
 db.cfgAnimTransitions = false

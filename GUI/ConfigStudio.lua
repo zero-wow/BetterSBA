@@ -5,7 +5,7 @@ local ADDON_NAME, NS = ...
 NS.ConfigStudio = { page = "Overview" }
 local Studio = NS.ConfigStudio
 local WHITE = "Interface\\Buttons\\WHITE8X8"
-local ART = "Interface\\AddOns\\BetterSBA\\IMG\\Button\\TalentSpendAll"
+local LEGACY_SPEND_ART = "Interface\\AddOns\\BetterSBA\\IMG\\Button\\TalentSpendAll"
 local C = {
     shell = { .075, .087, .115, 1 }, rail = { .055, .071, .095, 1 },
     body = { .085, .098, .125, 1 }, card = { .105, .122, .157, 1 },
@@ -114,6 +114,10 @@ local function Caption(parent, value, x, y)
     if Studio.Comic then Studio.Comic.StyleCaption(tab) end
     local label = Label(tab, value, 12, C.bright, width - 16, "LEFT", tab, "LEFT", 8, 0)
     if Studio.Comic then Studio.Comic.StyleHeading(label, 12) end
+    width = math.min(240, math.max(width, math.ceil(label:GetStringWidth()) + 28))
+    tab:SetWidth(width)
+    label:SetWidth(width - 16)
+    tab._label = label
     return tab
 end
 
@@ -189,7 +193,7 @@ local function BuildTalentPage(self)
     local route = Surface(view, 26, -96, 622, 112)
     view._route = route
     Paint(route, C.accent, "TOPLEFT", route, 0, 0, 3, 112)
-    Caption(route, "Current Route", 10, -5)
+    view._routeCaption = Caption(route, "Current Route", 10, -5)
     local routeName = Label(route, "No Build Selected", 16, C.bright, 365,
         "TOPLEFT", route, "TOPLEFT", 16, -28)
     routeName:SetWordWrap(true)
@@ -211,12 +215,18 @@ local function BuildTalentPage(self)
     route:SetScript("OnLeave", function() GameTooltip:Hide() end)
     local routeDetail = Label(route, "Current specialization", 10, C.dim,
         365, "TOPLEFT", route, "TOPLEFT", 16, -80)
-    local spend = NS.CreateFrame("Button", nil, route)
+    local spend = NS.CreateFrame("Button", nil, route, "BackdropTemplate")
     spend:SetSize(205, 44)
     spend:SetPoint("TOPRIGHT", route, "TOPRIGHT", -13, -17)
-    local art = spend:CreateTexture(nil, "BACKGROUND")
-    art:SetAllPoints()
-    art:SetTexture(ART)
+    spend:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
+    spend:SetBackdropColor(NS.unpack(C.card))
+    spend:SetBackdropBorderColor(NS.unpack(C.border))
+    local art
+    if not self.Comic then
+        art = spend:CreateTexture(nil, "BACKGROUND")
+        art:SetAllPoints()
+        art:SetTexture(LEGACY_SPEND_ART)
+    end
     Label(spend, "Spend Available Points", 11, C.bright, 185, "CENTER", spend, "CENTER", 0, 0):SetJustifyH("CENTER")
     local change = Action(route, "Change Build", 0, 0, 128, 25, function() end, "quiet")
     view._change = change
@@ -226,8 +236,8 @@ local function BuildTalentPage(self)
     local left = Surface(view, 26, -220, 305, 216)
     local right = Surface(view, 343, -220, 305, 216)
     view._left, view._right = left, right
-    Caption(left, "What Happens Next", 0, 0)
-    Caption(right, "Automation & Safety", 0, 0)
+    view._nextCaption = Caption(left, "What Happens Next", 0, 0)
+    view._safetyCaption = Caption(right, "Automation & Safety", 0, 0)
     local state = Label(left, "Route Status", 14, C.text, 270, "TOPLEFT", left, "TOPLEFT", 16, -30)
     local status = Label(left, "", 11, C.dim, 270, "TOPLEFT", left, "TOPLEFT", 16, -56)
     view._status = status
@@ -374,9 +384,12 @@ local function BuildTalentPage(self)
     view._picker = pickerOverlay
     view._pickerCard = picker
     self.pickerOverlay = pickerOverlay
-    spend:SetScript("OnEnter", function() art:SetVertexColor(1, 1, 1, .82) end)
-    spend:SetScript("OnLeave", function() art:SetVertexColor(1, 1, 1, 1) end)
-    if self.Comic then self.Comic.StyleHeroAction(spend) end
+    if self.Comic then
+        self.Comic.StyleHeroAction(spend)
+    else
+        spend:SetScript("OnEnter", function() art:SetVertexColor(1, 1, 1, .82) end)
+        spend:SetScript("OnLeave", function() art:SetVertexColor(1, 1, 1, 1) end)
+    end
     view.Refresh = function()
         local info = NS.GetTalentLevelingInfo()
         WrapRouteName(routeName, routeNameMeasure, info.targetName, routeName:GetWidth())
@@ -520,6 +533,7 @@ function Studio:Create()
     self.pages = {}
     BuildTalentPage(self)
     self:BuildSettingsPages()
+    if self.Comic then self.Comic.FinishShell(f) end
     f:SetScript("OnShow", function() self:Refresh() end)
     local elapsed = 0
     f:SetScript("OnUpdate", function(_, delta)

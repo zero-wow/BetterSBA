@@ -58,12 +58,27 @@ def save(name: str, image: Image.Image, size: tuple[int, int]) -> None:
     image.save(OUTPUT / f"{name}.tga")
 
 
-def save_right(name: str, image: Image.Image, size: tuple[int, int]) -> None:
+def save_right(name: str, image: Image.Image, size: tuple[int, int],
+               remove_baked_border: bool = False) -> None:
     scale = min(size[0] / image.width, size[1] / image.height)
     width, height = round(image.width * scale), round(image.height * scale)
     canvas = Image.new("RGBA", size)
     canvas.alpha_composite(image.resize((width, height), RESAMPLE),
                            (size[0] - width, (size[1] - height) // 2))
+    if remove_baked_border:
+        # The source mockup includes a gold panel corner beside each portrait.
+        # Keep the character and caption, but let the in-game shell own its edge.
+        pixels = canvas.load()
+        for y in range(min(34, size[1])):
+            for x in range(max(0, size[0] - 72), size[0]):
+                r, g, b, a = pixels[x, y]
+                if y < 4 or x >= size[0] - 18:
+                    a = 0
+                elif x >= size[0] - 26:
+                    a = round(a * (size[0] - 18 - x) / 8)
+                elif a and r > 85 and g > 48 and b < g * .85 and r > g * 1.08:
+                    a = 0
+                pixels[x, y] = (r, g, b, a)
     canvas.save(OUTPUT / f"{name}.png", optimize=True)
     canvas.save(OUTPUT / f"{name}.tga")
 
@@ -89,21 +104,26 @@ def main() -> None:
         save(f"{faction}Ring", alpha_crop(source(f"{faction}Ring"), pad=25), (256, 256))
         save(f"{faction}Glint", alpha_crop(source(f"{faction}Glint"), pad=22), (64, 128))
         save(f"{faction}Caption", alpha_crop(source(f"{faction}Caption")), (512, 64))
+    # The Alliance action plate carries a blue face from the approved panel;
+    # keep the original plate available for older layouts.
+    save("AllianceButtonV2", alpha_crop(source("AllianceButtonV2")), (512, 64))
     save("HordeChevronHover", alpha_crop(source("HordeChevronHover"), pad=45), (128, 128))
     save("AllianceChevronHover", alpha_crop(source("AllianceChevronHover"), pad=45), (128, 128))
 
     # The character and insignia are cut from the selected Horde reference;
     # feathering keeps both composable over panels at different sizes.
     horde = source("HordeReference")
-    save_right("HordeTalentHero", feather(horde.crop((1260, 100, 1660, 255)),
-                                          45, 12, 5, 24), (512, 128))
+    # Stop before the reference panel's baked right-hand gold border. The UI
+    # supplies its own continuous frame edge around the whole window.
+    save_right("HordeTalentHero", feather(horde.crop((1260, 100, 1645, 255)),
+                                          45, 12, 18, 24), (512, 128), True)
     save_center("HordeSidebarMark", feather(horde.crop((32, 575, 355, 805)),
                                              20, 42, 16, 20), (256, 256))
     alliance = source("AllianceReference")
     save_right("AllianceCity", feather(alliance.crop((610, 2, 1295, 94)),
                                        55, 2, 55, 2), (512, 128))
-    save_right("AllianceTalentHero", feather(alliance.crop((1225, 101, 1668, 267)),
-                                             55, 14, 5, 20), (512, 128))
+    save_right("AllianceTalentHero", feather(alliance.crop((1225, 101, 1645, 267)),
+                                             55, 14, 18, 20), (512, 128), True)
     save_center("AllianceSidebarMark", feather(alliance.crop((45, 574, 345, 814)),
                                                 22, 25, 18, 20), (256, 256))
 

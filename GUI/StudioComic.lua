@@ -13,7 +13,7 @@ local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "
 Comic.faction = faction
 local path = function(name) return ROOT .. name end
 local P = {
-    button = path(faction .. "Button"),
+    button = path(faction == "Alliance" and "AllianceButtonV2" or "HordeButton"),
     chevron = path(faction .. "Chevron"),
     chevronHover = path(faction .. "ChevronHover"),
     ring = path(faction .. "Ring"), glint = path(faction .. "Glint"),
@@ -229,7 +229,11 @@ function Comic.SetMiniState(button,on)
     if not button._comicMini then return end
     local c=Comic.colors
     button._comicOn=on and true or false
-    button:SetBackdropColor(unpack(c.rail))
+    if faction == "Alliance" and on then
+        button:SetBackdropColor(.08,.15,.30,1)
+    else
+        button:SetBackdropColor(unpack(c.rail))
+    end
     button:SetBackdropBorderColor(unpack(on and c.cyan or c.border))
     if button._label then button._label:SetTextColor(unpack(on and c.bright or c.dim)) end
     button._comicMiniPip:SetColorTexture(unpack(on and c.cyan or c.muted))
@@ -249,6 +253,7 @@ local function styleButton(button, plate, hero)
     local pieces
     if plate then
         pieces=strip(button,P.button,plate == "quiet" and .74 or .88)
+        button._comicPlate=pieces
         button:SetBackdropColor(0,0,0,0)
         button:SetBackdropBorderColor(0,0,0,0)
     end
@@ -331,7 +336,7 @@ function Comic.StyleAction(button,tone)
     styleButton(button,tone or "normal",false)
 end
 function Comic.StyleHeroAction(button)
-    styleButton(button,nil,true)
+    styleButton(button,"hero",true)
 end
 
 function Comic.StyleCaption(tab)
@@ -407,6 +412,26 @@ function Comic.DecorateShell(shell)
     ink(shell,"TOPRIGHT","TOPRIGHT",0,0,3,38,c.gold)
     ink(shell,"BOTTOMLEFT","BOTTOMLEFT",0,0,3,29,c.gold)
     ink(shell,"BOTTOMRIGHT","BOTTOMRIGHT",0,0,3,29,c.gold)
+end
+
+function Comic.FinishShell(shell)
+    local c=Comic.colors
+    local border=NS.CreateFrame("Frame",nil,shell)
+    border:SetAllPoints(shell)
+    border:SetFrameLevel(shell:GetFrameLevel()+50)
+    border:EnableMouse(false)
+    local function line(pointA,pointB,xA,yA,xB,yB,width,height)
+        local edge=texture(border,"ARTWORK",WHITE,.85)
+        edge:SetVertexColor(unpack(c.gold))
+        edge:SetPoint(pointA,border,pointA,xA,yA)
+        edge:SetPoint(pointB,border,pointB,xB,yB)
+        if width then edge:SetWidth(width) else edge:SetHeight(height) end
+    end
+    line("TOPLEFT","TOPRIGHT",0,0,0,0,nil,2)
+    line("BOTTOMLEFT","BOTTOMRIGHT",0,0,0,0,nil,2)
+    line("TOPLEFT","BOTTOMLEFT",0,0,0,0,2,nil)
+    line("TOPRIGHT","BOTTOMRIGHT",0,0,0,0,2,nil)
+    shell._comicOuterBorder=border
 end
 
 function Comic.DecorateRail(rail)
