@@ -86,12 +86,49 @@ local studio = NS.ConfigStudio
 assert(studio.Comic.faction == previewFaction
     and studio.Comic.paths.button:find(previewFaction .. "Button", 1, true),
     "characters must receive faction-matched comic art")
+local overview = studio.pages.Overview
+assert(overview._comicHero and overview._groupHeaders[1]:GetText() == "Essentials",
+    "Overview must display the faction character and real section headings")
+assert(overview._overviewCard and overview._overviewRoute:GetText(),
+    "Overview must offer a visible route summary and quick actions")
+overview._overviewTalentButton:GetScript("OnClick")(overview._overviewTalentButton)
+assert(studio.page == "Talents", "Overview talent shortcut must open the Talent page")
+studio:SelectPage("Overview")
+overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButton)
+assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
+studio:SelectPage("Overview")
+assert(overview._groupHeaders[1]._font.path == NS.GetConfigFontPath(),
+    "small section headings need a readable game-font fallback")
+local fontProbe = {
+    SetFont = function(self, path)
+        self.path = path
+        return not path:find("Bangers", 1, true)
+    end,
+    SetShadowColor = function() end,
+    SetShadowOffset = function() end,
+}
+studio.Comic.StyleHeading(fontProbe, 25)
+assert(fontProbe.path == NS.GetConfigFontPath(),
+    "failed display-font loads must fall back instead of leaving blank headings")
+assert(overview._controls.enabled._control._comicMini,
+    "On/Off switches must use compact styling rather than action-button art")
+local enabledSwitch = overview._controls.enabled._control
+local wasEnabled = db.enabled
+enabledSwitch:GetScript("OnClick")(enabledSwitch)
+assert(db.enabled == not wasEnabled and enabledSwitch._comicOn == not wasEnabled,
+    "compact On/Off controls must update their setting and visual state")
+enabledSwitch:GetScript("OnClick")(enabledSwitch)
+assert(not studio.navButtons.Overview._stripe,
+    "navigation artwork must not have a second accent stripe on the left")
 studio:SelectPage("Talents")
 local talents = studio.pages.Talents
 assert(talents._comicHero and studio.frame._children,
     "the talent page must keep the approved faction illustration")
 assert(talents._spend._comic and talents._spend._comic.glint,
     "Spend Available Points needs layered hover animation")
+assert(talents._change._comic and not talents._change._comic.ring,
+    "compact action buttons must not grow oversized swirl rings")
+db.cfgAnimTransitions = false
 talents._spend:GetScript("OnEnter")(talents._spend)
 talents._spend:GetScript("OnUpdate")(talents._spend,.12)
 assert(talents._spend._comic.ring:GetAlpha() > 0
@@ -105,6 +142,7 @@ for _=1,24 do
 end
 assert(talents._spend._comic.ring:GetAlpha() == 0,
     "button hover artwork must reset after leaving")
+db.cfgAnimTransitions = true
 talents._change:GetScript("OnClick")(talents._change)
 assert(talents._picker:IsShown() and talents._pickerRows[1]:IsShown(),
     "changing the build must expose current-spec targets")
@@ -192,6 +230,14 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     for page, view in pairs(studio.pages) do
         if view._studioScroll then inside(view._studioScroll, studio.content, page .. " controls") end
         if view._quickBox then inside(view._quickBox, studio.content, page .. " quick controls") end
+        if view._comicHero then inside(view._comicHero, view, page .. " character art") end
+    end
+    inside(overview._overviewCard, overview._studioChild, "Overview adventure card")
+    if size[1] == 1300 then
+        inside(overview._overviewCard, overview._studioScroll, "expanded Overview adventure card")
+    else
+        assert(overview._studioChild:GetHeight() > overview._studioScroll:GetHeight(),
+            "compact Overview must keep the adventure card scrollable")
     end
 end
 local talents = studio.pages.Talents
@@ -200,12 +246,16 @@ assert(talents._picker:IsShown(), "build picker must open as a dialog")
 studio:SelectPage("Overview")
 assert(not talents._picker:IsShown(), "leaving Talents must close the build dialog")
 if arg and arg[1] then
-    local previewWidth, previewHeight = arg[2] == "default" and 1120 or 900,
-        arg[2] == "default" and 620 or 600
+    local large = arg[2] and arg[2]:find("%-large$")
+    local previewWidth, previewHeight = large and 1300 or (arg[2] == "default" and 1120 or 900),
+        large and 900 or (arg[2] == "default" and 620 or 600)
     studio.frame:SetSize(previewWidth, previewHeight)
     studio.frame:GetScript("OnSizeChanged")(studio.frame, previewWidth, previewHeight)
-    local previewPage = ({ motion = "Motion", combat = "Combat", colors = "Colors & Fonts",
-        profiles = "Profiles", library = "Build Library" })[arg[2]] or "Talents"
+    local previewKind = arg[2] and arg[2]:gsub("%-large$", "") or ""
+    local previewPage = ({ overview = "Overview", motion = "Motion", combat = "Combat",
+        button = "Button & Queue", visibility = "Visibility", colors = "Colors & Fonts",
+        advanced = "Advanced", profiles = "Profiles", library = "Build Library",
+        ["talent-options"] = "Talent Options" })[previewKind] or "Talents"
     studio:SelectPage(previewPage)
     local navPage = (previewPage == "Build Library" or previewPage == "Talent Options")
         and "Talents" or previewPage

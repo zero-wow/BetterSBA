@@ -125,12 +125,12 @@ local function CreateTextButton(parent, label, width, onClick)
     return btn
 end
 
-local function CreateChipButton(parent, label, width, onClick)
+local function CreateChipButton(parent, label, width, onClick, comicPlate)
     local btn = CreateBackdropFrame(parent)
     btn:SetSize(width, 24)
     btn:EnableMouse(true)
     local comic = parent._comicStudio and NS.ConfigStudio and NS.ConfigStudio.Comic
-    local comicPaint = comic and comic.StyleChip(btn)
+    local comicPaint = comic and comic.StyleChip(btn, comicPlate)
 
     local text = btn:CreateFontString(nil, "OVERLAY")
     text:SetFont(NS.GetConfigFontPath(), CHIP_FONT_SIZE, "OUTLINE")
@@ -147,7 +147,6 @@ local function CreateChipButton(parent, label, width, onClick)
 
     function btn:SetActive(active)
         self._active = active and true or false
-        if comicPaint then comicPaint(self._active) end
         local sc = parent._sectionColor or T.ACCENT
         if self._active then
             self:SetBackdropColor(sc[1] * 0.32, sc[2] * 0.32, sc[3] * 0.32, 0.9)
@@ -158,6 +157,7 @@ local function CreateChipButton(parent, label, width, onClick)
             self:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.9)
             self._text:SetTextColor(T.TEXT_SOFT and T.TEXT_SOFT[1] or T.TEXT_DIM[1], T.TEXT_SOFT and T.TEXT_SOFT[2] or T.TEXT_DIM[2], T.TEXT_SOFT and T.TEXT_SOFT[3] or T.TEXT_DIM[3])
         end
+        if comicPaint then comicPaint(self._active) end
     end
 
     btn:SetScript("OnEnter", function(self)
@@ -498,7 +498,6 @@ local function CreateSortResetButton(parent, onClick)
 
     function btn:SetActive(active)
         self._active = active and true or false
-        if comicPaint then comicPaint(self._active) end
         local sc = parent._sectionColor or T.ACCENT
         local border = self._active and sc or T.BORDER
         local fill = self._active and { sc[1] * 0.18, sc[2] * 0.18, sc[3] * 0.18, 0.9 } or T.TOGGLE_OFF
@@ -508,6 +507,7 @@ local function CreateSortResetButton(parent, onClick)
         for i = 1, #self._parts do
             self._parts[i]:SetVertexColor(icon[1], icon[2], icon[3], self._active and 1 or 0.75)
         end
+        if comicPaint then comicPaint(self._active) end
     end
 
     btn:SetScript("OnEnter", function(self)
@@ -1808,7 +1808,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
             local source = sources[i]
             local btn = sourceButtons[i]
             if not btn then
-                btn = CreateChipButton(parent, "", 72, function() end)
+                btn = CreateChipButton(parent, "", 72, function() end, true)
                 btn:SetCallback(function(self)
                     if self._source then state:SetSourceFilter(self._source) end
                 end)

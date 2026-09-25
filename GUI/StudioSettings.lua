@@ -363,7 +363,11 @@ local function MakeSetting(studio, parent, key, y, refreshers)
         row.Refresh = function()
             local on = NS.db[key] == true
             control._label:SetText(on and "On" or "Off")
-            control:SetBackdropColor(unpack(on and C.accent or C.rail))
+            if studio.Comic then
+                studio.Comic.SetMiniState(control,on)
+            else
+                control:SetBackdropColor(unpack(on and C.accent or C.rail))
+            end
         end
         row._control = control
     elseif type(initial) == "number" then
@@ -547,31 +551,36 @@ local function BuildPage(studio, page, groups)
     studio.pages[page] = view
     local pageTitle = UI.Label(view, page, 25, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -8)
     if studio.Comic then studio.Comic.StyleHeading(pageTitle, 25) end
+    if studio.Comic then studio.Comic.DecorateTalentPage(view) end
     local count = 0
     for _, group in ipairs(groups or {}) do count = count + #group[2] end
     local countLabel = UI.Label(view, count .. " settings", 10, C.muted, 120,
         "TOPRIGHT", view, "TOPRIGHT", -28, -14)
     countLabel:SetJustifyH("RIGHT")
+    if studio.Comic then countLabel:Hide() end
     view._countLabel = countLabel
 
     local scroll = NS.CreateFrame("ScrollFrame", nil, view)
-    scroll:SetPoint("TOPLEFT", view, "TOPLEFT", 26, -49)
+    scroll:SetPoint("TOPLEFT", view, "TOPLEFT", 26, -64)
     scroll:SetSize(610, 520)
     scroll:EnableMouseWheel(true)
+    view._studioTopInset = 64
     local child = NS.CreateFrame("Frame", nil, scroll)
     child:SetSize(596, 1)
     scroll:SetScrollChild(child)
     view._studioScroll, view._studioChild = scroll, child
     local y, refreshers, controls = -2, {}, {}
+    view._groupHeaders = {}
     for _, group in ipairs(groups or {}) do
         if #group[2] > 0 then
             if studio.Comic then studio.Comic.DecorateGroup(child, y) end
             local groupTitle = UI.Label(child, group[1], 13, C.bright, 300, "TOPLEFT", child, "TOPLEFT", 8, y - 2)
             if studio.Comic then studio.Comic.StyleHeading(groupTitle, 13) end
+            view._groupHeaders[#view._groupHeaders+1] = groupTitle
             local line = UI.Paint(child, C.border)
             line:ClearAllPoints()
-            line:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 20)
-            line:SetPoint("TOPRIGHT", child, "TOPRIGHT", -8, y - 20)
+            line:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 23)
+            line:SetPoint("TOPRIGHT", child, "TOPRIGHT", -8, y - 23)
             line:SetHeight(1)
             y = y - 26
             for _, key in ipairs(group[2]) do
@@ -591,16 +600,75 @@ local function BuildPage(studio, page, groups)
     scroll:SetScript("OnMouseWheel", function(_, delta)
         ScrollTo(scroll:GetVerticalScroll() - delta * 72)
     end)
-    local up = UI.Action(view, "↑", 0, 0, 19, 19, function()
+    local up = UI.Action(view, "↑", 0, 0, 24, 24, function()
         ScrollTo(scroll:GetVerticalScroll() - 200)
     end, "quiet")
-    up:ClearAllPoints(); up:SetPoint("TOPRIGHT", view, "TOPRIGHT", -4, -49)
-    local down = UI.Action(view, "↓", 0, 0, 19, 19, function()
+    up:ClearAllPoints(); up:SetPoint("TOPRIGHT", view, "TOPRIGHT", -4, -85)
+    local down = UI.Action(view, "↓", 0, 0, 24, 24, function()
         ScrollTo(scroll:GetVerticalScroll() + 200)
     end, "quiet")
     down:ClearAllPoints(); down:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -4, 10)
     view.Refresh = function()
         for _, fn in ipairs(refreshers) do fn() end
+    end
+    if page == "Overview" then
+        local card = UI.Surface(child, 8, y - 12, child:GetWidth() - 16, 126, C.card)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 12)
+        card:SetSize(child:GetWidth() - 16, 126)
+        child:HookScript("OnSizeChanged", function(self)
+            card:SetWidth(self:GetWidth() - 16)
+        end)
+        if studio.Comic then studio.Comic.DecorateDialog(card, 230) end
+        local title = UI.Label(card, "Your Adventure", 20, C.bright, 220,
+            "TOPLEFT", card, "TOPLEFT", 18, -9)
+        if studio.Comic then studio.Comic.StyleHeading(title, 20) end
+        UI.Label(card, "Talent Route", 10, C.muted, 130,
+            "TOPLEFT", card, "TOPLEFT", 18, -43)
+        local route = UI.Label(card, "Choose a Build", 12, C.text, 390,
+            "TOPLEFT", card, "TOPLEFT", 18, -58)
+        local status = UI.Label(card, "", 10, C.dim, 390,
+            "TOPLEFT", card, "TOPLEFT", 18, -87)
+        local talentsButton = UI.Action(card, "Open Talents", 0, 0, 136, 27,
+            function() studio:SelectPage("Talents") end)
+        talentsButton:ClearAllPoints()
+        talentsButton:SetPoint("TOPRIGHT", card, "TOPRIGHT", -18, -43)
+        local motionButton = UI.Action(card, "Tune Motion", 0, 0, 136, 27,
+            function() studio:SelectPage("Motion") end, "quiet")
+        motionButton:ClearAllPoints()
+        motionButton:SetPoint("TOPRIGHT", card, "TOPRIGHT", -18, -78)
+        card:HookScript("OnSizeChanged", function(self)
+            local textWidth = math.max(130, self:GetWidth() - 195)
+            route:SetWidth(textWidth)
+            status:SetWidth(textWidth)
+        end)
+        route:SetWidth(math.max(130, card:GetWidth() - 195))
+        status:SetWidth(route:GetWidth())
+        local naturalTop = -y + 12
+        local function PlaceCard()
+            local viewport = scroll:GetHeight()
+            local top = naturalTop
+            if viewport > 0 and top + 138 > viewport then
+                top = viewport + 12
+            end
+            card:ClearAllPoints()
+            card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, -top)
+            child:SetHeight(top + 138)
+        end
+        scroll:HookScript("OnSizeChanged", PlaceCard)
+        PlaceCard()
+        local refreshSettings = view.Refresh
+        view.Refresh = function()
+            refreshSettings()
+            local info = NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or {}
+            UI.FitText(route, info.targetName or "Choose a Build", route:GetWidth())
+            status:SetText("Auto-Spend: " .. (info.enabled and "On" or "Off")
+                .. "   •   Motion: " .. tostring(NS.db.motionPreset or "Off"))
+        end
+        view._overviewCard = card
+        view._overviewRoute = route
+        view._overviewTalentButton = talentsButton
+        view._overviewMotionButton = motionButton
     end
     return view
 end
@@ -612,8 +680,9 @@ local function BuildProfiles(studio)
     studio.pages.Profiles = view
     local title = UI.Label(view, "Profiles", 25, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -8)
     if studio.Comic then studio.Comic.StyleHeading(title,25) end
-    local name = UI.Label(view, "", 15, C.text, 380, "TOPLEFT", view, "TOPLEFT", 26, -46)
-    local message = UI.Label(view, "", 11, C.dim, 540, "TOPLEFT", view, "TOPLEFT", 26, -73)
+    if studio.Comic then studio.Comic.DecorateTalentPage(view) end
+    local name = UI.Label(view, "", 15, C.text, studio.Comic and 320 or 380, "TOPLEFT", view, "TOPLEFT", 26, -46)
+    local message = UI.Label(view, "", 11, C.dim, studio.Comic and 320 or 540, "TOPLEFT", view, "TOPLEFT", 26, -73)
     local function Report(ok, err, success)
         if ok and NS.UpdateAllConfigFonts then NS.UpdateAllConfigFonts() end
         studio.notice:SetText(ok and success or (err or "Profile action failed."))
@@ -758,18 +827,20 @@ function Studio:BuildSettingsPages()
     for key in pairs(talentSettings._controls) do self.settingsCoverage[key] = true end
     local back = UI.Action(talentSettings, "← Talents", 0, 0, 100, 24,
         function() self:SelectPage("Talents") end, "quiet")
-    back:ClearAllPoints(); back:SetPoint("TOPRIGHT", talentSettings, "TOPRIGHT", -32, -7)
+    back:ClearAllPoints(); back:SetPoint("TOPLEFT", talentSettings, "TOPLEFT", 245, -7)
 
     local library = NS.CreateFrame("Frame", nil, self.content)
     library:SetAllPoints(); self.pages["Build Library"] = library
     local libraryTitle = UI.Label(library, "Build Library", 25, C.bright, 350, "TOPLEFT", library, "TOPLEFT", 26, -8)
     if self.Comic then self.Comic.StyleHeading(libraryTitle,25) end
+    if self.Comic then self.Comic.DecorateTalentPage(library) end
     local libraryBack = UI.Action(library, "← Talents", 0, 0, 100, 24,
         function() self:SelectPage("Talents") end, "quiet")
-    libraryBack:ClearAllPoints(); libraryBack:SetPoint("TOPRIGHT", library, "TOPRIGHT", -32, -7)
+    libraryBack:ClearAllPoints(); libraryBack:SetPoint("TOPLEFT", library, "TOPLEFT", 245, -7)
     local scroll = NS.CreateFrame("ScrollFrame", nil, library)
-    scroll:SetPoint("TOPLEFT", library, "TOPLEFT", 26, -49)
+    scroll:SetPoint("TOPLEFT", library, "TOPLEFT", 26, -84)
     scroll:SetSize(610, 520); scroll:EnableMouseWheel(true)
+    library._studioTopInset = 84
     local child = NS.CreateFrame("Frame", nil, scroll)
     child:SetSize(600, 1100); child._contentWidth = 600
     child._comicStudio = self.Comic ~= nil
@@ -789,7 +860,7 @@ function Studio:BuildSettingsPages()
         scroll:SetVerticalScroll(math.max(catalogTop, math.min(limit,
             scroll:GetVerticalScroll() - delta * 96)))
     end)
-    local down = UI.Action(library, "↓", 0, 0, 19, 19, function()
+    local down = UI.Action(library, "↓", 0, 0, 24, 24, function()
         scroll:SetVerticalScroll(math.min(child:GetHeight() - scroll:GetHeight(),
             scroll:GetVerticalScroll() + 250))
     end, "quiet")

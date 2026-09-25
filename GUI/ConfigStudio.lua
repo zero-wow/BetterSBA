@@ -98,9 +98,12 @@ local function Action(parent, value, x, y, w, h, callback, tone)
     label:SetJustifyH("CENTER")
     b._label = label
     b:SetScript("OnClick", callback)
-    b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(C.accent)) end)
-    b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(C.border)) end)
-    if Studio.Comic then Studio.Comic.StyleAction(b, tone) end
+    if Studio.Comic then
+        Studio.Comic.StyleAction(b, tone)
+    else
+        b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(C.accent)) end)
+        b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(C.border)) end)
+    end
     return b
 end
 
@@ -441,8 +444,8 @@ function Studio:Create()
     if self.Comic then self.Comic.DecorateHeader(header) end
     local topLine = Paint(header, C.gold or C.accent, "TOPLEFT", header, 0, 0, w, 3)
     topLine:SetPoint("TOPRIGHT", header, "TOPRIGHT", 0, 0)
-    local brand = Label(header, "BetterSBA", 24, C.bright, 150, "LEFT", header, "LEFT", 16, 0)
-    if self.Comic then self.Comic.StyleHeading(brand, 24) end
+    local brand = Label(header, "BetterSBA", 25, C.bright, 150, "LEFT", header, "LEFT", 16, 0)
+    if self.Comic then self.Comic.StyleHeading(brand, 25) end
     Label(header, "Settings", 10, C.muted, 100, "LEFT", header, "LEFT", 165, 0)
     local profile = Label(header, "", 11, C.dim, 220, "LEFT", header, "LEFT", 290, 0)
     profile:SetJustifyH("LEFT")
@@ -464,11 +467,10 @@ function Studio:Create()
         button:SetPoint("TOPLEFT", rail, "TOPLEFT", 0, -34 - (i - 1) * 36)
         button:SetSize(204, 34)
         local bg = Paint(button, C.rail)
-        local stripe = Paint(button, C.accent, "TOPLEFT", button, 0, 0, 3, 34)
         local number = Label(button, string.format("%02d", i), 10, C.muted, 26, "LEFT", button, "LEFT", 15, 0)
         local name = Label(button, page, 11, C.text, 145, "LEFT", button, "LEFT", 40, 0)
         button:SetScript("OnClick", function() self:SelectPage(page) end)
-        button._bg, button._stripe, button._number, button._name = bg, stripe, number, name
+        button._bg, button._number, button._name = bg, number, name
         if self.Comic then self.Comic.StyleNav(button) end
         navButtons[page] = button
     end
@@ -514,7 +516,9 @@ function Studio:Create()
         local usable = inner - 52
         for _, page in pairs(self.pages) do
             if page._studioScroll then
-                page._studioScroll:SetSize(usable, math.max(200, height - 54 - 28 - 74))
+                local topInset=page._studioTopInset or 64
+                page._studioScroll:SetSize(usable,
+                    math.max(200, height - 54 - 28 - topInset - 10))
                 if page._studioChild and not page._fixedStudioChildWidth then
                     page._studioChild:SetWidth(usable - 14)
                 end
@@ -573,7 +577,6 @@ function Studio:SelectPage(page)
     for key, button in pairs(self.navButtons) do
         local active = key == navPage
         button._bg:SetVertexColor(NS.unpack(active and C.card or C.rail))
-        button._stripe:SetAlpha(active and 1 or 0)
         button._number:SetTextColor(NS.unpack(active and C.accent or C.muted))
         button._name:SetTextColor(NS.unpack(active and C.bright or C.dim))
         if self.Comic then self.Comic.SetNavActive(button, active) end

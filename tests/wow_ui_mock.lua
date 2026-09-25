@@ -190,7 +190,10 @@ local function widget(kind, parent)
             SetTexCoord = function(s, ...) s._texCoord = {...} end,
             SetRotation = function(s, value) s._rotation = value end,
             SetVertexColor = function(s, ...) s._vertexColor = {...} end,
-            SetFont = function(s, path, size, flags) s._font = {path=path, size=size or 10, flags=flags or ""} end,
+            SetFont = function(s, path, size, flags)
+                s._font = {path=path, size=size or 10, flags=flags or ""}
+                return true
+            end,
             SetTextColor = function(s, ...) s._textColor = {...} end,
             SetJustifyH = function(s, value) s._justifyH = value end,
             SetJustifyV = function(s, value) s._justifyV = value end,
@@ -416,6 +419,8 @@ function M.writeSVG(root, path)
         if kind == "Texture" and rawget(node, "_layer") == "HIGHLIGHT" and not rawget(node, "_hovered") then return end
         local fill, opacity = cssColor(rawget(node, "_backdropColor") or rawget(node, "_color") or rawget(node, "_vertexColor"))
         local border, borderOpacity = cssColor(rawget(node, "_borderColor"), {0.35, 0.42, 0.5, 0.35})
+        opacity = opacity * (rawget(node, "_alpha") or 1)
+        borderOpacity = borderOpacity * (rawget(node, "_alpha") or 1)
         if (kind == "Frame" or kind == "Button" or kind == "EditBox") and (fill ~= "none" or rawget(node, "_backdrop")) and w > 0 and h > 0 then
             lines[#lines + 1] = ('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s" fill-opacity="%.3f" stroke="%s" stroke-opacity="%.3f"/>'):format(x, y, w, h, fill, opacity, border, borderOpacity)
         elseif kind == "Texture" and
@@ -433,6 +438,14 @@ function M.writeSVG(root, path)
             elseif name:find("Header") or name:find("TalentHero") or name:find("City") then iw,ih=1024,256
             elseif name:find("Ring") or name:find("SidebarMark") then iw,ih=512,512
             elseif name:find("Glint") then iw,ih=128,256 end
+            local file=io.open(rel,"rb")
+            if file then
+                local header=file:read(24)
+                file:close()
+                if header and #header>=24 and header:sub(1,8)=="\137PNG\r\n\26\n" then
+                    iw,ih=string.unpack(">I4I4",header,17)
+                end
+            end
             local u0,u1,v0,v1=0,1,0,1
             if uv then u0,u1,v0,v1=uv[1],uv[2],uv[3],uv[4] end
             local angle=(rawget(node,"_rotation") or 0)*180/math.pi
