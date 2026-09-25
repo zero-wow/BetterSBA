@@ -104,8 +104,17 @@ studio:SelectPage("Overview")
 overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButton)
 assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
 studio:SelectPage("Overview")
-assert(overview._groupHeaders[1]._font.path == NS.GetConfigFontPath(),
-    "small section headings need a readable game-font fallback")
+assert(overview._groupHeaders[1]._font.path:find("Kalam-Bold", 1, true),
+    "small section headings need the bundled comic lettering")
+local comicFont = assert(io.open("Fonts/Comic/Kalam-Bold.ttf", "rb"),
+    "the comic button font must ship with the addon")
+comicFont:close()
+local comicLicense = assert(io.open("Fonts/Comic/Kalam-OFL.txt", "r"),
+    "the bundled comic font must include its license")
+comicLicense:close()
+assert(overview._overviewTalentButton._label._font.path:find("Kalam-Bold", 1, true)
+    and overview._overviewTalentButton:GetWidth() < 136,
+    "action labels need comic lettering and tighter button lengths")
 local fontProbe = {
     SetFont = function(self, path)
         self.path = path
@@ -117,6 +126,17 @@ local fontProbe = {
 studio.Comic.StyleHeading(fontProbe, 25)
 assert(fontProbe.path == NS.GetConfigFontPath(),
     "failed display-font loads must fall back instead of leaving blank headings")
+local handProbe = {
+    SetFont = function(self, path)
+        self.path = path
+        return not path:find("Kalam-Bold", 1, true)
+    end,
+    SetShadowColor = function() end,
+    SetShadowOffset = function() end,
+}
+studio.Comic.StyleButtonText(handProbe, 14)
+assert(handProbe.path == NS.GetConfigFontPath(),
+    "failed button-font loads must fall back instead of leaving blank labels")
 assert(overview._controls.enabled._control._comicMini,
     "On/Off switches must use compact styling rather than action-button art")
 local enabledSwitch = overview._controls.enabled._control
@@ -127,12 +147,15 @@ assert(db.enabled == not wasEnabled and enabledSwitch._comicOn == not wasEnabled
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(not studio.navButtons.Overview._stripe,
     "navigation artwork must not have a second accent stripe on the left")
+assert(studio.navButtons.Overview:GetWidth() == 190
+    and studio.navButtons.Overview._comicNavPlate[1]._texture == studio.Comic.paths.button,
+    "active navigation needs a compact rounded plate instead of the pointed caption")
 studio:SelectPage("Talents")
 local talents = studio.pages.Talents
 assert(talents._comicHero and studio.frame._children,
     "the talent page must keep the approved faction illustration")
 assert(talents._spend._comic and talents._spend._comic.glint,
-    "Spend Available Points needs layered hover animation")
+    "Spend Available Points needs a restrained hover animation")
 assert(talents._spend._comicPlate,
     "Spend Available Points must use the same faction button plate as other actions")
 for _, caption in ipairs({talents._routeCaption, talents._nextCaption,
@@ -142,12 +165,32 @@ for _, caption in ipairs({talents._routeCaption, talents._nextCaption,
 end
 assert(talents._change._comic and not talents._change._comic.ring,
     "compact action buttons must not grow oversized swirl rings")
+assert(talents._change._label:GetText() == "Choose a Build"
+    and talents._change._label:GetStringWidth() + 4 <= talents._change._label:GetWidth()
+    and talents._spend._label:GetStringWidth() <= talents._spend._label:GetWidth(),
+    "compact buttons must fit their longest visible labels")
+talents._change:GetScript("OnMouseDown")(talents._change)
+assert(talents._change._comic.pressShade:GetAlpha() == 1,
+    "small action buttons need a pressed state too")
+talents._change:GetScript("OnLeave")(talents._change)
+assert(talents._change._comic.pressShade:GetAlpha() == 0,
+    "a button must release when the pointer leaves it")
+assert(talents._route._backdropColor[4] < 1 and talents._left._backdropColor[4] < 1,
+    "section fills must reveal the illustrated page behind them")
 db.cfgAnimTransitions = false
 talents._spend:GetScript("OnEnter")(talents._spend)
 talents._spend:GetScript("OnUpdate")(talents._spend,.12)
 assert(talents._spend._comic.ring:GetAlpha() > 0
-    and talents._spend._comic.hover:GetAlpha() > 0,
-    "button hover must animate the ring and chevron")
+    and talents._spend._comic.glint:GetAlpha() > 0,
+    "button hover must animate the hero ring and glint")
+talents._spend:GetScript("OnMouseDown")(talents._spend)
+assert(talents._spend._comic.pressShade:GetAlpha() == 1
+    and talents._spend._comicPlate[1]._vertexColor[1] < 1,
+    "button press must visibly recess its plate")
+talents._spend:GetScript("OnMouseUp")(talents._spend)
+assert(talents._spend._comic.pressShade:GetAlpha() == 0
+    and talents._spend._comicPlate[1]._vertexColor[1] == 1,
+    "pressed artwork must return to normal on release")
 talents._spend:GetScript("OnLeave")(talents._spend)
 for _=1,24 do
     local tick=talents._spend:GetScript("OnUpdate")
@@ -316,6 +359,8 @@ if arg and arg[1] then
             talents._spend:GetScript("OnUpdate")(talents._spend,.05)
             elapsed = elapsed + .05
         end
+    elseif arg[2] == "pressed" then
+        talents._spend:GetScript("OnMouseDown")(talents._spend)
     end
     if arg[2] == "choice" then
         studio:OpenStudioChoices("Cast Animation", {"Drift", "Pulse", "Vortex"}, "Pulse", function() end)

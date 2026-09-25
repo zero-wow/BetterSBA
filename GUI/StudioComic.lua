@@ -7,6 +7,7 @@ local Comic = {}
 Studio.Comic = Comic
 local ROOT = "Interface\\AddOns\\BetterSBA\\IMG\\Comic\\"
 local COMIC_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\Bangers-Regular.ttf"
+local HAND_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\Kalam-Bold.ttf"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local unpack = NS.unpack or unpack
 local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "Horde" or "Alliance"
@@ -23,14 +24,23 @@ local P = {
 Comic.paths = P
 
 function Comic.StyleHeading(label,size)
-    -- WoW silently drops some small custom-font strings. Keep the comic face
-    -- for display titles and use a known-good font for every smaller label.
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    if size < 25 or not label:SetFont(COMIC_FONT,size,"") then
+    local face = size >= 18 and COMIC_FONT or (size >= 12 and HAND_FONT or fallback)
+    if not label:SetFont(face,size,"") then
         label:SetFont(fallback,size,"OUTLINE")
     end
     label:SetShadowColor(0,0,0,.9)
-    label:SetShadowOffset(2,-2)
+    label:SetShadowOffset(size >= 18 and 2 or 1,-1)
+end
+
+function Comic.StyleButtonText(label,size)
+    if not label then return end
+    local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
+    if not label:SetFont(HAND_FONT,size or 14,"") then
+        label:SetFont(fallback,size or 14,"OUTLINE")
+    end
+    label:SetShadowColor(0,0,0,.95)
+    label:SetShadowOffset(1,-1)
 end
 
 local function tint(t, color)
@@ -98,7 +108,7 @@ function Comic.ApplyPalette(C)
     Comic.colors = C
 end
 
-local function strip(parent, file, alpha)
+local function strip(parent, file, alpha, compactCap)
     local pieces = {}
     for i=1,3 do
         local t = texture(parent, "BACKGROUND", file, alpha)
@@ -109,7 +119,8 @@ local function strip(parent, file, alpha)
     end
     local function layout()
         local width,height = parent:GetWidth(),parent:GetHeight()
-        local cap = math.min(height*.83,width*.25)
+        local cap = compactCap and math.min(height*.58,width*.19)
+            or math.min(height*.83,width*.25)
         pieces[1]:ClearAllPoints(); pieces[1]:SetPoint("TOPLEFT",parent,"TOPLEFT",0,0)
         pieces[1]:SetSize(cap,height)
         pieces[3]:ClearAllPoints(); pieces[3]:SetPoint("TOPRIGHT",parent,"TOPRIGHT",0,0)
@@ -210,6 +221,27 @@ local function styleMini(button)
         value=0;target=0;position=positionTarget
         glow:SetAlpha(0);placePip();self:SetScript("OnUpdate",nil)
     end)
+    local function releaseMini(self)
+        if self._comicOn and faction=="Alliance" then
+            self:SetBackdropColor(.08,.15,.30,1)
+        else
+            self:SetBackdropColor(unpack(c.rail))
+        end
+        if self._label then
+            self._label:ClearAllPoints()
+            self._label:SetPoint("CENTER",self,"CENTER",0,0)
+        end
+    end
+    button:HookScript("OnMouseDown",function(self)
+        self:SetBackdropColor(.015,.025,.035,1)
+        if self._label then
+            self._label:ClearAllPoints()
+            self._label:SetPoint("CENTER",self,"CENTER",0,-1)
+        end
+    end)
+    button:HookScript("OnMouseUp",releaseMini)
+    button:HookScript("OnLeave",releaseMini)
+    button:HookScript("OnHide",releaseMini)
     button._comicMiniPip=pip
     button._comicMiniSlide=function(on)
         local destination=on and 1 or 0
@@ -252,12 +284,36 @@ local function styleButton(button, plate, hero)
     local big = w >= 120 and h >= 25
     local pieces
     if plate then
-        pieces=strip(button,P.button,plate == "quiet" and .74 or .88)
+        pieces=strip(button,P.button,plate == "quiet" and .74 or .88,true)
         button._comicPlate=pieces
         button:SetBackdropColor(0,0,0,0)
         button:SetBackdropBorderColor(0,0,0,0)
     end
+    local pressShade=texture(button,"BORDER",WHITE,0)
+    pressShade:SetPoint("TOPLEFT",button,"TOPLEFT",5,-4)
+    pressShade:SetPoint("BOTTOMRIGHT",button,"BOTTOMRIGHT",-5,4)
+    pressShade:SetColorTexture(0,0,0,.3)
+    local pressed=false
+    local function setPressed(on)
+        pressed=on and true or false
+        pressShade:SetAlpha(pressed and 1 or 0)
+        if pieces then
+            for _,piece in ipairs(pieces) do
+                piece:SetVertexColor(pressed and .57 or 1,pressed and .66 or 1,
+                    pressed and .78 or 1)
+            end
+        end
+        if button._label then
+            button._label:ClearAllPoints()
+            button._label:SetPoint("CENTER",button,"CENTER",0,pressed and -1 or 0)
+        end
+    end
+    button:HookScript("OnMouseDown",function() setPressed(true) end)
+    button:HookScript("OnMouseUp",function() setPressed(false) end)
+    button:HookScript("OnLeave",function() setPressed(false) end)
+    button:HookScript("OnHide",function() setPressed(false) end)
     if not big then
+        button._comic={pressShade=pressShade}
         if pieces then
             local value,target=plate == "quiet" and .74 or .88,plate == "quiet" and .74 or .88
             local function tick(self,dt)
@@ -278,13 +334,8 @@ local function styleButton(button, plate, hero)
         end
         return
     end
-    local chevron = texture(button,"ARTWORK",P.chevron,0)
-    chevron:SetSize(19,19)
-    chevron:SetPoint("RIGHT",button,"RIGHT",-4,0)
-    local hover = texture(button,"ARTWORK",P.chevronHover,0)
-    hover:SetAllPoints(chevron)
     local ring
-    if hero or (w>=180 and h>=36) then
+    if hero then
         ring = texture(button,"ARTWORK",P.ring,0)
         ring:SetSize(math.min(h*1.6,65),math.min(h*1.6,65))
         ring:SetPoint("CENTER",button,"LEFT",math.min(h*.6,25),0)
@@ -298,8 +349,10 @@ local function styleButton(button, plate, hero)
         local speed=motionEnabled() and 10 or 100
         state.hover=state.hover+(state.target-state.hover)*math.min(1,dt*speed)
         if math.abs(state.hover-state.target)<.006 then state.hover=state.target end
-        hover:SetAlpha(state.hover*state.hover)
-        chevron:SetAlpha(math.min(1,state.hover*2)*(1-state.hover))
+        if pieces and not pressed then
+            local alpha=(plate == "quiet" and .74 or .88)+state.hover*.12
+            for _,piece in ipairs(pieces) do piece:SetAlpha(alpha) end
+        end
         if ring then ring:SetAlpha(state.hover*.7) end
         if state.hover>0 then
             state.phase=state.phase+dt
@@ -326,10 +379,11 @@ local function styleButton(button, plate, hero)
     end)
     button:HookScript("OnHide",function()
         state.target=0;state.hover=0
-        chevron:SetAlpha(0);hover:SetAlpha(0);if ring then ring:SetAlpha(0) end;glint:SetAlpha(0)
+        setPressed(false)
+        if ring then ring:SetAlpha(0) end;glint:SetAlpha(0)
         button:SetScript("OnUpdate",nil)
     end)
-    button._comic={chevron=chevron,hover=hover,ring=ring,glint=glint,state=state}
+    button._comic={pressShade=pressShade,ring=ring,glint=glint,state=state}
 end
 
 function Comic.StyleAction(button,tone)
@@ -355,7 +409,7 @@ function Comic.StyleChip(chip,forcePlate)
         styleMini(chip)
         return function(active) Comic.SetMiniState(chip,active) end
     end
-    local pieces=strip(chip,P.button,.6)
+    local pieces=strip(chip,P.button,.6,true)
     local state={value=.48,target=.48,hover=false}
     local function tick(self,dt)
         local speed=motionEnabled() and 13 or 100
@@ -383,7 +437,10 @@ end
 
 function Comic.StyleSurface(frame)
     if frame:GetWidth()<100 or frame:GetHeight()<60 then return end
-    Comic.DecoratePaper(frame,.45)
+    -- Let the illustrated page remain visible through the section fill.
+    local c=Comic.colors
+    frame:SetBackdropColor(c.card[1],c.card[2],c.card[3],.58)
+    Comic.DecoratePaper(frame,.24)
     frame._comicFrame=slicedFrame(frame,P.cardFrame)
     frame:SetBackdropBorderColor(0,0,0,0)
 end
@@ -446,45 +503,45 @@ function Comic.DecorateTalentPage(view)
 end
 
 function Comic.StyleNav(button)
-    local plate=strip(button,P.caption,0)
-    local glow=texture(button,"ARTWORK",P.chevron,.7)
-    glow:SetSize(21,21)
-    glow:SetPoint("RIGHT",button,"RIGHT",-6,0)
-    glow:SetAlpha(0)
-    button._comicNavGlow=glow
+    local plate=strip(button,P.button,0,true)
+    button._bg:SetAlpha(0)
     button._comicNavPlate=plate
-    local state={value=0,target=0,hover=0,hoverTarget=0,phase=0}
+    local state={value=0,target=0,phase=0,pressed=false}
     local function tick(self,dt)
         local speed=motionEnabled() and 11 or 100
         state.value=state.value+(state.target-state.value)*math.min(1,(dt or 0)*speed)
-        state.hover=state.hover+(state.hoverTarget-state.hover)*math.min(1,(dt or 0)*speed)
         if math.abs(state.value-state.target)<.006 then state.value=state.target end
-        if math.abs(state.hover-state.hoverTarget)<.006 then state.hover=state.hoverTarget end
         if button._comicActive and motionEnabled() then
             state.phase=state.phase+(dt or 0)
-            for _,piece in ipairs(plate) do piece:SetAlpha(state.value*(.77+.08*math.sin(state.phase*3.2))) end
+            for _,piece in ipairs(plate) do piece:SetAlpha(state.value*(.84+.05*math.sin(state.phase*3.2))) end
         else
-            for _,piece in ipairs(plate) do piece:SetAlpha(state.value*.8) end
+            for _,piece in ipairs(plate) do piece:SetAlpha(state.value*.87) end
         end
-        glow:SetAlpha(state.hover)
-        if state.value==state.target and state.hover==state.hoverTarget
-            and not button._comicActive then self:SetScript("OnUpdate",nil) end
+        if state.value==state.target and not button._comicActive then self:SetScript("OnUpdate",nil) end
     end
     button._comicNavState=state
     button:HookScript("OnEnter",function()
-        state.hoverTarget=1
-        if not button._comicActive then state.target=.48 end
+        if not button._comicActive then state.target=.62 end
         button:SetScript("OnUpdate",tick)
     end)
     button:HookScript("OnLeave",function()
-        state.hoverTarget=0
         if not button._comicActive then state.target=0 end
+        state.pressed=false
+        for _,piece in ipairs(plate) do piece:SetVertexColor(1,1,1) end
         button:SetScript("OnUpdate",tick)
+    end)
+    button:HookScript("OnMouseDown",function()
+        state.pressed=true
+        for _,piece in ipairs(plate) do piece:SetVertexColor(.55,.67,.82) end
+    end)
+    button:HookScript("OnMouseUp",function()
+        state.pressed=false
+        for _,piece in ipairs(plate) do piece:SetVertexColor(1,1,1) end
     end)
     button:HookScript("OnHide",function()
         button:SetScript("OnUpdate",nil)
-        state.hover=0;state.hoverTarget=0
-        glow:SetAlpha(0)
+        state.pressed=false
+        for _,piece in ipairs(plate) do piece:SetVertexColor(1,1,1) end
     end)
     button._comicNavTick=tick
 end
@@ -528,6 +585,8 @@ function Comic.DecorateGroup(parent,y)
 end
 
 function Comic.DecorateDialog(card,width)
+    local c=Comic.colors
+    card:SetBackdropColor(c.card[1],c.card[2],c.card[3],.94)
     local banner=texture(card,"BACKGROUND",P.caption,.94,2)
     banner:SetSize(math.min(width or 240,card:GetWidth()-20),29)
     banner:SetPoint("TOPLEFT",card,"TOPLEFT",8,-6)

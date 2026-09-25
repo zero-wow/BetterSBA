@@ -97,6 +97,26 @@ local function Action(parent, value, x, y, w, h, callback, tone)
     local label = Label(b, value, 12, C.text, w - 16, "CENTER", b, "CENTER", 0, 0)
     label:SetJustifyH("CENTER")
     b._label = label
+    if Studio.Comic then
+        Studio.Comic.StyleButtonText(label, h >= 24 and 14 or 12)
+        -- Fixed action labels need only a small inset beyond their measured text.
+        -- Value controls and picker rows can change later, so keep their width.
+        if value ~= "" and w >= 88 and w <= 220 and h >= 24 then
+            local measured = label:GetStringWidth()
+            if measured > 0 then
+                local compact = math.max(88, math.ceil(measured) + 26)
+                if value == "Change Build" then
+                    label:SetText("Choose a Build")
+                    compact = math.max(compact, math.ceil(label:GetStringWidth()) + 22)
+                    label:SetText(value)
+                end
+                if compact < w then
+                    b:SetWidth(compact)
+                    label:SetWidth(compact - 16)
+                end
+            end
+        end
+    end
     b:SetScript("OnClick", callback)
     if Studio.Comic then
         Studio.Comic.StyleAction(b, tone)
@@ -137,6 +157,7 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
     if Studio.Comic then Studio.Comic.StyleToggle(track) end
     local stateText = Label(track, "Off", 10, C.dim, 34, "CENTER", track, "CENTER", 0, 0)
     stateText:SetJustifyH("CENTER")
+    if Studio.Comic then Studio.Comic.StyleButtonText(stateText, 11) end
     row.Refresh = function()
         local on = getter() == true
         track:SetBackdropColor(NS.unpack(on and C.accent or C.rail))
@@ -216,7 +237,7 @@ local function BuildTalentPage(self)
     local routeDetail = Label(route, "Current specialization", 10, C.dim,
         365, "TOPLEFT", route, "TOPLEFT", 16, -80)
     local spend = NS.CreateFrame("Button", nil, route, "BackdropTemplate")
-    spend:SetSize(205, 44)
+    spend:SetSize(185, 40)
     spend:SetPoint("TOPRIGHT", route, "TOPRIGHT", -13, -17)
     spend:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     spend:SetBackdropColor(NS.unpack(C.card))
@@ -227,7 +248,11 @@ local function BuildTalentPage(self)
         art:SetAllPoints()
         art:SetTexture(LEGACY_SPEND_ART)
     end
-    Label(spend, "Spend Available Points", 11, C.bright, 185, "CENTER", spend, "CENTER", 0, 0):SetJustifyH("CENTER")
+    local spendText = Label(spend, "Spend Available Points", 11, C.bright, 171,
+        "CENTER", spend, "CENTER", 0, 0)
+    spendText:SetJustifyH("CENTER")
+    spend._label = spendText
+    if self.Comic then self.Comic.StyleButtonText(spendText, 14) end
     local change = Action(route, "Change Build", 0, 0, 128, 25, function() end, "quiet")
     view._change = change
     change:ClearAllPoints()
@@ -477,11 +502,16 @@ function Studio:Create()
     local navButtons = {}
     for i, page in ipairs(NAV) do
         local button = NS.CreateFrame("Button", nil, rail)
-        button:SetPoint("TOPLEFT", rail, "TOPLEFT", 0, -34 - (i - 1) * 36)
-        button:SetSize(204, 34)
+        button:SetPoint("TOPLEFT", rail, "TOPLEFT", 7, -34 - (i - 1) * 36)
+        button:SetSize(190, 34)
         local bg = Paint(button, C.rail)
-        local number = Label(button, string.format("%02d", i), 10, C.muted, 26, "LEFT", button, "LEFT", 15, 0)
-        local name = Label(button, page, 11, C.text, 145, "LEFT", button, "LEFT", 40, 0)
+        local number = Label(button, string.format("%02d", i), 12, C.muted, 24,
+            "LEFT", button, "LEFT", 16, 0)
+        local name = Label(button, page, 13, C.text, 133, "LEFT", button, "LEFT", 47, 0)
+        if self.Comic then
+            self.Comic.StyleHeading(number, 12)
+            self.Comic.StyleHeading(name, 13)
+        end
         button:SetScript("OnClick", function() self:SelectPage(page) end)
         button._bg, button._number, button._name = bg, number, name
         if self.Comic then self.Comic.StyleNav(button) end
