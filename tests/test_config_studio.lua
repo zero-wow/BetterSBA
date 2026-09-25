@@ -210,6 +210,9 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     local frame = studio.frame
     frame:SetSize(size[1], size[2])
     frame:GetScript("OnSizeChanged")(frame, size[1], size[2])
+    inside(studio.fitButton, studio.footer, "Fit Window button")
+    assert(rect(studio.resizeGrip).left - rect(studio.fitButton).right >= 8,
+        "Fit Window needs a gutter before the resize grip")
     local talents = studio.pages.Talents
     inside(talents._route, studio.content, "route")
     inside(talents._left, studio.content, "left column")
@@ -233,25 +236,54 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
         if view._comicHero then inside(view._comicHero, view, page .. " character art") end
     end
     inside(overview._overviewCard, overview._studioChild, "Overview adventure card")
-    if size[1] == 1300 then
-        inside(overview._overviewCard, overview._studioScroll, "expanded Overview adventure card")
+    if overview._studioChild:GetWidth() >= 790 then
+        inside(overview._overviewCard, overview._studioScroll, "wide Overview adventure card")
+        local form, card = rect(overview._studioForm), rect(overview._overviewCard)
+        assert(card.left - form.right >= 15,
+            "wide Overview summary must sit beside the settings with a gutter")
+        assert(card.top <= rect(overview._comicHero).bottom - 8,
+            "Overview summary must clear the faction character art")
     else
         assert(overview._studioChild:GetHeight() > overview._studioScroll:GetHeight(),
             "compact Overview must keep the adventure card scrollable")
     end
+    assert(studio.pages.Combat._studioForm:GetWidth() <= 680,
+        "setting controls must not stretch across the full expanded window")
 end
 local talents = studio.pages.Talents
 talents._change:GetScript("OnClick")(talents._change)
 assert(talents._picker:IsShown(), "build picker must open as a dialog")
 studio:SelectPage("Overview")
 assert(not talents._picker:IsShown(), "leaving Talents must close the build dialog")
+assert(studio.frame:GetWidth() == 1120 and studio.frame:GetHeight() == 600,
+    "content fit must remove the oversized empty area on Overview")
+studio:SelectPage("Combat")
+assert(studio.frame:GetHeight() > 600 and studio.frame:GetHeight() < 900,
+    "content fit must leave enough height for Combat settings")
+studio.resizeGrip:GetScript("OnMouseDown")(studio.resizeGrip)
+studio.frame:SetSize(1300, 900)
+studio.resizeGrip:GetScript("OnMouseUp")(studio.resizeGrip)
+studio:SelectPage("Overview")
+assert(db.configStudioAutoFit == false and studio.frame:GetWidth() == 1300
+    and studio.frame:GetHeight() == 900,
+    "manual resizing must keep the user's chosen window size")
+studio.fitButton:GetScript("OnClick")(studio.fitButton)
+assert(db.configStudioAutoFit == true and studio.frame:GetWidth() == 1120
+    and studio.frame:GetHeight() == 600,
+    "Fit must bring an oversized page back to its useful dimensions")
 if arg and arg[1] then
+    local fitted = arg[2] and arg[2]:find("%-fit$")
+    db.configStudioAutoFit = fitted and true or false
     local large = arg[2] and arg[2]:find("%-large$")
-    local previewWidth, previewHeight = large and 1300 or (arg[2] == "default" and 1120 or 900),
-        large and 900 or (arg[2] == "default" and 620 or 600)
-    studio.frame:SetSize(previewWidth, previewHeight)
-    studio.frame:GetScript("OnSizeChanged")(studio.frame, previewWidth, previewHeight)
-    local previewKind = arg[2] and arg[2]:gsub("%-large$", "") or ""
+    local medium = arg[2] and (arg[2] == "default" or arg[2]:find("%-default$"))
+    local previewWidth, previewHeight = large and 1300 or (medium and 1120 or 900),
+        large and 900 or (medium and 620 or 600)
+    if not fitted then
+        studio.frame:SetSize(previewWidth, previewHeight)
+        studio.frame:GetScript("OnSizeChanged")(studio.frame, previewWidth, previewHeight)
+    end
+    local previewKind = arg[2] and arg[2]:gsub("%-large$", "")
+        :gsub("%-default$", ""):gsub("%-fit$", "") or ""
     local previewPage = ({ overview = "Overview", motion = "Motion", combat = "Combat",
         button = "Button & Queue", visibility = "Visibility", colors = "Colors & Fonts",
         advanced = "Advanced", profiles = "Profiles", library = "Build Library",

@@ -296,7 +296,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
     local row = NS.CreateFrame("Frame", nil, parent)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, y)
-    row:SetHeight(31)
+    row:SetHeight(28)
     local label = UI.Label(row, Title(key), 11, C.text, 280, "LEFT", row, "LEFT", 8, 0)
     row._key, row._label = key, label
     local function Save(value)
@@ -569,28 +569,34 @@ local function BuildPage(studio, page, groups)
     child:SetSize(596, 1)
     scroll:SetScrollChild(child)
     view._studioScroll, view._studioChild = scroll, child
+    local form = NS.CreateFrame("Frame", nil, child)
+    form:SetPoint("TOPLEFT", child, "TOPLEFT", 0, 0)
+    form:SetSize(child:GetWidth(), 1)
+    view._studioForm = form
     local y, refreshers, controls = -2, {}, {}
     view._groupHeaders = {}
     for _, group in ipairs(groups or {}) do
         if #group[2] > 0 then
-            if studio.Comic then studio.Comic.DecorateGroup(child, y) end
-            local groupTitle = UI.Label(child, group[1], 13, C.bright, 300, "TOPLEFT", child, "TOPLEFT", 8, y - 2)
+            if studio.Comic then studio.Comic.DecorateGroup(form, y) end
+            local groupTitle = UI.Label(form, group[1], 13, C.bright, 300, "TOPLEFT", form, "TOPLEFT", 8, y - 2)
             if studio.Comic then studio.Comic.StyleHeading(groupTitle, 13) end
             view._groupHeaders[#view._groupHeaders+1] = groupTitle
-            local line = UI.Paint(child, C.border)
+            local line = UI.Paint(form, C.border)
             line:ClearAllPoints()
-            line:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 23)
-            line:SetPoint("TOPRIGHT", child, "TOPRIGHT", -8, y - 23)
+            line:SetPoint("TOPLEFT", form, "TOPLEFT", 8, y - 22)
+            line:SetPoint("TOPRIGHT", form, "TOPRIGHT", -8, y - 22)
             line:SetHeight(1)
-            y = y - 26
+            y = y - 24
             for _, key in ipairs(group[2]) do
-                local row = MakeSetting(studio, child, key, y, refreshers)
-                if row then controls[key] = row; y = y - 31 end
+                local row = MakeSetting(studio, form, key, y, refreshers)
+                if row then controls[key] = row; y = y - 28 end
             end
-            y = y - 8
+            y = y - 4
         end
     end
-    child:SetHeight(math.max(1, -y + 12))
+    local formHeight = math.max(1, -y + 8)
+    form:SetHeight(formHeight)
+    child:SetHeight(formHeight)
     view._controls = controls
     view._count = count
     local function ScrollTo(value)
@@ -616,9 +622,6 @@ local function BuildPage(studio, page, groups)
         card:ClearAllPoints()
         card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 12)
         card:SetSize(child:GetWidth() - 16, 126)
-        child:HookScript("OnSizeChanged", function(self)
-            card:SetWidth(self:GetWidth() - 16)
-        end)
         if studio.Comic then studio.Comic.DecorateDialog(card, 230) end
         local title = UI.Label(card, "Your Adventure", 20, C.bright, 220,
             "TOPLEFT", card, "TOPLEFT", 18, -9)
@@ -645,18 +648,32 @@ local function BuildPage(studio, page, groups)
         route:SetWidth(math.max(130, card:GetWidth() - 195))
         status:SetWidth(route:GetWidth())
         local naturalTop = -y + 12
-        local function PlaceCard()
+        local function RelayoutOverview()
+            local width = child:GetWidth()
             local viewport = scroll:GetHeight()
-            local top = naturalTop
-            if viewport > 0 and top + 138 > viewport then
-                top = viewport + 12
-            end
             card:ClearAllPoints()
-            card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, -top)
-            child:SetHeight(top + 138)
+            if width >= 790 then
+                local column = math.floor((width - 24) / 2)
+                form:SetWidth(column)
+                card:SetWidth(width - column - 24)
+                card:SetPoint("TOPLEFT", child, "TOPLEFT", column + 16, -28)
+                local needed = math.max(formHeight, 166)
+                if child:GetHeight() ~= needed then child:SetHeight(needed) end
+            else
+                form:SetWidth(math.min(width, 680))
+                card:SetWidth(width - 16)
+                local top = naturalTop
+                if viewport > 0 and top + 138 > viewport then
+                    top = viewport + 12
+                end
+                card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, -top)
+                local needed = top + 138
+                if child:GetHeight() ~= needed then child:SetHeight(needed) end
+            end
         end
-        scroll:HookScript("OnSizeChanged", PlaceCard)
-        PlaceCard()
+        child:HookScript("OnSizeChanged", RelayoutOverview)
+        scroll:HookScript("OnSizeChanged", RelayoutOverview)
+        RelayoutOverview()
         local refreshSettings = view.Refresh
         view.Refresh = function()
             refreshSettings()
@@ -669,6 +686,10 @@ local function BuildPage(studio, page, groups)
         view._overviewRoute = route
         view._overviewTalentButton = talentsButton
         view._overviewMotionButton = motionButton
+    else
+        child:HookScript("OnSizeChanged", function(self)
+            form:SetWidth(math.min(self:GetWidth(), 680))
+        end)
     end
     return view
 end

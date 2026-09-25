@@ -210,7 +210,7 @@ local function widget(kind, parent)
             SetFrameLevel = function(s, value) s._level = value end,
             GetFrameLevel = function(s) return rawget(s, "_level") or 1 end,
             SetResizeBounds = function(s, ...) s._resizeBounds = {...} end,
-            StartMoving = noop, StopMovingOrSizing = noop,
+            StartMoving = noop, StartSizing = noop, StopMovingOrSizing = noop,
             SetScale = function(s, value) s._scale = value or 1 end,
             GetScale = function(s) return rawget(s, "_scale") or 1 end,
             GetEffectiveScale = function(s)

@@ -491,13 +491,31 @@ function Studio:Create()
     footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
     footer:SetHeight(28)
     Paint(footer, C.rail)
+    self.footer = footer
     self.notice = Label(footer, "Changes Save Automatically", 10, C.muted, 475,
         "LEFT", footer, "LEFT", 20, 0)
+    local fit = Action(footer, "Fit Window", 0, 0, 110, 24, function()
+        NS.db.configStudioAutoFit = true
+        self:FitCurrentPage()
+    end, "quiet")
+    fit:ClearAllPoints()
+    fit:SetPoint("RIGHT", footer, "RIGHT", -38, 0)
+    self.fitButton = fit
     local grip = Action(f, "\\", 0, 0, 23, 23, function() end, "quiet")
     grip:ClearAllPoints()
     grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -5, 5)
-    grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
-    grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() end)
+    grip:SetScript("OnMouseDown", function()
+        self._manualSizing = true
+        f:StartSizing("BOTTOMRIGHT")
+    end)
+    grip:SetScript("OnMouseUp", function()
+        f:StopMovingOrSizing()
+        if self._manualSizing then
+            self._manualSizing = false
+            NS.db.configStudioAutoFit = false
+        end
+    end)
+    self.resizeGrip = grip
 
     self.pages = {}
     BuildTalentPage(self)
@@ -510,6 +528,7 @@ function Studio:Create()
         if elapsed >= 1 then elapsed = 0; self:Refresh() end
     end)
     local function Relayout(_, width, height)
+        if self._manualSizing then NS.db.configStudioAutoFit = false end
         NS.db.configStudioWidth = width
         NS.db.configStudioHeight = height
         local inner = width - 218
@@ -560,6 +579,25 @@ function Studio:ApplyScale()
     f:SetScale(scale)
 end
 
+function Studio:FitCurrentPage()
+    if not self.frame or not self.pages then return end
+    local view = self.pages[self.page]
+    if not view then return end
+    local frame = self.frame
+    -- A larger window remains available through the resize grip. The fitted
+    -- size follows actual page content so short pages do not leave a void.
+    if frame:GetWidth() ~= 1120 then frame:SetWidth(1120) end
+    local height = 600
+    if view._studioScroll and view._studioChild then
+        height = 54 + 28 + (view._studioTopInset or 64) + 10
+            + view._studioChild:GetHeight()
+    elseif self.page == "Talents" then
+        height = 620
+    end
+    height = math.max(600, math.min(900, math.ceil(height / 10) * 10))
+    if frame:GetHeight() ~= height then frame:SetHeight(height) end
+end
+
 function Studio:SelectPage(page)
     self.page = self.pages[page] and page or "Overview"
     if self.page ~= "Talents" and self.pickerOverlay then self.pickerOverlay:Hide() end
@@ -581,6 +619,7 @@ function Studio:SelectPage(page)
         button._name:SetTextColor(NS.unpack(active and C.bright or C.dim))
         if self.Comic then self.Comic.SetNavActive(button, active) end
     end
+    if NS.db.configStudioAutoFit ~= false then self:FitCurrentPage() end
     self:Refresh()
 end
 
