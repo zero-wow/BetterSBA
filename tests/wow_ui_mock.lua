@@ -80,9 +80,19 @@ local function widget(kind, parent)
     function mt.__index(self, key)
         if type(key) == "string" and key:sub(1, 1) == "_" then return nil end
         local methods = {
-            SetSize = function(s, w, h) s._width, s._height = w or 0, h or 0; s._widthExplicit, s._heightExplicit = true, true end,
-            SetWidth = function(s, w) s._width, s._widthExplicit = w or 0, true end,
-            SetHeight = function(s, h) s._height, s._heightExplicit = h or 0, true end,
+            SetSize = function(s, w, h)
+                s._width, s._height = w or 0, h or 0
+                s._widthExplicit, s._heightExplicit = true, true
+                runScript(s,"OnSizeChanged",s._width,s._height)
+            end,
+            SetWidth = function(s, w)
+                s._width, s._widthExplicit = w or 0, true
+                runScript(s,"OnSizeChanged",s._width,s._height)
+            end,
+            SetHeight = function(s, h)
+                s._height, s._heightExplicit = h or 0, true
+                runScript(s,"OnSizeChanged",s._width,s._height)
+            end,
             GetWidth = function(s) return s._width end,
             GetHeight = function(s) return s._height end,
             GetParent = function(s) return rawget(s, "_parent") end,
@@ -129,8 +139,8 @@ local function widget(kind, parent)
                 return attributes and attributes[key]
             end,
             RegisterForClicks = function(s, ...) s._clicks = {...} end,
-            CreateTexture = function(s, name, layer)
-                local child = widget("Texture", s); child._name, child._layer = name, layer; return child
+            CreateTexture = function(s, name, layer, template, sublevel)
+                local child = widget("Texture", s); child._name, child._layer, child._sublevel = name, layer, sublevel or 0; return child
             end,
             CreateMaskTexture = function(s) return widget("MaskTexture", s) end,
             CreateFontString = function(s, name, layer)
@@ -177,6 +187,8 @@ local function widget(kind, parent)
             SetBackdropBorderColor = function(s, ...) s._borderColor = {...} end,
             SetColorTexture = function(s, ...) s._color = {...} end,
             SetTexture = function(s, value) s._texture = value end,
+            SetTexCoord = function(s, ...) s._texCoord = {...} end,
+            SetRotation = function(s, value) s._rotation = value end,
             SetVertexColor = function(s, ...) s._vertexColor = {...} end,
             SetFont = function(s, path, size, flags) s._font = {path=path, size=size or 10, flags=flags or ""} end,
             SetTextColor = function(s, ...) s._textColor = {...} end,
@@ -383,6 +395,7 @@ function M.writeSVG(root, path)
     end
     local lines = {
         ('<svg xmlns="http://www.w3.org/2000/svg" width="%g" height="%g" viewBox="0 0 %g %g">'):format(width, height, width, height),
+        '<style>@font-face{font-family:Bangers;src:url("Fonts/Comic/Bangers-Regular.ttf")}</style>',
         '<rect width="100%" height="100%" fill="#101419"/>',
     }
     local defs, clipID = {}, 0
@@ -405,6 +418,26 @@ function M.writeSVG(root, path)
         local border, borderOpacity = cssColor(rawget(node, "_borderColor"), {0.35, 0.42, 0.5, 0.35})
         if (kind == "Frame" or kind == "Button" or kind == "EditBox") and (fill ~= "none" or rawget(node, "_backdrop")) and w > 0 and h > 0 then
             lines[#lines + 1] = ('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" fill="%s" fill-opacity="%.3f" stroke="%s" stroke-opacity="%.3f"/>'):format(x, y, w, h, fill, opacity, border, borderOpacity)
+        elseif kind == "Texture" and
+            (tostring(rawget(node,"_texture") or ""):find("IMG\\Comic\\",1,true)
+            or tostring(rawget(node,"_texture") or ""):find("IMG\\Button\\TalentSpendAll",1,true))
+            and w > 0 and h > 0 then
+            local rel = rawget(node,"_texture"):gsub("\\","/"):match(".*BetterSBA/(IMG/[^/]+/[^/]+)") .. ".png"
+            local uv = rawget(node,"_texCoord")
+            local name = rel:match("([^/]+)%.png$") or ""
+            local iw,ih = 256,256
+            if name:find("Paper") then iw,ih=1024,1024
+            elseif name:find("CardFrame") then iw,ih=1024,512
+            elseif name == "TalentSpendAll" then iw,ih=512,128
+            elseif name:find("Button") or name:find("Caption") then iw,ih=1024,128
+            elseif name:find("Header") or name:find("TalentHero") or name:find("City") then iw,ih=1024,256
+            elseif name:find("Ring") or name:find("SidebarMark") then iw,ih=512,512
+            elseif name:find("Glint") then iw,ih=128,256 end
+            local u0,u1,v0,v1=0,1,0,1
+            if uv then u0,u1,v0,v1=uv[1],uv[2],uv[3],uv[4] end
+            local angle=(rawget(node,"_rotation") or 0)*180/math.pi
+            lines[#lines+1]=('<svg x="%.2f" y="%.2f" width="%.2f" height="%.2f" viewBox="%.2f %.2f %.2f %.2f" preserveAspectRatio="none" opacity="%.3f" transform="rotate(%.2f %.2f %.2f)"><image x="0" y="0" width="%d" height="%d" href="%s"/></svg>'):format(
+                x,y,w,h,u0*iw,v0*ih,(u1-u0)*iw,(v1-v0)*ih,(rawget(node,"_alpha") or 1),angle,x+w/2,y+h/2,iw,ih,rel)
         elseif kind == "Texture" and fill ~= "none" and w > 0 and h > 0 then
             local radius = tostring(rawget(node, "_texture") or ""):lower():find("keycap") and 4 or 0
             lines[#lines + 1] = ('<rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%d" fill="%s" fill-opacity="%.3f"/>'):format(x, y, w, h, radius, fill, opacity)
@@ -412,15 +445,16 @@ function M.writeSVG(root, path)
             local text = rawget(node, "_text")
             if text and text ~= "" then
                 local font = rawget(node, "_font") or {}
+                local family = tostring(font.path or ""):find("Bangers",1,true) and "Bangers" or "Arial, sans-serif"
                 local color, alpha = cssColor(rawget(node, "_textColor"), {0.9, 0.9, 0.9, 1})
                 local tx = rawget(node, "_justifyH") == "RIGHT" and x + w
                     or (rawget(node, "_justifyH") == "CENTER" and x + w / 2 or x)
                 local anchor = rawget(node, "_justifyH") == "RIGHT" and "end" or (rawget(node, "_justifyH") == "CENTER" and "middle" or "start")
                 local lineNumber = 0
                 for line in (visibleText(text) .. "\n"):gmatch("(.-)\n") do
-                    lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(
+                    lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="%s" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(
                         tx, y + (font.size or 10) + lineNumber * math.ceil((font.size or 10) * 1.2),
-                        font.size or 10, color, alpha, anchor, escape(line))
+                        family, font.size or 10, color, alpha, anchor, escape(line))
                     lineNumber = lineNumber + 1
                 end
             end
@@ -440,7 +474,17 @@ function M.writeSVG(root, path)
                     color, alpha, anchor, escape(visibleText(value)))
             end
         end
-        for _, child in ipairs(rawget(node, "_children") or {}) do visit(child) end
+        local children = {}
+        for i,child in ipairs(rawget(node, "_children") or {}) do children[#children+1]={node=child,index=i} end
+        local layerOrder={BACKGROUND=1,BORDER=1.5,ARTWORK=4,OVERLAY=5,HIGHLIGHT=6}
+        table.sort(children,function(a,b)
+            local la=rawget(a.node,"_layer") and layerOrder[rawget(a.node,"_layer")] or 2
+            local lb=rawget(b.node,"_layer") and layerOrder[rawget(b.node,"_layer")] or 2
+            if la~=lb then return la<lb end
+            local sa,sb=rawget(a.node,"_sublevel") or 0,rawget(b.node,"_sublevel") or 0
+            return sa~=sb and sa<sb or sa==sb and a.index<b.index
+        end)
+        for _, child in ipairs(children) do visit(child.node) end
     end
     visit(root, true)
     if #defs > 0 then table.insert(lines, 3, "<defs>" .. table.concat(defs) .. "</defs>") end

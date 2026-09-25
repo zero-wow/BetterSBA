@@ -129,6 +129,8 @@ local function CreateChipButton(parent, label, width, onClick)
     local btn = CreateBackdropFrame(parent)
     btn:SetSize(width, 24)
     btn:EnableMouse(true)
+    local comic = parent._comicStudio and NS.ConfigStudio and NS.ConfigStudio.Comic
+    local comicPaint = comic and comic.StyleChip(btn)
 
     local text = btn:CreateFontString(nil, "OVERLAY")
     text:SetFont(NS.GetConfigFontPath(), CHIP_FONT_SIZE, "OUTLINE")
@@ -145,6 +147,7 @@ local function CreateChipButton(parent, label, width, onClick)
 
     function btn:SetActive(active)
         self._active = active and true or false
+        if comicPaint then comicPaint(self._active) end
         local sc = parent._sectionColor or T.ACCENT
         if self._active then
             self:SetBackdropColor(sc[1] * 0.32, sc[2] * 0.32, sc[3] * 0.32, 0.9)
@@ -460,6 +463,8 @@ local function CreateSortResetButton(parent, onClick)
     local btn = CreateBackdropFrame(parent)
     btn:SetSize(36, 24)
     btn:EnableMouse(true)
+    local comic = parent._comicStudio and NS.ConfigStudio and NS.ConfigStudio.Comic
+    local comicPaint = comic and comic.StyleChip(btn)
 
     local lineH = btn:CreateTexture(nil, "ARTWORK")
     lineH:SetColorTexture(1, 1, 1, 1)
@@ -493,6 +498,7 @@ local function CreateSortResetButton(parent, onClick)
 
     function btn:SetActive(active)
         self._active = active and true or false
+        if comicPaint then comicPaint(self._active) end
         local sc = parent._sectionColor or T.ACCENT
         local border = self._active and sc or T.BORDER
         local fill = self._active and { sc[1] * 0.18, sc[2] * 0.18, sc[3] * 0.18, 0.9 } or T.TOGGLE_OFF
@@ -973,6 +979,17 @@ local function CreateSubHeader(parent, text, yPos)
     hdr:SetPoint("TOPLEFT", parent, "TOPLEFT", 14, yPos)
     hdr:SetTextColor(col[1], col[2], col[3])
     hdr:SetText(text)
+    if parent._comicStudio and NS.ConfigStudio and NS.ConfigStudio.Comic then
+        local comic = NS.ConfigStudio.Comic
+        local banner = parent:CreateTexture(nil, "BACKGROUND")
+        banner:SetTexture(comic.paths.caption)
+        banner:SetSize(170, 23)
+        banner:SetPoint("TOPLEFT", parent, "TOPLEFT", 4, yPos + 7)
+        comic.StyleHeading(hdr, 13)
+        local bright = comic.colors.bright
+        hdr:SetTextColor(bright[1], bright[2], bright[3])
+        hdr._comicBanner = banner
+    end
     hdr._sectionIndex = parent._sectionIndex
     hdr._navY = yPos
     hdr._baseColor = { col[1], col[2], col[3] }
@@ -1094,6 +1111,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     levelingPanel:SetSize(innerW, 116)
     levelingPanel:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 0.92)
     levelingPanel:SetBackdropBorderColor(sectionColor[1], sectionColor[2], sectionColor[3], 0.55)
+    if parent._comicStudio then NS.ConfigStudio.Comic.StyleSurface(levelingPanel) end
 
     local levelingTitle = levelingPanel:CreateFontString(nil, "OVERLAY")
     levelingTitle:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "OUTLINE")
@@ -1164,6 +1182,12 @@ function NS.BuildTalentBuildsConfigSection(parent)
     title:SetPoint("TOPLEFT", 14, -184)
     title:SetTextColor(sectionColor[1], sectionColor[2], sectionColor[3])
     title:SetText("Talent Builds")
+    if parent._comicStudio then
+        local comic = NS.ConfigStudio.Comic
+        comic.StyleHeading(title, 19)
+        local bright = comic.colors.bright
+        title:SetTextColor(bright[1], bright[2], bright[3])
+    end
 
     local subtitle = parent:CreateFontString(nil, "OVERLAY")
     subtitle:SetFont(NS.GetConfigFontPath(), SUBTITLE_FONT_SIZE, "")
@@ -1198,6 +1222,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(80)
     searchBox:SetText(NS.db.talentBuildSearchText or "")
+    if parent._comicStudio then NS.ConfigStudio.Comic.StyleInput(searchBox) end
 
     local searchPlaceholder = searchBox:CreateFontString(nil, "OVERLAY")
     searchPlaceholder:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "")
@@ -1236,6 +1261,10 @@ function NS.BuildTalentBuildsConfigSection(parent)
     tablePanel:SetSize(tableW, tableH)
     tablePanel:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 0.92)
     tablePanel:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.85)
+    if parent._comicStudio then
+        NS.ConfigStudio.Comic.DecoratePaper(tablePanel, 0.28)
+        tablePanel:SetBackdropBorderColor(sectionColor[1], sectionColor[2], sectionColor[3], 0.62)
+    end
 
     local detailsPanel = CreateBackdropFrame(parent)
     if compactCatalog then
@@ -1246,6 +1275,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
     detailsPanel:SetSize(detailsW, detailsH)
     detailsPanel:SetBackdropColor(T.BG[1], T.BG[2], T.BG[3], 0.92)
     detailsPanel:SetBackdropBorderColor(T.BORDER[1], T.BORDER[2], T.BORDER[3], 0.85)
+    if parent._comicStudio then NS.ConfigStudio.Comic.StyleSurface(detailsPanel) end
     detailsPanel:EnableMouse(true)
     local detailTooltip = {}
     NS.AddTooltip(detailsPanel, "Build details", detailTooltip, parent)

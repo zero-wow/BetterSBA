@@ -39,6 +39,7 @@ local function run(hasMasque)
     assert(loadfile("Core/Functions/ButtonStyle.lua"))("BetterSBA", NS)
     assert(loadfile("GUI/MainButton.lua"))("BetterSBA", NS)
     assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+    assert(loadfile("GUI/StudioComic.lua"))("BetterSBA", NS)
     assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
     SlashCmdList = {}
     local before = #ui.frames

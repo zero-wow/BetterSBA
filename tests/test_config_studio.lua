@@ -1,6 +1,8 @@
 -- Run from the addon root: lua tests/test_config_studio.lua
 local mock = assert(loadfile("tests/wow_ui_mock.lua"))()
 local ui = mock.install()
+local previewFaction = arg and arg[3] == "alliance" and "Alliance" or "Horde"
+_G.UnitFactionGroup = function() return previewFaction end
 local db = {
     configExperience = "classic", configStudioWidth = 1120, configStudioHeight = 760,
     configPanelScale = 1, castFeedback = "Motion", enabled = true,
@@ -76,12 +78,33 @@ for key, value in pairs(NS.defaults) do
     if db[key] == nil then db[key] = value end
 end
 assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/StudioComic.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
 NS.SwitchSettingsPanel("studio")
 assert(db.configExperience == "studio" and NS.ConfigStudio.frame:IsShown())
 local studio = NS.ConfigStudio
+assert(studio.Comic.faction == previewFaction
+    and studio.Comic.paths.button:find(previewFaction .. "Button", 1, true),
+    "characters must receive faction-matched comic art")
 studio:SelectPage("Talents")
 local talents = studio.pages.Talents
+assert(talents._comicHero and studio.frame._children,
+    "the talent page must keep the approved faction illustration")
+assert(talents._spend._comic and talents._spend._comic.glint,
+    "Spend Available Points needs layered hover animation")
+talents._spend:GetScript("OnEnter")(talents._spend)
+talents._spend:GetScript("OnUpdate")(talents._spend,.12)
+assert(talents._spend._comic.ring:GetAlpha() > 0
+    and talents._spend._comic.hover:GetAlpha() > 0,
+    "button hover must animate the ring and chevron")
+talents._spend:GetScript("OnLeave")(talents._spend)
+for _=1,24 do
+    local tick=talents._spend:GetScript("OnUpdate")
+    if not tick then break end
+    tick(talents._spend,.05)
+end
+assert(talents._spend._comic.ring:GetAlpha() == 0,
+    "button hover artwork must reset after leaving")
 talents._change:GetScript("OnClick")(talents._change)
 assert(talents._picker:IsShown() and talents._pickerRows[1]:IsShown(),
     "changing the build must expose current-spec targets")
@@ -156,6 +179,12 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     inside(talents._browse, studio.content, "build library")
     inside(talents._spend, talents._route, "spend button")
     inside(talents._pickerCard, studio.content, "build picker dialog")
+    studio:OpenStudioChoices("Cast Animation", {"Drift", "Pulse"}, "Pulse", function() end)
+    inside(studio._choicePopup.card, studio.content, "choice dialog")
+    studio._choicePopup.overlay:Hide()
+    studio:ConfirmStudioAction("Reset this profile to default settings?", function() end)
+    inside(studio._confirmPopup.card, studio.content, "confirmation dialog")
+    studio._confirmPopup.overlay:Hide()
     assert(talents._routeName:GetStringWidth() <= talents._routeName:GetWidth(),
         "the selected build name must fit the route column at every size")
     local a, b = rect(talents._left), rect(talents._right)
@@ -178,7 +207,25 @@ if arg and arg[1] then
     local previewPage = ({ motion = "Motion", combat = "Combat", colors = "Colors & Fonts",
         profiles = "Profiles", library = "Build Library" })[arg[2]] or "Talents"
     studio:SelectPage(previewPage)
+    local navPage = (previewPage == "Build Library" or previewPage == "Talent Options")
+        and "Talents" or previewPage
+    local nav = studio.navButtons[navPage]
+    if nav and nav:GetScript("OnUpdate") then nav:GetScript("OnUpdate")(nav, .5) end
     if arg[2] == "picker" then talents._change:GetScript("OnClick")(talents._change) end
+    if arg[2] == "hover" then
+        talents._spend:GetScript("OnEnter")(talents._spend)
+        local elapsed = 0
+        local duration = tonumber(arg[4]) or .3
+        while elapsed < duration do
+            talents._spend:GetScript("OnUpdate")(talents._spend,.05)
+            elapsed = elapsed + .05
+        end
+    end
+    if arg[2] == "choice" then
+        studio:OpenStudioChoices("Cast Animation", {"Drift", "Pulse", "Vortex"}, "Pulse", function() end)
+    elseif arg[2] == "confirm" then
+        studio:ConfirmStudioAction("Reset this profile to default settings?", function() end)
+    end
     mock.writeSVG(studio.frame, arg[1])
 end
 NS.SwitchSettingsPanel("classic")

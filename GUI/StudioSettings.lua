@@ -231,7 +231,9 @@ function Studio:OpenStudioChoices(title, choices, current, onChoose)
         card:ClearAllPoints()
         card:SetPoint("CENTER", overlay, "CENTER")
         card:SetFrameLevel(overlay:GetFrameLevel() + 1)
-        local heading = UI.Label(card, "", 17, C.bright, 388, "TOPLEFT", card, "TOPLEFT", 16, -13)
+        if self.Comic then self.Comic.DecorateDialog(card,245) end
+        local heading = UI.Label(card, "", 20, C.bright, 388, "TOPLEFT", card, "TOPLEFT", 16, -11)
+        if self.Comic then self.Comic.StyleHeading(heading,20) end
         local rows = {}
         for i = 1, 7 do
             local index = i
@@ -250,14 +252,22 @@ function Studio:OpenStudioChoices(title, choices, current, onChoose)
             popup.page = popup.page + 1
             popup.Refresh()
         end)
-        UI.Action(card, "Close", 324, -272, 80, 24, function() overlay:Hide() end, "quiet")
+        local close = UI.Action(card, "Close", 324, -272, 80, 24, function() overlay:Hide() end, "quiet")
         local pageLabel = UI.Label(card, "", 10, C.dim, 80, "BOTTOM", card, "BOTTOM", 0, 16)
         pageLabel:SetJustifyH("CENTER")
-        popup = { overlay = overlay, heading = heading, rows = rows,
-            back = back, forward = forward, pageLabel = pageLabel, page = 1 }
+        popup = { overlay = overlay, card = card, heading = heading, rows = rows,
+            back = back, forward = forward, close = close, pageLabel = pageLabel, page = 1 }
         function popup.Refresh()
             local pages = math.max(1, math.ceil(#popup.choices / 7))
             popup.page = math.min(popup.page, pages)
+            local visibleRows = math.max(1, math.min(7, #popup.choices - (popup.page - 1) * 7))
+            local savedSpace = (7 - visibleRows) * 32
+            card:SetHeight(304 - savedSpace)
+            for _, control in ipairs({ back, forward, close }) do
+                control:ClearAllPoints()
+                control:SetPoint("TOPLEFT", card, "TOPLEFT",
+                    control == back and 16 or (control == forward and 116 or 324), -272 + savedSpace)
+            end
             for i, row in ipairs(rows) do
                 local value = popup.choices[(popup.page - 1) * 7 + i]
                 row._value = value
@@ -371,6 +381,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
         value:SetPoint("RIGHT", row, "RIGHT", -47, 0)
         value:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
         value:SetBackdropColor(unpack(C.rail)); value:SetBackdropBorderColor(unpack(C.border))
+        if studio.Comic then studio.Comic.StyleInput(value) end
         value:SetFont(NS.GetConfigFontPath(), 11, "")
         value:SetTextColor(unpack(C.text)); value:SetJustifyH("CENTER")
         value:SetAutoFocus(false)
@@ -406,6 +417,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
             value:SetSize(198, 21); value:SetPoint("RIGHT", row, "RIGHT", -8, 0)
             value:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
             value:SetBackdropColor(unpack(C.rail)); value:SetBackdropBorderColor(unpack(C.border))
+            if studio.Comic then studio.Comic.StyleInput(value) end
             value:SetFont(NS.GetConfigFontPath(), 11, "")
             value:SetTextColor(unpack(C.text)); value:SetTextInsets(6, 6, 0, 0)
             value:SetAutoFocus(false)
@@ -533,7 +545,8 @@ local function BuildPage(studio, page, groups)
     local view = NS.CreateFrame("Frame", nil, studio.content)
     view:SetAllPoints()
     studio.pages[page] = view
-    UI.Label(view, page, 19, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -9)
+    local pageTitle = UI.Label(view, page, 25, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -8)
+    if studio.Comic then studio.Comic.StyleHeading(pageTitle, 25) end
     local count = 0
     for _, group in ipairs(groups or {}) do count = count + #group[2] end
     local countLabel = UI.Label(view, count .. " settings", 10, C.muted, 120,
@@ -552,7 +565,9 @@ local function BuildPage(studio, page, groups)
     local y, refreshers, controls = -2, {}, {}
     for _, group in ipairs(groups or {}) do
         if #group[2] > 0 then
-            UI.Label(child, group[1], 11, C.accent, 300, "TOPLEFT", child, "TOPLEFT", 8, y - 2)
+            if studio.Comic then studio.Comic.DecorateGroup(child, y) end
+            local groupTitle = UI.Label(child, group[1], 13, C.bright, 300, "TOPLEFT", child, "TOPLEFT", 8, y - 2)
+            if studio.Comic then studio.Comic.StyleHeading(groupTitle, 13) end
             local line = UI.Paint(child, C.border)
             line:ClearAllPoints()
             line:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 20)
@@ -595,7 +610,8 @@ local function BuildProfiles(studio)
     local view = NS.CreateFrame("Frame", nil, studio.content)
     view:SetAllPoints()
     studio.pages.Profiles = view
-    UI.Label(view, "Profiles", 19, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -9)
+    local title = UI.Label(view, "Profiles", 25, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -8)
+    if studio.Comic then studio.Comic.StyleHeading(title,25) end
     local name = UI.Label(view, "", 15, C.text, 380, "TOPLEFT", view, "TOPLEFT", 26, -46)
     local message = UI.Label(view, "", 11, C.dim, 540, "TOPLEFT", view, "TOPLEFT", 26, -73)
     local function Report(ok, err, success)
@@ -658,6 +674,7 @@ local function BuildProfiles(studio)
     font:SetSize(240, 25); font:SetPoint("TOPLEFT", view, "TOPLEFT", 26, -312)
     font:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     font:SetBackdropColor(unpack(C.rail)); font:SetBackdropBorderColor(unpack(C.border))
+    if studio.Comic then studio.Comic.StyleInput(font) end
     font:SetFont(NS.GetConfigFontPath(), 11, ""); font:SetTextColor(unpack(C.text))
     font:SetTextInsets(7, 7, 0, 0); font:SetAutoFocus(false)
     UI.Label(view, "Rename Current Profile", 11, C.dim, 250, "TOPLEFT", view, "TOPLEFT", 26, -293)
@@ -684,17 +701,20 @@ function Studio:ConfirmStudioAction(prompt, confirm)
         overlay:SetAllPoints(); overlay:SetFrameLevel(self.content:GetFrameLevel() + 40)
         overlay:EnableMouse(true)
         UI.Paint(overlay, { .02, .025, .045, .85 })
-        local card = UI.Surface(overlay, 0, 0, 470, 128, C.card)
+        local card = UI.Surface(overlay, 0, 0, 470, 145, C.card)
         card:ClearAllPoints(); card:SetPoint("CENTER", overlay, "CENTER")
         card:SetFrameLevel(overlay:GetFrameLevel() + 1)
-        local text = UI.Label(card, "", 13, C.text, 438, "TOPLEFT", card, "TOPLEFT", 16, -20)
+        if self.Comic then self.Comic.DecorateDialog(card,205) end
+        local title = UI.Label(card,"Confirm Action",19,C.bright,230,"TOPLEFT",card,"TOPLEFT",16,-12)
+        if self.Comic then self.Comic.StyleHeading(title,19) end
+        local text = UI.Label(card, "", 13, C.text, 438, "TOPLEFT", card, "TOPLEFT", 16, -47)
         text:SetWordWrap(true); text:SetMaxLines(2)
-        UI.Action(card, "Cancel", 220, -83, 105, 28, function() overlay:Hide() end, "quiet")
-        UI.Action(card, "Confirm", 339, -83, 115, 28, function()
+        UI.Action(card, "Cancel", 220, -100, 105, 28, function() overlay:Hide() end, "quiet")
+        UI.Action(card, "Confirm", 339, -100, 115, 28, function()
             overlay:Hide()
             popup.confirm()
         end)
-        popup = { overlay = overlay, text = text }
+        popup = { overlay = overlay, card = card, text = text }
         self._confirmPopup = popup
         overlay:Hide()
     end
@@ -742,7 +762,8 @@ function Studio:BuildSettingsPages()
 
     local library = NS.CreateFrame("Frame", nil, self.content)
     library:SetAllPoints(); self.pages["Build Library"] = library
-    UI.Label(library, "Build Library", 19, C.bright, 350, "TOPLEFT", library, "TOPLEFT", 26, -9)
+    local libraryTitle = UI.Label(library, "Build Library", 25, C.bright, 350, "TOPLEFT", library, "TOPLEFT", 26, -8)
+    if self.Comic then self.Comic.StyleHeading(libraryTitle,25) end
     local libraryBack = UI.Action(library, "← Talents", 0, 0, 100, 24,
         function() self:SelectPage("Talents") end, "quiet")
     libraryBack:ClearAllPoints(); libraryBack:SetPoint("TOPRIGHT", library, "TOPRIGHT", -32, -7)
@@ -751,7 +772,9 @@ function Studio:BuildSettingsPages()
     scroll:SetSize(610, 520); scroll:EnableMouseWheel(true)
     local child = NS.CreateFrame("Frame", nil, scroll)
     child:SetSize(600, 1100); child._contentWidth = 600
-    child._sectionColor = NS.THEME and NS.THEME.ACCENT or C.accent
+    child._comicStudio = self.Comic ~= nil
+    child._sectionColor = child._comicStudio and C.accent or
+        (NS.THEME and NS.THEME.ACCENT or C.accent)
     scroll:SetScrollChild(child)
     library._studioScroll, library._studioChild = scroll, child
     library._fixedStudioChildWidth = 600

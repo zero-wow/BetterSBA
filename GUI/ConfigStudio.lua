@@ -83,6 +83,7 @@ local function Surface(parent, x, y, w, h, fill)
     f:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     f:SetBackdropColor(NS.unpack(fill or C.card))
     f:SetBackdropBorderColor(NS.unpack(C.border))
+    if Studio.Comic then Studio.Comic.StyleSurface(f) end
     return f
 end
 
@@ -99,6 +100,7 @@ local function Action(parent, value, x, y, w, h, callback, tone)
     b:SetScript("OnClick", callback)
     b:SetScript("OnEnter", function(self) self:SetBackdropBorderColor(NS.unpack(C.accent)) end)
     b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(C.border)) end)
+    if Studio.Comic then Studio.Comic.StyleAction(b, tone) end
     return b
 end
 
@@ -106,7 +108,9 @@ local function Caption(parent, value, x, y)
     local width = math.max(100, math.min(160, #value * 6 + 18))
     local tab = Surface(parent, x, y, width, 20, C.accent)
     tab:SetBackdropBorderColor(NS.unpack(C.accent))
-    Label(tab, value, 10, C.gutter, width - 16, "LEFT", tab, "LEFT", 8, 0)
+    if Studio.Comic then Studio.Comic.StyleCaption(tab) end
+    local label = Label(tab, value, 12, C.bright, width - 16, "LEFT", tab, "LEFT", 8, 0)
+    if Studio.Comic then Studio.Comic.StyleHeading(label, 12) end
     return tab
 end
 
@@ -123,13 +127,15 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
     track:ClearAllPoints()
     track:SetPoint("RIGHT", row, "RIGHT", 0, 0)
     track:EnableMouse(false)
+    if Studio.Comic then Studio.Comic.StyleToggle(track) end
     local stateText = Label(track, "Off", 10, C.dim, 34, "CENTER", track, "CENTER", 0, 0)
     stateText:SetJustifyH("CENTER")
     row.Refresh = function()
         local on = getter() == true
         track:SetBackdropColor(NS.unpack(on and C.accent or C.rail))
+        if Studio.Comic then Studio.Comic.SetToggleState(track,on) end
         stateText:SetText(on and "On" or "Off")
-        stateText:SetTextColor(NS.unpack(on and C.gutter or C.dim))
+        stateText:SetTextColor(NS.unpack(Studio.Comic and C.bright or (on and C.gutter or C.dim)))
     end
     row:SetScript("OnClick", function() setter(not getter()); row.Refresh() end)
     row._track = track
@@ -171,14 +177,16 @@ local function BuildTalentPage(self)
     view:SetAllPoints()
     self.pages.Talents = view
     Caption(view, "Talents", 26, -8)
-    Label(view, "Leveling Talents", 24, C.bright, 500, "TOPLEFT", view, "TOPLEFT", 26, -35)
+    local talentTitle = Label(view, "Leveling Talents", 30, C.bright, 500, "TOPLEFT", view, "TOPLEFT", 26, -33)
+    if self.Comic then self.Comic.StyleHeading(talentTitle, 30) end
     Label(view, "Choose a route once. BetterSBA spends only points your level can use.", 11,
-        C.dim, 610, "TOPLEFT", view, "TOPLEFT", 26, -69)
+        C.dim, 610, "TOPLEFT", view, "TOPLEFT", 26, -74)
+    if self.Comic then self.Comic.DecorateTalentPage(view) end
 
     local route = Surface(view, 26, -96, 622, 112)
     view._route = route
     Paint(route, C.accent, "TOPLEFT", route, 0, 0, 3, 112)
-    Label(route, "Current Route", 10, C.accent, 120, "TOPLEFT", route, "TOPLEFT", 16, -10)
+    Caption(route, "Current Route", 10, -5)
     local routeName = Label(route, "No Build Selected", 16, C.bright, 365,
         "TOPLEFT", route, "TOPLEFT", 16, -28)
     routeName:SetWordWrap(true)
@@ -199,9 +207,7 @@ local function BuildTalentPage(self)
     end)
     route:SetScript("OnLeave", function() GameTooltip:Hide() end)
     local routeDetail = Label(route, "Current specialization", 10, C.dim,
-        365, "TOPLEFT", route, "TOPLEFT", 16, -75)
-    local routeMeta = Label(route, "Only talents available at your level are purchased.", 10, C.muted,
-        365, "TOPLEFT", route, "TOPLEFT", 16, -94)
+        365, "TOPLEFT", route, "TOPLEFT", 16, -80)
     local spend = NS.CreateFrame("Button", nil, route)
     spend:SetSize(205, 44)
     spend:SetPoint("TOPRIGHT", route, "TOPRIGHT", -13, -17)
@@ -212,7 +218,7 @@ local function BuildTalentPage(self)
     local change = Action(route, "Change Build", 0, 0, 128, 25, function() end, "quiet")
     view._change = change
     change:ClearAllPoints()
-    change:SetPoint("TOPRIGHT", route, "TOPRIGHT", -51, -75)
+    change:SetPoint("TOPRIGHT", route, "TOPRIGHT", -51, -70)
 
     local left = Surface(view, 26, -220, 305, 216)
     local right = Surface(view, 343, -220, 305, 216)
@@ -251,12 +257,12 @@ local function BuildTalentPage(self)
         function() return NS.GetTalentLevelingInfo().autoRespecEnabled end,
         function(value) NS.SetTalentAutoRespecEnabled(value); self:Refresh() end, 200)
     view._autoRebuild = autoRebuild
-    local rebuild = Action(right, "Reset & Rebuild", 18, -177, 133, 28, function()
+    local rebuild = Action(right, "Reset & Rebuild", 18, -168, 133, 28, function()
         local ok, message = NS.RequestTalentSBARespec()
         self.notice:SetText(message or (ok and "Rebuild started." or "Unable to rebuild talents."))
         self:Refresh()
     end)
-    local undo = Action(right, "Undo Respec", 161, -177, 125, 28, function()
+    local undo = Action(right, "Undo Respec", 161, -168, 125, 28, function()
         local ok, message = NS.RequestTalentSBAUndo()
         self.notice:SetText(message or (ok and "Undo started." or "Nothing to undo."))
         self:Refresh()
@@ -277,7 +283,9 @@ local function BuildTalentPage(self)
     picker:SetPoint("CENTER", pickerOverlay, "CENTER", 0, 0)
     picker:SetFrameLevel(pickerOverlay:GetFrameLevel() + 1)
     picker:EnableMouse(true)
-    Label(picker, "Choose a Build", 18, C.bright, 350, "TOPLEFT", picker, "TOPLEFT", 16, -15)
+    if self.Comic then self.Comic.DecorateDialog(picker,230) end
+    local pickerTitle = Label(picker, "Choose a Build", 21, C.bright, 350, "TOPLEFT", picker, "TOPLEFT", 16, -12)
+    if self.Comic then self.Comic.StyleHeading(pickerTitle,21) end
     Label(picker, "Builds for your current specialization", 10, C.dim, 400,
         "TOPLEFT", picker, "TOPLEFT", 16, -39)
     local pickerMessage = Label(picker, "", 10, C.accent, 460,
@@ -365,13 +373,14 @@ local function BuildTalentPage(self)
     self.pickerOverlay = pickerOverlay
     spend:SetScript("OnEnter", function() art:SetVertexColor(1, 1, 1, .82) end)
     spend:SetScript("OnLeave", function() art:SetVertexColor(1, 1, 1, 1) end)
+    if self.Comic then self.Comic.StyleHeroAction(spend) end
     view.Refresh = function()
         local info = NS.GetTalentLevelingInfo()
         WrapRouteName(routeName, routeNameMeasure, info.targetName, routeName:GetWidth())
         change._label:SetText(info.buildID and info.targetName ~= "No Build Selected"
             and "Change Build" or "Choose a Build")
-        routeDetail:SetText(info.specName and ("Active Specialization: " .. info.specName) or "Current specialization")
-        routeMeta:SetText(info.enabled and "Auto-Spend: On" or "Auto-Spend: Off")
+        routeDetail:SetText((info.specName and ("Active Specialization: " .. info.specName)
+            or "Current specialization") .. "  •  Auto-Spend: " .. (info.enabled and "On" or "Off"))
         local headline
         if not info.buildID or info.targetName == "No Build Selected" then
             headline = "Choose a Build"
@@ -404,6 +413,7 @@ local function BuildTalentPage(self)
 end
 
 function Studio:Create()
+    if self.Comic then self.Comic.ApplyPalette(C) end
     local w = math.max(900, math.min(1300, tonumber(NS.db.configStudioWidth) or 1120))
     local savedHeight = tonumber(NS.db.configStudioHeight) or 620
     if savedHeight == 700 or savedHeight == 760 or savedHeight == 790 then savedHeight = 620 end
@@ -412,7 +422,8 @@ function Studio:Create()
     local f = NS.CreatePanel("BetterSBA_ConfigStudio", NS.UIParent, w, h)
     self.frame = f
     f:SetBackdropColor(NS.unpack(C.shell))
-    f:SetBackdropBorderColor(NS.unpack(C.border))
+    f:SetBackdropBorderColor(NS.unpack(C.gold or C.border))
+    if self.Comic then self.Comic.DecorateShell(f) end
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetResizable(true)
@@ -427,12 +438,14 @@ function Studio:Create()
     header:SetPoint("TOPRIGHT", 0, 0)
     header:SetHeight(48)
     Paint(header, C.card)
-    local topLine = Paint(header, C.accent, "TOPLEFT", header, 0, 0, w, 3)
+    if self.Comic then self.Comic.DecorateHeader(header) end
+    local topLine = Paint(header, C.gold or C.accent, "TOPLEFT", header, 0, 0, w, 3)
     topLine:SetPoint("TOPRIGHT", header, "TOPRIGHT", 0, 0)
-    Label(header, "BetterSBA", 18, C.bright, 150, "LEFT", header, "LEFT", 16, 0)
+    local brand = Label(header, "BetterSBA", 24, C.bright, 150, "LEFT", header, "LEFT", 16, 0)
+    if self.Comic then self.Comic.StyleHeading(brand, 24) end
     Label(header, "Settings", 10, C.muted, 100, "LEFT", header, "LEFT", 165, 0)
-    local profile = Label(header, "", 11, C.dim, 220, "RIGHT", header, "RIGHT", -50, 0)
-    profile:SetJustifyH("RIGHT")
+    local profile = Label(header, "", 11, C.dim, 220, "LEFT", header, "LEFT", 290, 0)
+    profile:SetJustifyH("LEFT")
     self.profileLabel = profile
     local close = Action(header, "X", 0, 0, 28, 28, function() f:Hide() end)
     close:ClearAllPoints()
@@ -443,6 +456,7 @@ function Studio:Create()
     rail:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
     rail:SetWidth(210)
     Paint(rail, C.rail)
+    if self.Comic then self.Comic.DecorateRail(rail) end
     Label(rail, "Your Addon", 10, C.muted, 155, "TOPLEFT", rail, "TOPLEFT", 16, -12)
     local navButtons = {}
     for i, page in ipairs(NAV) do
@@ -455,6 +469,7 @@ function Studio:Create()
         local name = Label(button, page, 11, C.text, 145, "LEFT", button, "LEFT", 40, 0)
         button:SetScript("OnClick", function() self:SelectPage(page) end)
         button._bg, button._stripe, button._number, button._name = bg, stripe, number, name
+        if self.Comic then self.Comic.StyleNav(button) end
         navButtons[page] = button
     end
     self.navButtons = navButtons
@@ -467,6 +482,7 @@ function Studio:Create()
     content:SetPoint("TOPLEFT", f, "TOPLEFT", 218, -54)
     content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 28)
     Paint(content, C.body)
+    if self.Comic then self.Comic.DecoratePaper(content, .7) end
     self.content = content
     local footer = NS.CreateFrame("Frame", nil, f)
     footer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 218, 0)
@@ -545,7 +561,13 @@ function Studio:SelectPage(page)
     if self.page ~= "Talents" and self.pickerOverlay then self.pickerOverlay:Hide() end
     if self._choicePopup then self._choicePopup.overlay:Hide() end
     if self._confirmPopup then self._confirmPopup.overlay:Hide() end
-    for key, view in pairs(self.pages) do view:SetShown(key == self.page) end
+    for key, view in pairs(self.pages) do
+        local selected = key == self.page
+        view:SetShown(selected)
+        if self.Comic then
+            if selected then self.Comic.FadePage(view) else self.Comic.ResetPage(view) end
+        end
+    end
     local navPage = (self.page == "Build Library" or self.page == "Talent Options")
         and "Talents" or self.page
     for key, button in pairs(self.navButtons) do
@@ -554,6 +576,7 @@ function Studio:SelectPage(page)
         button._stripe:SetAlpha(active and 1 or 0)
         button._number:SetTextColor(NS.unpack(active and C.accent or C.muted))
         button._name:SetTextColor(NS.unpack(active and C.bright or C.dim))
+        if self.Comic then self.Comic.SetNavActive(button, active) end
     end
     self:Refresh()
 end
@@ -577,6 +600,9 @@ function Studio:Hide()
     if self.pickerOverlay then self.pickerOverlay:Hide() end
     if self._choicePopup then self._choicePopup.overlay:Hide() end
     if self._confirmPopup then self._confirmPopup.overlay:Hide() end
+    if self.Comic and self.pages then
+        for _, view in pairs(self.pages) do self.Comic.ResetPage(view) end
+    end
     if self.frame then self.frame:Hide() end
 end
 

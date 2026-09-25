@@ -773,10 +773,14 @@ if arg and arg[1] and arg[1] ~= "" then
     mock.writeSVG(NS.Config.frame, arg[1])
     print("config mock: wrote estimated-bounds SVG to " .. arg[1])
 end
+local studioFaction = arg and arg[4] == "horde" and "Horde" or "Alliance"
+_G.UnitFactionGroup = function() return studioFaction end
 assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/StudioComic.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
 NS.SwitchSettingsPanel("studio")
 local studio = NS.ConfigStudio
+assert(studio.Comic.faction == studioFaction, "Studio art must match the character's faction")
 studio:SelectPage("Build Library")
 assert(studio.pages["Build Library"]._catalog,
     "Studio must show the real build manager inside the new panel")
