@@ -104,8 +104,9 @@ studio:SelectPage("Overview")
 overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButton)
 assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
 studio:SelectPage("Overview")
-assert(overview._groupHeaders[1]._font.path:find("Kalam-Bold", 1, true),
-    "small section headings need the bundled comic lettering")
+assert(overview._groupHeaders[1]._font.path:find("LilitaOne-Regular", 1, true)
+    and overview._groupHeaders[1]:GetHeight() >= 19,
+    "small section headings need legible comic lettering with explicit bounds")
 local comicFont = assert(io.open("Fonts/Comic/VTC-Letterer-Pro.ttf", "rb"),
     "the comic button font must ship with the addon")
 comicFont:close()
@@ -115,7 +116,13 @@ comicLicense:close()
 local kalamFont = assert(io.open("Fonts/Comic/Kalam-Bold.ttf", "rb"),
     "the optional comic letterer must ship with the addon")
 kalamFont:close()
-assert(overview._overviewTalentButton._label._font.path:find("Kalam-Bold", 1, true)
+local lilitaFont = assert(io.open("Fonts/Comic/LilitaOne-Regular.ttf", "rb"),
+    "the default comic action font must ship with the addon")
+lilitaFont:close()
+local lilitaLicense = assert(io.open("Fonts/Comic/LilitaOne-OFL.txt", "r"),
+    "the default comic action font must include its license")
+lilitaLicense:close()
+assert(overview._overviewTalentButton._label._font.path:find("LilitaOne-Regular", 1, true)
     and overview._overviewTalentButton:GetWidth() < 136,
     "action labels need comic lettering and tighter button lengths")
 local fontProbe = {
@@ -132,7 +139,7 @@ assert(fontProbe.path == NS.GetConfigFontPath(),
 local handProbe = {
     SetFont = function(self, path)
         self.path = path
-        return not path:find("Kalam-Bold", 1, true)
+        return not path:find("LilitaOne-Regular", 1, true)
     end,
     SetShadowColor = function() end,
     SetShadowOffset = function() end,
@@ -158,7 +165,7 @@ assert(overview._overviewTalentButton:GetWidth() <= compactButtonWidth
     "changing lettering must resize action buttons without clipping")
 fontChoice:GetScript("OnClick")(fontChoice)
 studio._choicePopup.rows[1]:GetScript("OnClick")(studio._choicePopup.rows[1])
-assert(db.configStudioButtonFont == "Kalam")
+assert(db.configStudioButtonFont == "Lilita One")
 local headingChoice = fontsPage._controls.configStudioHeadingFont._control
 headingChoice:GetScript("OnClick")(headingChoice)
 studio._choicePopup.rows[3]:GetScript("OnClick")(studio._choicePopup.rows[3])
@@ -170,6 +177,10 @@ studio._choicePopup.rows[1]:GetScript("OnClick")(studio._choicePopup.rows[1])
 assert(overview._controls.enabled._control._comicMini,
     "On/Off switches must use compact styling rather than action-button art")
 local enabledSwitch = overview._controls.enabled._control
+assert(enabledSwitch._label:GetText() == "On"
+    and enabledSwitch._label._font.path == "Fonts\\FRIZQT__.TTF"
+    and enabledSwitch._label:GetHeight() >= 18,
+    "compact On/Off switches must have visible labels at WoW UI scale")
 local wasEnabled = db.enabled
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(db.enabled == not wasEnabled and enabledSwitch._comicOn == not wasEnabled,
@@ -333,9 +344,19 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     else
         assert(overview._studioChild:GetHeight() > overview._studioScroll:GetHeight(),
             "compact Overview must keep the adventure card scrollable")
+        inside(overview._overviewCard, overview._studioScroll,
+            "compact Overview adventure card must be visible before scrolling")
+        assert(rect(overview._studioForm).top <= rect(overview._overviewCard).bottom - 12,
+            "compact Overview settings need a gutter below the adventure card")
     end
     assert(studio.pages.Combat._studioForm:GetWidth() <= 680,
         "setting controls must not stretch across the full expanded window")
+    local advanced = studio.pages.Advanced
+    advanced.Refresh()
+    local overflow = advanced._studioChild:GetHeight() - advanced._studioScroll:GetHeight()
+    assert(not advanced._scrollUp:IsShown()
+        and advanced._scrollDown:IsShown() == (overflow > 1),
+        "scroll arrows should appear only when content can scroll")
 end
 local talents = studio.pages.Talents
 talents._change:GetScript("OnClick")(talents._change)

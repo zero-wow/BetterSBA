@@ -11,8 +11,9 @@ local COMIC_FONTS = {
     Bangers = FONT_ROOT .. "Bangers-Regular.ttf",
     ["VTC Letterer Pro"] = FONT_ROOT .. "VTC-Letterer-Pro.ttf",
     Kalam = FONT_ROOT .. "Kalam-Bold.ttf",
+    ["Lilita One"] = FONT_ROOT .. "LilitaOne-Regular.ttf",
 }
-Comic.fontChoices = { "Bangers", "VTC Letterer Pro", "Kalam" }
+Comic.fontChoices = { "Lilita One", "VTC Letterer Pro", "Bangers" }
 Comic._fontTargets = setmetatable({}, { __mode = "k" })
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local unpack = NS.unpack or unpack
@@ -34,27 +35,34 @@ function Comic.StyleHeading(label,size)
     local db = NS.db or {}
     local face = size >= 18 and (COMIC_FONTS[db.configStudioHeadingFont] or COMIC_FONTS.Bangers)
         or (size >= 12 and (COMIC_FONTS[db.configStudioButtonFont]
-            or COMIC_FONTS.Kalam))
+            or COMIC_FONTS["Lilita One"]))
         or fallback
     if not label:SetFont(face,size,"") then
         label:SetFont(fallback,size,"OUTLINE")
     end
     label:SetShadowColor(0,0,0,.9)
     label:SetShadowOffset(size >= 18 and 2 or 1,-1)
+    if size < 18 then label:SetHeight(size + 6) end
     Comic._fontTargets[label] = { kind = "heading", size = size }
 end
 
 function Comic.StyleButtonText(label,size)
     if not label then return end
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    local face = COMIC_FONTS[NS.db and NS.db.configStudioButtonFont or "Kalam"]
-        or COMIC_FONTS.Kalam
-    if not label:SetFont(face,size or 14,"") then
-        label:SetFont(fallback,size or 14,"OUTLINE")
+    size = size or 14
+    -- Tiny state controls need a compact face and a real text box. Display
+    -- fonts that work at 14px can have taller metrics than a 21px switch.
+    local tiny = size < 13
+    local face = tiny and "Fonts\\FRIZQT__.TTF"
+        or COMIC_FONTS[NS.db and NS.db.configStudioButtonFont or "Lilita One"]
+        or COMIC_FONTS["Lilita One"]
+    if not label:SetFont(face,size,tiny and "OUTLINE" or "") then
+        label:SetFont(fallback,size,"OUTLINE")
     end
+    if tiny then label:SetHeight(18) end
     label:SetShadowColor(0,0,0,.95)
     label:SetShadowOffset(1,-1)
-    Comic._fontTargets[label] = { kind = "button", size = size or 14 }
+    Comic._fontTargets[label] = { kind = "button", size = size }
 end
 
 function Comic.RefreshTypography()

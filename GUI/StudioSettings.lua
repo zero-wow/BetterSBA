@@ -113,7 +113,7 @@ local RANGES = {
 }
 local OPTIONS = {
     configStudioHeadingFont = {"Bangers", "VTC Letterer Pro", "Kalam"},
-    configStudioButtonFont = {"Kalam", "VTC Letterer Pro", "Bangers"},
+    configStudioButtonFont = {"Lilita One", "VTC Letterer Pro", "Bangers"},
     buttonStyle = {"Soft", "Classic"}, trinketMode = {"Off", "Approved"},
     castFeedback = {"Motion", "Classic", "Off"},
     motionPreset = {"Pulse", "Echo", "Sweep", "Sheen", "Snap", "Orbit"},
@@ -216,6 +216,7 @@ local function Apply(key, value, studio)
         and studio.Comic then studio.Comic.RefreshTypography() end
     if NS.ApplyProfileVisuals then NS:ApplyProfileVisuals() end
     if key == "configPanelScale" then studio:ApplyScale() end
+    if studio.Refresh then studio:Refresh() end
 end
 
 local function Clone(value)
@@ -607,9 +608,11 @@ local function BuildPage(studio, page, groups)
     child:SetHeight(formHeight)
     view._controls = controls
     view._count = count
+    local RefreshScrollControls
     local function ScrollTo(value)
         local limit = math.max(0, child:GetHeight() - scroll:GetHeight())
         scroll:SetVerticalScroll(math.max(0, math.min(limit, value)))
+        if RefreshScrollControls then RefreshScrollControls() end
     end
     scroll:SetScript("OnMouseWheel", function(_, delta)
         ScrollTo(scroll:GetVerticalScroll() - delta * 72)
@@ -622,8 +625,19 @@ local function BuildPage(studio, page, groups)
         ScrollTo(scroll:GetVerticalScroll() + 200)
     end, "quiet")
     down:ClearAllPoints(); down:SetPoint("BOTTOMRIGHT", view, "BOTTOMRIGHT", -4, 10)
+    view._scrollUp, view._scrollDown = up, down
+    RefreshScrollControls = function()
+        local limit = math.max(0, child:GetHeight() - scroll:GetHeight())
+        local offset = scroll:GetVerticalScroll()
+        up:SetShown(limit > 1 and offset > 1)
+        down:SetShown(limit > 1 and offset < limit - 1)
+    end
+    scroll:HookScript("OnSizeChanged", RefreshScrollControls)
+    child:HookScript("OnSizeChanged", RefreshScrollControls)
+    scroll:HookScript("OnVerticalScroll", RefreshScrollControls)
     view.Refresh = function()
         for _, fn in ipairs(refreshers) do fn() end
+        RefreshScrollControls()
     end
     if page == "Overview" then
         local card = UI.Surface(child, 8, y - 12, child:GetWidth() - 16, 126, C.card)
@@ -655,14 +669,14 @@ local function BuildPage(studio, page, groups)
         end)
         route:SetWidth(math.max(130, card:GetWidth() - 195))
         status:SetWidth(route:GetWidth())
-        local naturalTop = -y + 12
         local function RelayoutOverview()
             local width = child:GetWidth()
-            local viewport = scroll:GetHeight()
             card:ClearAllPoints()
+            form:ClearAllPoints()
             if width >= 790 then
                 local column = math.floor((width - 24) / 2)
                 form:SetWidth(column)
+                form:SetPoint("TOPLEFT", child, "TOPLEFT", 0, 0)
                 card:SetWidth(width - column - 24)
                 card:SetPoint("TOPLEFT", child, "TOPLEFT", column + 16, -28)
                 local needed = math.max(formHeight, 166)
@@ -670,12 +684,9 @@ local function BuildPage(studio, page, groups)
             else
                 form:SetWidth(math.min(width, 680))
                 card:SetWidth(width - 16)
-                local top = naturalTop
-                if viewport > 0 and top + 138 > viewport then
-                    top = viewport + 12
-                end
-                card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, -top)
-                local needed = top + 138
+                card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, -8)
+                form:SetPoint("TOPLEFT", child, "TOPLEFT", 0, -150)
+                local needed = formHeight + 150
                 if child:GetHeight() ~= needed then child:SetHeight(needed) end
             end
         end

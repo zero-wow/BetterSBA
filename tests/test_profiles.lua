@@ -38,12 +38,14 @@ end
 BetterSBA_DB = {
     queueIconSize = 22,
     trinketMode = "Verified",
+    configStudioButtonFont = "Kalam",
     minimap = { hide = false, x = 10 },
 }
 NS:InitializeDatabase()
 eq(NS.db.priorityIconSize, 22, "legacy queue key migrates")
 eq(NS.db.queueIconSize, nil, "legacy queue key is removed")
 eq(NS.db.trinketMode, "Approved", "legacy trinket mode migrates")
+eq(NS.db.configStudioButtonFont, "Lilita One", "old button font migrates")
 eq(NS.db.minimap, BetterSBA_DB.minimap, "minimap aliases root after initialize")
 
 -- A newer value wins over an older duplicate during migration.
@@ -88,5 +90,9 @@ NS.db.configPanelScale = 1.35
 NS:InitializeDatabase()
 eq(NS.db.configPanelLayoutVersion, 1, "migration marker is stable on reload")
 eq(NS.db.configPanelScale, 1.35, "manual panel zoom survives later initialization")
+NS.db.configStudioButtonFont = "VTC Letterer Pro"
+NS:InitializeDatabase()
+eq(NS.db.configStudioButtonFont, "VTC Letterer Pro",
+    "user-selected comic button font survives later initialization")
 
 print("test_profiles.lua: ok")

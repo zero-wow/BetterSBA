@@ -29,6 +29,11 @@ end
 -- Migrate legacy per-profile settings (run on the profile table)
 ----------------------------------------------------------------
 local function MigrateProfileSettings(profile)
+    -- Kalam's tall metrics can clip the compact Studio controls. Existing
+    -- profiles used it by default, so move them to the new comic button face.
+    if profile.configStudioButtonFont == "Kalam" then
+        profile.configStudioButtonFont = "Lilita One"
+    end
     -- The compact config uses neutral panel zoom on first adoption. Later
     -- adjustments are deliberate and survive reloads and profile switches.
     if profile.configPanelLayoutVersion == nil then
