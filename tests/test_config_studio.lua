@@ -4,7 +4,9 @@ local ui = mock.install()
 local db = {
     configExperience = "classic", configStudioWidth = 1120, configStudioHeight = 760,
     configPanelScale = 1, castFeedback = "Motion", enabled = true,
-    showPriority = true, enableTargeting = true,
+    showPriority = true, enableTargeting = true, motionPreset = "Pulse",
+    motionReduced = false, prioritySpacing = 3, buttonSize = 48,
+    sectionColorCombat = {1, .45, .15, 1},
 }
 local info = {
     enabled = false, warningEnabled = true, autoRespecEnabled = false,
@@ -13,8 +15,13 @@ local info = {
     canSpend = true, canRespec = false,
 }
 local classicShown = false
+local activeProfile = "Default"
 local NS = {
     UIParent = ui.uiParent, db = db, unpack = table.unpack,
+    defaults = { enabled = true, showPriority = true, enableTargeting = true,
+        castFeedback = "Motion", motionPreset = "Pulse", motionReduced = false,
+        prioritySpacing = 3, buttonSize = 48,
+        sectionColorCombat = {1, .45, .15, 1} },
     CreateFrame = ui.createFrame,
     GetConfigFontPath = function() return "Fonts\\FRIZQT__.TTF" end,
     CreatePanel = function(name, parent, w, h)
@@ -33,6 +40,21 @@ local NS = {
     GetTalentBuildEntriesForClass = function()
         return { { id = "one", name = "Blood Leveling", specID = 250 } }
     end,
+    GetActiveProfileName = function() return activeProfile end,
+    GetProfileList = function() return {"Default", "Raid"} end,
+    HasCharProfile = function() return false end,
+    SwitchProfile = function(_, name) activeProfile = name; return true end,
+    ResetProfile = function() return true end,
+    GetFontList = function() return {"Friz Quadrata TT", "Arial Narrow"} end,
+    GetPaletteList = function() return {"Confetti", "Gold"} end,
+    FONT_OUTLINE_OPTIONS = {"NONE", "OUTLINE"},
+    CAST_ANIMATIONS = {"NONE", "DRIFT", "PULSE", "VORTEX", "ZOOM", "SLAM", "POP!", "BURST", "FADE", "FLIP", "RISE", "SCATTER"},
+    THEME_PRESET_ORDER = {"Default", "Arcane"},
+    PARTICLE_TIMINGS = {"On Cast", "On Animation End", "Both"},
+    PARTICLE_STYLES = {"None", "Confetti", "Sparks"},
+    KEYBIND_ANCHORS = {"TOPRIGHT", "TOPLEFT", "BOTTOMRIGHT", "BOTTOMLEFT"},
+    PRIORITY_POSITIONS = {"RIGHT", "LEFT", "TOP", "BOTTOM"},
+    INTERCEPTION_TYPES = {"Keybind", "Click", "Both"},
     GetTalentBuildClassToken = function() return "DEATHKNIGHT" end,
     GetTalentBuildCurrentSpecID = function() return 250 end,
     SetTalentLevelingTarget = function(id)
@@ -47,7 +69,14 @@ local NS = {
     RequestTalentSBARespec = function() return true end,
     RequestTalentSBAUndo = function() return false end,
 }
+local constants = assert(io.open("Core/Constants.lua", "r")):read("*a")
+local defaultsBody = assert(constants:match("NS%.defaults%s*=%s*%{(.-)\n%}\n\n%-%- Theme"))
+NS.defaults = assert(load("return {" .. defaultsBody .. "}"))()
+for key, value in pairs(NS.defaults) do
+    if db[key] == nil then db[key] = value end
+end
 assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
 NS.SwitchSettingsPanel("studio")
 assert(db.configExperience == "studio" and NS.ConfigStudio.frame:IsShown())
 local studio = NS.ConfigStudio
@@ -78,18 +107,33 @@ NS.PreviewMotionFeedback = function() return true end
 studio:SelectPage("Motion")
 local motion = studio.pages.Motion
 db.castFeedback = "Off"
-motion._preset:GetScript("OnClick")(motion._preset)
-assert(db.motionPreset == "Pulse" and db.castFeedback == "Motion"
-    and studio.notice:GetText() == "Previewing Pulse.",
-    "changing a motion preset must confirm and preview it")
+motion._controls.motionPreset._control:GetScript("OnClick")(motion._controls.motionPreset._control)
+assert(studio._choicePopup.overlay:IsShown(), "motion preset must open its choice list")
+studio._choicePopup.rows[6]:GetScript("OnClick")(studio._choicePopup.rows[6])
+assert(db.motionPreset == "Orbit" and db.castFeedback == "Motion",
+    "choosing Orbit must enable motion feedback")
+assert(motion._controls.castAnimation._control._label:GetText() == "Drift",
+    "Studio must show animation choices in Title Case while preserving saved values")
+motion._previewMotion:GetScript("OnClick")(motion._previewMotion)
+assert(studio.notice:GetText() == "Motion preview played.", "motion preview must run")
 db.motionReduced = true
 motion.Refresh()
 motion._previewMotion:GetScript("OnClick")(motion._previewMotion)
-assert(studio.notice:GetText():find("stationary flash", 1, true)
-    and motion._hint:GetText():find("stationary flash", 1, true),
+assert(studio.notice:GetText():find("stationary flash", 1, true),
     "Reduced Motion must explain why Orbit does not circle")
 db.motionReduced = false
 studio:SelectPage("Talents")
+studio:SelectPage("Profiles")
+local profiles = studio.pages.Profiles
+profiles._profileActions[1]:GetScript("OnClick")(profiles._profileActions[1])
+assert(studio._choicePopup.overlay:IsShown(), "profiles must be selectable in Studio")
+studio._choicePopup.rows[2]:GetScript("OnClick")(studio._choicePopup.rows[2])
+assert(activeProfile == "Raid" and studio.profileLabel:GetText() == "Profile: Raid",
+    "switching profiles must refresh the visible profile name")
+profiles._profileActions[5]:GetScript("OnClick")(profiles._profileActions[5])
+assert(studio._confirmPopup.overlay:IsShown(), "profile reset must require a confirming click")
+studio:SelectPage("Talents")
+assert(not studio._confirmPopup.overlay:IsShown(), "leaving a page must close its confirmation")
 
 local function rect(frame)
     local left, top, right, bottom = mock.rect(frame)
@@ -101,7 +145,7 @@ local function inside(child, parent, name)
         and a.top <= b.top + .1 and a.bottom >= b.bottom - .1,
         name .. " escapes its parent")
 end
-for _, size in ipairs({ {900, 740}, {1120, 760}, {1300, 900} }) do
+for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     local frame = studio.frame
     frame:SetSize(size[1], size[2])
     frame:GetScript("OnSizeChanged")(frame, size[1], size[2])
@@ -117,7 +161,8 @@ for _, size in ipairs({ {900, 740}, {1120, 760}, {1300, 900} }) do
     local a, b = rect(talents._left), rect(talents._right)
     assert(b.left - a.right >= 11, "columns lack a gutter")
     for page, view in pairs(studio.pages) do
-        if page ~= "Talents" then inside(view._quickBox, studio.content, page .. " controls") end
+        if view._studioScroll then inside(view._studioScroll, studio.content, page .. " controls") end
+        if view._quickBox then inside(view._quickBox, studio.content, page .. " quick controls") end
     end
 end
 local talents = studio.pages.Talents
@@ -127,10 +172,12 @@ studio:SelectPage("Overview")
 assert(not talents._picker:IsShown(), "leaving Talents must close the build dialog")
 if arg and arg[1] then
     local previewWidth, previewHeight = arg[2] == "default" and 1120 or 900,
-        arg[2] == "default" and 760 or 740
+        arg[2] == "default" and 620 or 600
     studio.frame:SetSize(previewWidth, previewHeight)
     studio.frame:GetScript("OnSizeChanged")(studio.frame, previewWidth, previewHeight)
-    studio:SelectPage(arg[2] == "motion" and "Motion" or "Talents")
+    local previewPage = ({ motion = "Motion", combat = "Combat", colors = "Colors & Fonts",
+        profiles = "Profiles", library = "Build Library" })[arg[2]] or "Talents"
+    studio:SelectPage(previewPage)
     if arg[2] == "picker" then talents._change:GetScript("OnClick")(talents._change) end
     mock.writeSVG(studio.frame, arg[1])
 end

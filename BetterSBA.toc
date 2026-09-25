@@ -45,6 +45,7 @@ GUI\ManualCooldownReminders.lua
 GUI\TalentBuildsPanel.lua
 GUI\Config.lua
 GUI\ConfigStudio.lua
+GUI\StudioSettings.lua
 GUI\TalentTreeButton.lua
 
 # Main

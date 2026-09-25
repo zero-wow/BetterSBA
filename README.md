@@ -53,7 +53,7 @@ It also gives you a **rotation queue display** showing your full SBA spell pool 
 
 ## New Settings Panel
 
-The separate **New Panel** preview organizes the common settings into Overview, Combat, Button & Queue, Motion, Talents, and Profiles. Use **Try New Panel** in Classic Settings or `/bs new` to switch to it. The new panel opens for future settings visits until you choose **Classic Settings** or `/bs classic`. **Open Detailed Settings** leads to the full classic editor without changing that preference. Both panels edit the same saved settings. The Talents page includes the selected leveling route, Auto-Spend New Points, a clickable Spend Available Points button, mismatch alerts, and respec/undo actions. Resize from the lower-right grip; the panel also scales to fit the screen.
+The **New Panel** organizes settings into Overview, Combat, Button & Queue, Motion, Talents, Visibility, Colors & Fonts, Advanced, and Profiles. Its compact pages scroll within the window, and the Talents page opens the build library and talent options without leaving the panel. Use **Try New Panel** in Classic Settings or `/bs new` to switch to it. It opens on future visits until you choose **Classic Settings** or `/bs classic`. Both panels edit the same saved settings. The Talents page includes the selected leveling route, Auto-Spend New Points, Spend Available Points, mismatch alerts, and respec/undo actions. Resize from the lower-right grip; the panel also scales to fit the screen.
 
 ## Animations
 

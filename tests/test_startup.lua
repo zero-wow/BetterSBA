@@ -39,6 +39,7 @@ local function run(hasMasque)
     assert(loadfile("Core/Functions/ButtonStyle.lua"))("BetterSBA", NS)
     assert(loadfile("GUI/MainButton.lua"))("BetterSBA", NS)
     assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+    assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
     SlashCmdList = {}
     local before = #ui.frames
     assert(loadfile("BetterSBA.lua"))("BetterSBA", NS)
@@ -75,9 +76,16 @@ local function run(hasMasque)
             "Soft Masque mode clears native regions through the documented clear APIs")
     end
 
+    NS.ConfigStudio:Hide()
     NS.Config:Hide()
+    NS.db.configExperience = "classic"
     SlashCmdList.BETTERSBA("")
     assert(NS.Config.frame and NS.Config.frame:IsShown(), "/bs must open the actual Config frame")
+    NS.Config:Hide()
+    NS.db.configExperience = "studio"
+    SlashCmdList.BETTERSBA("")
+    assert(NS.ConfigStudio.frame and NS.ConfigStudio.frame:IsShown(),
+        "/bs must open Studio when it is the saved panel")
 end
 
 run(false)

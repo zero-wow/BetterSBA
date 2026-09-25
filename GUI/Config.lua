@@ -98,9 +98,9 @@ function NS.GetAnimCloneReapplyBindingText()
     return key
 end
 
-function NS.OpenAnimCloneReapplyKeyCapture(onApplied)
+function NS.OpenAnimCloneReapplyKeyCapture(onApplied, parentOverride)
     local popup = NS.Config and NS.Config._animCloneReapplyKeyPopup
-    local parent = (NS.Config and NS.Config.frame) or NS.UIParent
+    local parent = parentOverride or (NS.Config and NS.Config.frame) or NS.UIParent
     if not popup then
         popup = NS.CreateFrame("Frame", "BetterSBA_AnimCloneReapplyKeyPopup", parent, "BackdropTemplate")
         popup:SetSize(300, 92)

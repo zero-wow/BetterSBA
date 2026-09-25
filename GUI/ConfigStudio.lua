@@ -14,9 +14,11 @@ local C = {
     text = { .88, .90, .94, 1 }, dim = { .61, .66, .73, 1 },
     muted = { .43, .48, .56, 1 }, cyan = { .55, .82, .89, 1 },
 }
-local NAV = { "Overview", "Combat", "Button & Queue", "Motion", "Talents", "Profiles" }
+local NAV = { "Overview", "Combat", "Button & Queue", "Motion", "Talents",
+    "Visibility", "Colors & Fonts", "Advanced", "Profiles" }
 local CLASSIC_SECTION = { Overview = 1, Combat = 1, ["Button & Queue"] = 3,
-    Motion = 2, Talents = 5, Profiles = 9 }
+    Motion = 2, Talents = 5, Visibility = 6, ["Colors & Fonts"] = 7,
+    Advanced = 8, Profiles = 9 }
 
 local function Paint(parent, color, point, relative, x, y, w, h)
     local t = parent:CreateTexture(nil, "BACKGROUND")
@@ -101,9 +103,10 @@ local function Action(parent, value, x, y, w, h, callback, tone)
 end
 
 local function Caption(parent, value, x, y)
-    local tab = Surface(parent, x, y, 170, 22, C.accent)
+    local width = math.max(100, math.min(160, #value * 6 + 18))
+    local tab = Surface(parent, x, y, width, 20, C.accent)
     tab:SetBackdropBorderColor(NS.unpack(C.accent))
-    Label(tab, value, 10, C.gutter, 148, "LEFT", tab, "LEFT", 9, 0)
+    Label(tab, value, 10, C.gutter, width - 16, "LEFT", tab, "LEFT", 8, 0)
     return tab
 end
 
@@ -135,6 +138,9 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
     return row
 end
 
+Studio.UI = { Surface = Surface, Action = Action, Label = Label,
+    Paint = Paint, FitText = FitText, colors = C }
+
 local function OpenClassic(section, makeDefault)
     if makeDefault then NS.db.configExperience = "classic" end
     Studio:Hide()
@@ -160,55 +166,21 @@ function NS.ToggleSettingsPanel()
     if NS.db.configExperience == "studio" then Studio:Show() else NS.Config:Show() end
 end
 
-local function BuildGeneralPage(self, page, headline, intro, entries, advancedSection)
-    local content = self.content
-    local view = NS.CreateFrame("Frame", nil, content)
-    view:SetAllPoints()
-    self.pages[page] = view
-    Caption(view, page, 26, -27)
-    Label(view, headline, 27, C.bright, 610, "TOPLEFT", view, "TOPLEFT", 26, -64)
-    Label(view, intro, 12, C.dim, 620, "TOPLEFT", view, "TOPLEFT", 26, -101)
-    local box = Surface(view, 26, -156, 622, 300)
-    view._quickBox = box
-    Label(box, "Quick Controls", 10, C.accent, 290, "TOPLEFT", box, "TOPLEFT", 18, -19)
-    local rule = Paint(box, C.border, "TOPLEFT", box, 18, -43, 1, 1)
-    rule:SetPoint("TOPRIGHT", box, "TOPRIGHT", -18, -43)
-    local refreshers = {}
-    for i, entry in ipairs(entries) do
-        local y = -56 - (i - 1) * 60
-        local getter = type(entry[3]) == "function" and entry[3]
-            or function() return NS.db[entry[3]] end
-        local setter = type(entry[3]) == "function" and entry[4]
-            or function(value)
-                NS.db[entry[3]] = value
-                if entry[4] then entry[4]() end
-            end
-        local row = Setting(box, entry[1], entry[2], y, getter, setter)
-        refreshers[#refreshers + 1] = row.Refresh
-    end
-    local more = Action(view, "Open Detailed Settings", 26, -480, 210, 34,
-        function() OpenClassic(advancedSection) end)
-    Label(view, "Every setting remains available in Classic Settings.", 11, C.muted, 350,
-        "LEFT", more, "RIGHT", 16, 0)
-    view.Refresh = function() for _, fn in ipairs(refreshers) do fn() end end
-    return view
-end
-
 local function BuildTalentPage(self)
     local view = NS.CreateFrame("Frame", nil, self.content)
     view:SetAllPoints()
     self.pages.Talents = view
-    Caption(view, "Talents", 26, -24)
-    Label(view, "Leveling Talents", 28, C.bright, 500, "TOPLEFT", view, "TOPLEFT", 26, -62)
+    Caption(view, "Talents", 26, -8)
+    Label(view, "Leveling Talents", 24, C.bright, 500, "TOPLEFT", view, "TOPLEFT", 26, -35)
     Label(view, "Choose a route once. BetterSBA spends only points your level can use.", 11,
-        C.dim, 610, "TOPLEFT", view, "TOPLEFT", 26, -102)
+        C.dim, 610, "TOPLEFT", view, "TOPLEFT", 26, -69)
 
-    local route = Surface(view, 26, -128, 622, 124)
+    local route = Surface(view, 26, -96, 622, 112)
     view._route = route
-    Paint(route, C.accent, "TOPLEFT", route, 0, 0, 3, 124)
-    Label(route, "Current Route", 10, C.accent, 120, "TOPLEFT", route, "TOPLEFT", 16, -14)
+    Paint(route, C.accent, "TOPLEFT", route, 0, 0, 3, 112)
+    Label(route, "Current Route", 10, C.accent, 120, "TOPLEFT", route, "TOPLEFT", 16, -10)
     local routeName = Label(route, "No Build Selected", 16, C.bright, 365,
-        "TOPLEFT", route, "TOPLEFT", 16, -37)
+        "TOPLEFT", route, "TOPLEFT", 16, -28)
     routeName:SetWordWrap(true)
     routeName:SetMaxLines(2)
     routeName:SetHeight(39)
@@ -227,12 +199,12 @@ local function BuildTalentPage(self)
     end)
     route:SetScript("OnLeave", function() GameTooltip:Hide() end)
     local routeDetail = Label(route, "Current specialization", 10, C.dim,
-        365, "TOPLEFT", route, "TOPLEFT", 16, -81)
+        365, "TOPLEFT", route, "TOPLEFT", 16, -75)
     local routeMeta = Label(route, "Only talents available at your level are purchased.", 10, C.muted,
-        365, "TOPLEFT", route, "TOPLEFT", 16, -101)
+        365, "TOPLEFT", route, "TOPLEFT", 16, -94)
     local spend = NS.CreateFrame("Button", nil, route)
-    spend:SetSize(205, 48)
-    spend:SetPoint("TOPRIGHT", route, "TOPRIGHT", -13, -22)
+    spend:SetSize(205, 44)
+    spend:SetPoint("TOPRIGHT", route, "TOPRIGHT", -13, -17)
     local art = spend:CreateTexture(nil, "BACKGROUND")
     art:SetAllPoints()
     art:SetTexture(ART)
@@ -240,34 +212,30 @@ local function BuildTalentPage(self)
     local change = Action(route, "Change Build", 0, 0, 128, 25, function() end, "quiet")
     view._change = change
     change:ClearAllPoints()
-    change:SetPoint("TOPRIGHT", route, "TOPRIGHT", -51, -85)
+    change:SetPoint("TOPRIGHT", route, "TOPRIGHT", -51, -75)
 
-    local left = Surface(view, 26, -270, 305, 264)
-    local right = Surface(view, 343, -270, 305, 264)
+    local left = Surface(view, 26, -220, 305, 216)
+    local right = Surface(view, 343, -220, 305, 216)
     view._left, view._right = left, right
     Caption(left, "What Happens Next", 0, 0)
     Caption(right, "Automation & Safety", 0, 0)
-    local state = Label(left, "Route Status", 15, C.text, 270, "TOPLEFT", left, "TOPLEFT", 16, -37)
-    local status = Label(left, "", 11, C.dim, 270, "TOPLEFT", left, "TOPLEFT", 16, -69)
+    local state = Label(left, "Route Status", 14, C.text, 270, "TOPLEFT", left, "TOPLEFT", 16, -30)
+    local status = Label(left, "", 11, C.dim, 270, "TOPLEFT", left, "TOPLEFT", 16, -56)
     view._status = status
     status:SetWordWrap(true)
     status:SetMaxLines(3)
     local divider = Paint(left, C.border)
     divider:ClearAllPoints()
-    divider:SetPoint("TOPLEFT", left, "TOPLEFT", 16, -120)
-    divider:SetPoint("TOPRIGHT", left, "TOPRIGHT", -16, -120)
+    divider:SetPoint("TOPLEFT", left, "TOPLEFT", 16, -111)
+    divider:SetPoint("TOPRIGHT", left, "TOPRIGHT", -16, -111)
     divider:SetHeight(1)
-    local next = Label(left, "Next Talent: —", 11, C.cyan, 270, "TOPLEFT", left, "TOPLEFT", 16, -136)
-    local firstStep = Label(left, "Class & Spec Points", 11, C.text, 230,
-        "TOPLEFT", left, "TOPLEFT", 16, -172)
-    local firstNote = Label(left, "Spend when legal and available.", 10, C.dim, 230,
-        "TOPLEFT", left, "TOPLEFT", 16, -190)
-    local secondStep = Label(left, "Hero Talents", 11, C.text, 230,
-        "TOPLEFT", left, "TOPLEFT", 16, -215)
-    local secondNote = Label(left, "Wait for their level unlock.", 10, C.dim, 230,
-        "TOPLEFT", left, "TOPLEFT", 16, -233)
-    view._stepLabels = { state, status, next, firstStep, firstNote, secondStep, secondNote }
-    local auto = Setting(right, "Auto-Spend New Points", "No approval for each rank.", -33,
+    local next = Label(left, "Next Talent: —", 11, C.cyan, 270, "TOPLEFT", left, "TOPLEFT", 16, -127)
+    local levelNote = Label(left, "Class and spec points spend when legal.\nHero talents wait for their level unlock.",
+        10, C.dim, 270, "TOPLEFT", left, "TOPLEFT", 16, -157)
+    levelNote:SetWordWrap(true)
+    levelNote:SetMaxLines(3)
+    view._stepLabels = { state, status, next, levelNote }
+    local auto = Setting(right, "Auto-Spend New Points", "No approval for each rank.", -27,
         function() return NS.GetTalentLevelingInfo().enabled end,
         function(value)
             local ok, err = NS.SetTalentLevelingEnabled(value)
@@ -276,29 +244,27 @@ local function BuildTalentPage(self)
             self:Refresh()
         end, 200)
     view._auto = auto
-    local warn = Setting(right, "Warn If Talents Differ", "Alert before a rebuild.", -87,
+    local warn = Setting(right, "Warn If Talents Differ", "Alert before a rebuild.", -71,
         function() return NS.GetTalentLevelingInfo().warningEnabled end,
         function(value) NS.SetTalentSBAWarningEnabled(value); self:Refresh() end, 200)
-    local autoRebuild = Setting(right, "Auto-Rebuild On Mismatch", "Runs when Auto-Spend is on.", -141,
+    local autoRebuild = Setting(right, "Auto-Rebuild On Mismatch", "Runs when Auto-Spend is on.", -115,
         function() return NS.GetTalentLevelingInfo().autoRespecEnabled end,
         function(value) NS.SetTalentAutoRespecEnabled(value); self:Refresh() end, 200)
     view._autoRebuild = autoRebuild
-    local rebuild = Action(right, "Reset & Rebuild", 18, -221, 133, 30, function()
+    local rebuild = Action(right, "Reset & Rebuild", 18, -177, 133, 28, function()
         local ok, message = NS.RequestTalentSBARespec()
         self.notice:SetText(message or (ok and "Rebuild started." or "Unable to rebuild talents."))
         self:Refresh()
     end)
-    local undo = Action(right, "Undo Respec", 161, -221, 125, 30, function()
+    local undo = Action(right, "Undo Respec", 161, -177, 125, 28, function()
         local ok, message = NS.RequestTalentSBAUndo()
         self.notice:SetText(message or (ok and "Undo started." or "Nothing to undo."))
         self:Refresh()
     end, "quiet")
-    Caption(view, "Build Library", 26, -550)
-    local browse = Action(view, "Browse Builds and Imports", 26, -582, 219, 32,
-        function() OpenClassic(5) end)
+    Caption(view, "Build Library", 26, -448)
+    local browse = Action(view, "Browse Builds and Imports", 26, -474, 219, 30,
+        function() self:SelectPage("Build Library") end)
     view._browse = browse
-    Label(view, "Review source and build details before choosing.", 11, C.muted, 325,
-        "LEFT", browse, "RIGHT", 14, 0)
 
     local pickerOverlay = NS.CreateFrame("Frame", nil, self.content)
     pickerOverlay:SetAllPoints()
@@ -439,7 +405,10 @@ end
 
 function Studio:Create()
     local w = math.max(900, math.min(1300, tonumber(NS.db.configStudioWidth) or 1120))
-    local h = math.max(740, math.min(900, tonumber(NS.db.configStudioHeight) or 760))
+    local savedHeight = tonumber(NS.db.configStudioHeight) or 620
+    if savedHeight == 700 or savedHeight == 760 or savedHeight == 790 then savedHeight = 620 end
+    local h = math.max(600, math.min(900, savedHeight))
+    NS.db.configStudioHeight = h
     local f = NS.CreatePanel("BetterSBA_ConfigStudio", NS.UIParent, w, h)
     self.frame = f
     f:SetBackdropColor(NS.unpack(C.shell))
@@ -447,7 +416,7 @@ function Studio:Create()
     f:SetPoint("CENTER")
     f:SetMovable(true)
     f:SetResizable(true)
-    f:SetResizeBounds(900, 740, 1300, 900)
+    f:SetResizeBounds(900, 600, 1300, 900)
     f:SetClampedToScreen(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
@@ -456,54 +425,53 @@ function Studio:Create()
     local header = NS.CreateFrame("Frame", nil, f)
     header:SetPoint("TOPLEFT", 0, 0)
     header:SetPoint("TOPRIGHT", 0, 0)
-    header:SetHeight(66)
+    header:SetHeight(48)
     Paint(header, C.card)
     local topLine = Paint(header, C.accent, "TOPLEFT", header, 0, 0, w, 3)
     topLine:SetPoint("TOPRIGHT", header, "TOPRIGHT", 0, 0)
-    Label(header, "BetterSBA", 20, C.bright, 165, "LEFT", header, "LEFT", 19, 0)
-    Label(header, "Settings", 10, C.muted, 100, "LEFT", header, "LEFT", 180, -2)
+    Label(header, "BetterSBA", 18, C.bright, 150, "LEFT", header, "LEFT", 16, 0)
+    Label(header, "Settings", 10, C.muted, 100, "LEFT", header, "LEFT", 165, 0)
     local profile = Label(header, "", 11, C.dim, 220, "RIGHT", header, "RIGHT", -50, 0)
     profile:SetJustifyH("RIGHT")
     self.profileLabel = profile
     local close = Action(header, "X", 0, 0, 28, 28, function() f:Hide() end)
     close:ClearAllPoints()
-    close:SetPoint("TOPRIGHT", header, "TOPRIGHT", -12, -13)
+    close:SetPoint("TOPRIGHT", header, "TOPRIGHT", -10, -10)
 
     local rail = NS.CreateFrame("Frame", nil, f)
-    rail:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -72)
+    rail:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -54)
     rail:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 0, 0)
-    rail:SetWidth(230)
+    rail:SetWidth(210)
     Paint(rail, C.rail)
-    Label(rail, "Your Addon", 10, C.muted, 155, "TOPLEFT", rail, "TOPLEFT", 20, -19)
+    Label(rail, "Your Addon", 10, C.muted, 155, "TOPLEFT", rail, "TOPLEFT", 16, -12)
     local navButtons = {}
     for i, page in ipairs(NAV) do
         local button = NS.CreateFrame("Button", nil, rail)
-        button:SetPoint("TOPLEFT", rail, "TOPLEFT", 0, -50 - (i - 1) * 53)
-        button:SetSize(224, 49)
+        button:SetPoint("TOPLEFT", rail, "TOPLEFT", 0, -34 - (i - 1) * 36)
+        button:SetSize(204, 34)
         local bg = Paint(button, C.rail)
-        local stripe = Paint(button, C.accent, "TOPLEFT", button, 0, 0, 3, 49)
-        local number = Label(button, string.format("%02d", i), 10, C.muted, 28, "LEFT", button, "LEFT", 18, 0)
-        local name = Label(button, page, 12, C.text, 133, "LEFT", button, "LEFT", 48, 0)
+        local stripe = Paint(button, C.accent, "TOPLEFT", button, 0, 0, 3, 34)
+        local number = Label(button, string.format("%02d", i), 10, C.muted, 26, "LEFT", button, "LEFT", 15, 0)
+        local name = Label(button, page, 11, C.text, 145, "LEFT", button, "LEFT", 40, 0)
         button:SetScript("OnClick", function() self:SelectPage(page) end)
         button._bg, button._stripe, button._number, button._name = bg, stripe, number, name
         navButtons[page] = button
     end
     self.navButtons = navButtons
-    local classic = Action(rail, "Classic Settings", 16, 0, 190, 33,
+    local classic = Action(rail, "Classic Settings", 14, 0, 180, 28,
         function() OpenClassic(CLASSIC_SECTION[self.page], true) end, "quiet")
     classic:ClearAllPoints()
-    classic:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", 16, 34)
-    Label(rail, "Switch back any time", 10, C.muted, 158, "BOTTOMLEFT", rail, "BOTTOMLEFT", 16, 18)
+    classic:SetPoint("BOTTOMLEFT", rail, "BOTTOMLEFT", 14, 23)
 
     local content = NS.CreateFrame("Frame", nil, f)
-    content:SetPoint("TOPLEFT", f, "TOPLEFT", 238, -72)
-    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 36)
+    content:SetPoint("TOPLEFT", f, "TOPLEFT", 218, -54)
+    content:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 28)
     Paint(content, C.body)
     self.content = content
     local footer = NS.CreateFrame("Frame", nil, f)
-    footer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 238, 0)
+    footer:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 218, 0)
     footer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 0)
-    footer:SetHeight(36)
+    footer:SetHeight(28)
     Paint(footer, C.rail)
     self.notice = Label(footer, "Changes Save Automatically", 10, C.muted, 475,
         "LEFT", footer, "LEFT", 20, 0)
@@ -514,86 +482,8 @@ function Studio:Create()
     grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() end)
 
     self.pages = {}
-    BuildGeneralPage(self, "Overview", "Make BetterSBA Yours",
-        "The essentials in one place. Choose a section for more detail.", {
-            { "Enable BetterSBA", "Run the assistant and its display.", "enabled", function()
-                if NS.db.enabled then NS.StartTicker() else NS.StopTicker() end
-                if NS.RefreshSBAInterception then NS.RefreshSBAInterception() end
-                NS.UpdateNow()
-            end },
-            { "Show Priority Queue", "See upcoming suggestions beside the button.", "showPriority", function() NS.UpdatePriorityDisplay() end },
-            { "Lock Button Position", "Prevent accidental dragging.", "locked" },
-        }, 1)
-    BuildGeneralPage(self, "Combat", "Combat Assistance",
-        "Control what BetterSBA adds around the Single Button Assistant.", {
-            { "Auto-Target Enemies", "Find a nearby target when needed.", "enableTargeting", function() NS.RebuildMacroText() end },
-            { "Pet Attack", "Send your pet to your target.", "enablePetAttack", function() NS.RebuildMacroText() end },
-            { "Channel Protection", "Avoid interrupting a protected channel.", "enableChannelProtection", function() NS.RebuildMacroText() end },
-            { "Auto-Dismount", "Dismount when casting requires it.", "enableDismount", function() NS.RebuildMacroText() end },
-        }, 1)
-    BuildGeneralPage(self, "Button & Queue", "Button & Queue",
-        "Keep the primary action and its next suggestions easy to read.", {
-            { "Show Keybind", "Display the current activation key.", "showKeybind", function() NS.ApplyButtonSettings() end },
-            { "Show Cooldown", "Display remaining cooldown time.", "showCooldown", function() NS.ApplyButtonSettings() end },
-            { "Show Priority Queue", "Show the upcoming spell icons.", "showPriority", function() NS.UpdatePriorityDisplay() end },
-            { "Show Active Glow", "Highlight the active suggestion.", "showActiveGlow", function() NS.UpdatePriorityDisplay() end },
-        }, 3)
-    local motion = BuildGeneralPage(self, "Motion", "Motion & Feedback",
-        "Choose a restrained response when your SBA action fires.", {
-            { "Use Motion Feedback", "Animate the button after a cast.",
-                function() return NS.db.castFeedback == "Motion" end, function(value)
-                NS.db.castFeedback = value and "Motion" or "Off"
-                if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
-            end },
-            { "Reduced Motion", "Keep effects quieter and shorter.", "motionReduced", function()
-                if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
-            end },
-        }, 2)
-    local motionPresets = { "Pulse", "Echo", "Sweep", "Sheen", "Snap", "Orbit" }
-    Label(motion._quickBox, "Motion Preset", 12, C.text, 200,
-        "TOPLEFT", motion._quickBox, "TOPLEFT", 18, -184)
-    local motionHint = Label(motion._quickBox, "", 11, C.dim, 550,
-        "TOPLEFT", motion._quickBox, "TOPLEFT", 18, -264)
-    local function PreviewMotion()
-        local played = NS.PreviewMotionFeedback and NS.PreviewMotionFeedback()
-        self.notice:SetText(not played and "Show the BetterSBA button to preview motion."
-            or NS.db.motionReduced and "Reduced Motion is On; preview uses a stationary flash."
-            or ("Previewing " .. (NS.db.motionPreset or "Pulse") .. "."))
-    end
-    local preset = Action(motion._quickBox, "", 18, -207, 178, 34, function()
-        local current = NS.db.motionPreset
-        local nextIndex = 1
-        for i, name in ipairs(motionPresets) do
-            if name == current then nextIndex = i % #motionPresets + 1; break end
-        end
-        NS.db.motionPreset = motionPresets[nextIndex]
-        NS.db.castFeedback = "Motion"
-        if NS.RefreshCastFeedbackSettings then NS.RefreshCastFeedbackSettings() end
-        motion.Refresh()
-        PreviewMotion()
-    end)
-    local preview = Action(motion._quickBox, "Preview Motion", 208, -207, 140, 34, function()
-        PreviewMotion()
-    end, "quiet")
-    motion._preset, motion._previewMotion, motion._hint = preset, preview, motionHint
-    local motionRefresh = motion.Refresh
-    motion.Refresh = function()
-        motionRefresh()
-        preset._label:SetText(NS.db.motionPreset or "Pulse")
-        motionHint:SetText(NS.db.motionReduced and "Reduced Motion replaces every preset with a stationary flash."
-            or "Orbit circles the button; Sweep crosses its lower edge.")
-    end
     BuildTalentPage(self)
-    BuildGeneralPage(self, "Profiles", "Profiles & Visibility",
-        "Keep your setup readable and available where you need it.", {
-            { "Show Minimap Button", "Open settings from the minimap.", "showMinimapButton", function()
-                if NS.SetMinimapVisible then NS.SetMinimapVisible(NS.db.showMinimapButton) end
-            end },
-            { "Hide In Vehicle", "Keep the display out of vehicle UI.", "hideInVehicle", function() NS.UpdateNow() end },
-            { "Only In Combat", "Hide the display between fights.", "onlyInCombat", function() NS.UpdateNow() end },
-        }, 9)
-    -- The generic quick controls are deliberately a preview of the common
-    -- actions; the complete profile manager stays in Classic Settings.
+    self:BuildSettingsPages()
     f:SetScript("OnShow", function() self:Refresh() end)
     local elapsed = 0
     f:SetScript("OnUpdate", function(_, delta)
@@ -604,12 +494,14 @@ function Studio:Create()
     local function Relayout(_, width, height)
         NS.db.configStudioWidth = width
         NS.db.configStudioHeight = height
-        local inner = width - 238
+        local inner = width - 218
         local usable = inner - 52
         for _, page in pairs(self.pages) do
-            if page ~= self.pages.Talents then
-                local box = page._quickBox
-                if box then box:SetWidth(usable) end
+            if page._studioScroll then
+                page._studioScroll:SetSize(usable, math.max(200, height - 54 - 28 - 74))
+                if page._studioChild and not page._fixedStudioChildWidth then
+                    page._studioChild:SetWidth(usable - 14)
+                end
             end
         end
         local talents = self.pages.Talents
@@ -627,7 +519,7 @@ function Studio:Create()
                 talents._stepLabels[i]:SetWidth(half - 32)
             end
             talents._right:ClearAllPoints()
-            talents._right:SetPoint("TOPLEFT", talents, "TOPLEFT", 26 + half + 12, -270)
+            talents._right:SetPoint("TOPLEFT", talents, "TOPLEFT", 26 + half + 12, -220)
             if talents.Refresh then talents.Refresh() end
         end
         self:ApplyScale()
@@ -651,9 +543,13 @@ end
 function Studio:SelectPage(page)
     self.page = self.pages[page] and page or "Overview"
     if self.page ~= "Talents" and self.pickerOverlay then self.pickerOverlay:Hide() end
+    if self._choicePopup then self._choicePopup.overlay:Hide() end
+    if self._confirmPopup then self._confirmPopup.overlay:Hide() end
     for key, view in pairs(self.pages) do view:SetShown(key == self.page) end
+    local navPage = (self.page == "Build Library" or self.page == "Talent Options")
+        and "Talents" or self.page
     for key, button in pairs(self.navButtons) do
-        local active = key == self.page
+        local active = key == navPage
         button._bg:SetVertexColor(NS.unpack(active and C.card or C.rail))
         button._stripe:SetAlpha(active and 1 or 0)
         button._number:SetTextColor(NS.unpack(active and C.accent or C.muted))
@@ -679,6 +575,8 @@ end
 
 function Studio:Hide()
     if self.pickerOverlay then self.pickerOverlay:Hide() end
+    if self._choicePopup then self._choicePopup.overlay:Hide() end
+    if self._confirmPopup then self._confirmPopup.overlay:Hide() end
     if self.frame then self.frame:Hide() end
 end
 

@@ -773,4 +773,20 @@ if arg and arg[1] and arg[1] ~= "" then
     mock.writeSVG(NS.Config.frame, arg[1])
     print("config mock: wrote estimated-bounds SVG to " .. arg[1])
 end
+assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
+NS.SwitchSettingsPanel("studio")
+local studio = NS.ConfigStudio
+studio:SelectPage("Build Library")
+assert(studio.pages["Build Library"]._catalog,
+    "Studio must show the real build manager inside the new panel")
+if arg and arg[1] and arg[3] == "studio" then
+    studio.frame:SetSize(900, 600)
+    studio.frame:GetScript("OnSizeChanged")(studio.frame, 900, 600)
+    mock.writeSVG(studio.frame, arg[1])
+end
+studio:SelectPage("Combat")
+assert(studio.pages.Combat._controls.trinketMode,
+    "Studio must expose the original combat settings")
+studio:Hide()
 return { NS = NS, ui = ui, panel = panel }

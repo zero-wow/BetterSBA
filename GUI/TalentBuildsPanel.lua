@@ -304,6 +304,25 @@ local function ShowURLPopup(owner, row)
     end
 end
 
+local function SetFittedText(label, value)
+    value = tostring(value or "")
+    label:SetText(value)
+    local width = label:GetWidth() - 2
+    if label:GetStringWidth() <= width then return end
+    while #value > 0 do
+        local last = #value
+        while last > 1 do
+            local byte = value:byte(last)
+            if byte < 128 or byte >= 192 then break end
+            last = last - 1
+        end
+        value = value:sub(1, last - 1)
+        label:SetText(value .. "…")
+        if label:GetStringWidth() <= width then return end
+    end
+    label:SetText("")
+end
+
 local sbaWarningPopup
 local sbaWarningDismissedSignature
 
@@ -1890,17 +1909,17 @@ function NS.BuildTalentBuildsConfigSection(parent)
         local subColor = isOffSpec and MultiplyColor(T.TEXT_DIM, 0.72, 1) or T.TEXT_DIM
         local specColor = GetSpecTextColor(data.specID, subColor, isOffSpec, row._isSelected)
 
-        row._labels.name:SetText(data.name or "")
+        SetFittedText(row._labels.name, data.name or "")
         row._labels.name:SetTextColor(nameColor[1], nameColor[2], nameColor[3], alpha)
-        row._labels.spec:SetText(data.specName or NS.GetTalentBuildSpecName(data.specID) or "")
+        SetFittedText(row._labels.spec, data.specName or NS.GetTalentBuildSpecName(data.specID) or "")
         row._labels.spec:SetTextColor(specColor[1], specColor[2], specColor[3], alpha)
-        row._labels.author:SetText((data.author and data.author ~= "") and data.author or "-")
+        SetFittedText(row._labels.author, (data.author and data.author ~= "") and data.author or "-")
         row._labels.author:SetTextColor(subColor[1], subColor[2], subColor[3], alpha)
         row._labels.rating:SetText((data.rating and data.rating ~= "") and data.rating or "-")
         row._labels.rating:SetTextColor(subColor[1], subColor[2], subColor[3], alpha)
-        row._labels.source:SetText((data.source and data.source ~= "") and data.source or "-")
+        SetFittedText(row._labels.source, (data.source and data.source ~= "") and data.source or "-")
         row._labels.source:SetTextColor(subColor[1], subColor[2], subColor[3], alpha)
-        row._labels.type:SetText((data.buildType and data.buildType ~= "") and data.buildType or "-")
+        SetFittedText(row._labels.type, (data.buildType and data.buildType ~= "") and data.buildType or "-")
         row._labels.type:SetTextColor(subColor[1], subColor[2], subColor[3], alpha)
 
         if row._isSelected then

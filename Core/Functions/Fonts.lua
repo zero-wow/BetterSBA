@@ -68,8 +68,6 @@ end
 
 -- Update all config panel fonts in-place (no rebuild needed)
 function NS.UpdateAllConfigFonts()
-    local f = NS.Config and NS.Config.frame
-    if not f then return end
     local path = NS.GetConfigFontPath()
     local outline = NS.GetConfigFontOutline()
     local function WalkFrame(frame)
@@ -86,10 +84,15 @@ function NS.UpdateAllConfigFonts()
         -- Recurse into child frames
         local children = { frame:GetChildren() }
         for _, child in NS.ipairs(children) do
+            if child.IsObjectType and child:IsObjectType("EditBox") then
+                local _, size = child:GetFont()
+                if size then child:SetFont(path, size, outline) end
+            end
             WalkFrame(child)
         end
     end
-    WalkFrame(f)
+    if NS.Config and NS.Config.frame then WalkFrame(NS.Config.frame) end
+    if NS.ConfigStudio and NS.ConfigStudio.frame then WalkFrame(NS.ConfigStudio.frame) end
 end
 
 -- Resolve font path: context-specific if override enabled, else global fallback

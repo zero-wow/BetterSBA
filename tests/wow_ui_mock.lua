@@ -359,6 +359,11 @@ function M.rect(frame, stack)
     elseif anchors.bottom then b, t = anchors.bottom, anchors.bottom + h
     elseif anchors.centerY then t, b = anchors.centerY + h / 2, anchors.centerY - h / 2
     else t, b = pt, pt - h end
+    if parent and rawget(parent, "_kind") == "ScrollFrame"
+        and rawget(parent, "_scrollChild") == frame then
+        local offset = rawget(parent, "_scroll") or 0
+        t, b = t + offset, b + offset
+    end
     return l, t, r, b
 end
 
@@ -408,13 +413,31 @@ function M.writeSVG(root, path)
             if text and text ~= "" then
                 local font = rawget(node, "_font") or {}
                 local color, alpha = cssColor(rawget(node, "_textColor"), {0.9, 0.9, 0.9, 1})
-                local tx = rawget(node, "_justifyH") == "RIGHT" and x + w or (rawget(node, "_justifyH") == "CENTER" and x + w / 2 or x)
+                local tx = rawget(node, "_justifyH") == "RIGHT" and x + w
+                    or (rawget(node, "_justifyH") == "CENTER" and x + w / 2 or x)
                 local anchor = rawget(node, "_justifyH") == "RIGHT" and "end" or (rawget(node, "_justifyH") == "CENTER" and "middle" or "start")
                 local lineNumber = 0
                 for line in (visibleText(text) .. "\n"):gmatch("(.-)\n") do
-                    lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(tx, y + (font.size or 10) + lineNumber * math.ceil((font.size or 10) * 1.2), font.size or 10, color, alpha, anchor, escape(line))
+                    lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(
+                        tx, y + (font.size or 10) + lineNumber * math.ceil((font.size or 10) * 1.2),
+                        font.size or 10, color, alpha, anchor, escape(line))
                     lineNumber = lineNumber + 1
                 end
+            end
+        end
+        if kind == "EditBox" then
+            local value = rawget(node, "_text")
+            if value and value ~= "" then
+                local font = rawget(node, "_font") or {}
+                local color, alpha = cssColor(rawget(node, "_textColor"), {0.9, 0.9, 0.9, 1})
+                local insets = rawget(node, "_textInsets") or {}
+                local justify = rawget(node, "_justifyH")
+                local tx = justify == "RIGHT" and x + w - (insets[2] or 0)
+                    or justify == "CENTER" and x + w / 2 or x + (insets[1] or 0)
+                local anchor = justify == "RIGHT" and "end" or justify == "CENTER" and "middle" or "start"
+                lines[#lines + 1] = ('<text x="%.2f" y="%.2f" font-family="Arial, sans-serif" font-size="%g" fill="%s" fill-opacity="%.3f" text-anchor="%s">%s</text>'):format(
+                    tx, y + h / 2 + (font.size or 10) * .35, font.size or 10,
+                    color, alpha, anchor, escape(visibleText(value)))
             end
         end
         for _, child in ipairs(rawget(node, "_children") or {}) do visit(child) end
