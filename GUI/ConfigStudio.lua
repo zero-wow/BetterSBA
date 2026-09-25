@@ -626,7 +626,7 @@ end
 function Studio:Refresh()
     if not self.frame then return end
     if self.profileLabel and NS.GetActiveProfileName then
-        self.profileLabel:SetText("Profile: " .. NS.GetActiveProfileName())
+        self.profileLabel:SetText("Profile: " .. NS:GetActiveProfileName())
     end
     local current = self.pages[self.page]
     if current and current.Refresh then current.Refresh() end

@@ -42,7 +42,10 @@ local NS = {
     GetTalentBuildEntriesForClass = function()
         return { { id = "one", name = "Blood Leveling", specID = 250 } }
     end,
-    GetActiveProfileName = function() return activeProfile end,
+    GetActiveProfileName = function(self)
+        assert(self, "profile methods require their NS receiver")
+        return activeProfile
+    end,
     GetProfileList = function() return {"Default", "Raid"} end,
     HasCharProfile = function() return false end,
     SwitchProfile = function(_, name) activeProfile = name; return true end,
