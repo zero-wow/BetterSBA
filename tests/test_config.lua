@@ -444,7 +444,7 @@ assert(respecCalls == 1, "panel RESPEC TO SBA must request a deliberate SBA rese
 -- lazy alert, suppresses its dismissed mismatch signature, and rechecks the
 -- backend action instead of retaining a stale result.
 NS.CheckTalentSBAWarning(sbaAssessment)
-local warningTitle = assert(findTextWidget(ui.uiParent, "SBA TALENT MISMATCH"), "settled opted-in mismatch must show a warning alert")
+local warningTitle = assert(findTextWidget(ui.uiParent, "SBA Talent Mismatch"), "settled opted-in mismatch must show a warning alert")
 local warningPopup = warningTitle:GetParent()
 assert(warningPopup:IsShown() and rawget(warningPopup._target, "_text"):find("Arcane SBA", 1, true),
     "warning alert must identify the selected SBA target")

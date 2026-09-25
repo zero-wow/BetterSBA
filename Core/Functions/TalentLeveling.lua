@@ -1,9 +1,9 @@
 local ADDON_NAME, NS = ...
 
--- Incremental leveling never resets talents. A separate deliberate respec action
--- stages and verifies a level-appropriate target before committing it once.
+-- Normal incremental leveling spends one rank at a time. A rejected automatic
+-- commit may trigger one guarded reset/rebuild after a verified retry fails.
 -- A max-level export supplies a destination, not an optimal spending order.
-local pending, scheduled, lastWarning
+local pending, scheduled, lastWarning, recovery
 local faults = {}
 local chainCount = 0
 local MAX_CHAIN = 200
@@ -241,6 +241,11 @@ local function Inspect(options)
     if state.clientStamp ~= ClientStamp() or state.treeStamp ~= TreeStamp(treeID) or state.importString ~= entry.importString then
         return Block("The game or target build changed. Reselect the leveling target to review it.")
     end
+    if recovery and recovery.specID == specID and recovery.waiting
+        and not options.assessment and not options.request then
+        return Block(recovery.phase == "rebuild" and "WoW rejected the retry. Preparing one automatic rebuild."
+            or "WoW rejected a talent change. Retrying automatically.")
+    end
     if faults[specID] and not options.assessment and not options.request then return Block(faults[specID]) end
     if pending and pending ~= options.request then return Block("Waiting for the talent change to finish applying.") end
     if NS.IsTalentBuildImportPending() then return Block("Waiting for the whole-build import to finish.") end
@@ -372,7 +377,10 @@ function NS.GetTalentSBAAssessment()
     if not ok then info = NS.GetTalentLevelingInfo() end
     info.message = info.hasMismatch and "Your talents differ from the chosen SBA build." or info.status
     info.failure = info.specID and faults[info.specID]
-    if info.failure then info.detail = (info.detail or "") .. " " .. info.failure end
+    if info.failure and info.settled and not info.canRespec then
+        info.canRespec = C_Traits.ResetTree ~= nil and C_Traits.RollbackConfig ~= nil
+            and C_Traits.IsReadyForCommit ~= nil
+    end
     return info
 end
 
@@ -420,6 +428,7 @@ function NS.SetTalentLevelingTarget(buildID)
     local state = NS.GetTalentLevelingState(specID)
     if buildID == NS.TALENT_BUILD_CUSTOM_ID then
         state.buildID, state.enabled = buildID, false
+        recovery = nil
         faults[specID] = nil
         NS.ScheduleTalentLevelingCheck()
         Refresh()
@@ -439,6 +448,7 @@ function NS.SetTalentLevelingTarget(buildID)
     if not stamp then return false, "Talent tree hash unavailable." end
     state.buildID, state.importString = buildID, entry.importString
     state.clientStamp, state.treeStamp = ClientStamp(), stamp
+    recovery = nil
     faults[specID] = nil
     chainCount = 0
     NS.ScheduleTalentLevelingCheck()
@@ -450,6 +460,7 @@ function NS.SetTalentLevelingEnabled(enabled)
     local state = NS.GetTalentLevelingState()
     if enabled and not NS.FindTalentBuildByID(state.buildID) then return false, "Choose a leveling target first." end
     state.enabled = enabled == true
+    recovery = nil
     faults[NS.GetTalentBuildCurrentSpecID()] = nil
     chainCount = 0
     if state.enabled then NS.ScheduleTalentLevelingCheck() end
@@ -553,21 +564,95 @@ end
 local function Fail(request, text)
     if pending ~= request then return faults[request.specID] end
     pending = nil
-    if request.ownsChanges and not request.commitAccepted then
+    if recovery and recovery.specID == request.specID then recovery = nil end
+    if request.ownsChanges and not request.commitAccepted and not request.recovering
+        and C_ClassTalents.GetActiveConfigID() == request.configID
+        and NS.GetTalentBuildCurrentSpecID() == request.specID
+        and C_Traits.ConfigHasStagedChanges(request.configID) then
         local ok, restored = pcall(C_Traits.RollbackConfig, request.configID)
         if not ok or not restored then text = text .. " WoW could not roll back staged talents; review pending talents." end
     end
     faults[request.specID] = text .. (request.restore and " Review pending talents, then retry undo."
         or request.respec and " Review pending talents, then retry the respec."
         or request.bulk and " Review pending talents, then retry Spend All."
-        or " Review pending talents, then toggle auto-spend off/on to retry.")
-    if request.respec or request.restore then NotifyWarning(NS.GetTalentSBAAssessment(), true) end
+        or " Review pending talents before retrying.")
+    if request.respec or request.restore or request.automatic then
+        NotifyWarning(NS.GetTalentSBAAssessment(), true)
+    end
     Refresh()
     return faults[request.specID]
 end
 
+local function RecoveryMatches(attempt)
+    local ok, matches = pcall(function()
+        local state = NS.GetTalentLevelingState(attempt.specID)
+        local entry = NS.FindTalentBuildByID(attempt.buildID)
+        return state.enabled == true and NS.GetCharKey() == attempt.character
+            and NS.GetTalentBuildCurrentSpecID() == attempt.specID
+            and C_ClassTalents.GetActiveConfigID() == attempt.configID
+            and C_ClassTalents.GetTraitTreeForSpec(attempt.specID) == attempt.treeID
+            and state.buildID == attempt.buildID and state.importString == attempt.importString
+            and entry and entry.importString == attempt.importString
+            and ClientStamp() == attempt.clientStamp and TreeStamp(attempt.treeID) == attempt.treeStamp
+    end)
+    return ok and matches == true
+end
+
+-- A rejected commit is different from a timeout: WoW explicitly says it did
+-- not apply the change. Only roll back when the staged allocation still
+-- matches the exact rank this request created, then retry at most once.
+local function RecoverRejectedPoint(request, text)
+    if pending ~= request then return false end
+    local state = NS.GetTalentLevelingState(request.specID)
+    if not request.automatic or not request.before or not request.stagedAllocation then
+        return false
+    end
+    local prior = recovery
+    if prior and (prior.specID ~= request.specID or not RecoveryMatches(prior)) then
+        prior, recovery = nil, nil
+    end
+    local nextPhase = prior and "rebuild" or "retry"
+    request.recovering = true -- Rollback emits trait events; none may confirm this rejected commit.
+    local safe, errorText = pcall(function()
+        assert(RequestMatches(request), "The selected talent route changed before recovery.")
+        if C_Traits.ConfigHasStagedChanges(request.configID) then
+            assert(SavedAllocationMatches(request.configID, request.treeID, request.stagedAllocation),
+                "The pending talents changed outside BetterSBA.")
+            assert(C_Traits.RollbackConfig(request.configID), "WoW could not discard the rejected talent edit.")
+        end
+        assert(not C_Traits.ConfigHasStagedChanges(request.configID)
+            and SavedAllocationMatches(request.configID, request.treeID, request.before),
+            "The original talents could not be verified after rollback.")
+    end)
+    if not safe then
+        Fail(request, text .. " Automatic recovery stopped: " .. tostring(errorText):gsub("^.-:%d+: ", ""))
+        return true
+    end
+    request.ownsChanges = false
+    pending = nil
+    faults[request.specID] = nil
+    if not state.enabled then
+        recovery = nil
+        Refresh()
+        return true
+    end
+    recovery = { phase = nextPhase, waiting = true, specID = request.specID,
+        configID = request.configID, treeID = request.treeID, buildID = request.buildID,
+        character = request.character, importString = request.importString,
+        clientStamp = request.clientStamp, treeStamp = request.treeStamp }
+    local attempt = recovery
+    NS.C_Timer_After(0.5, function()
+        if recovery ~= attempt then return end
+        attempt.waiting = false
+        if not RecoveryMatches(attempt) then recovery = nil; return end
+        NS.ScheduleTalentLevelingCheck()
+    end)
+    Refresh()
+    return true
+end
+
 local function Finish(request)
-    if pending ~= request or not request.commitSent then return false end
+    if pending ~= request or not request.commitSent or request.recovering then return false end
     if not RequestMatches(request) then
         Fail(request, "The active talent configuration changed.")
         return false
@@ -586,6 +671,7 @@ local function Finish(request)
         return false
     end
     pending = nil
+    if recovery and recovery.specID == request.specID then recovery = nil end
     faults[request.specID] = nil
     local state = NS.GetTalentLevelingState(request.specID)
     if request.respec then
@@ -678,9 +764,15 @@ function NS.SpendNextTalentPoint(automatic)
     local request = NewRequest(info)
     request.pick, request.automatic = info.pick, automatic == true
     pending = request -- Set before mutation: staging itself emits trait events.
+    request.before = ReadAllocation(request.configID, request.treeID)
+    if not request.before then
+        Fail(request, "Unable to record the original talent allocation.")
+        return false
+    end
     local ok, staged = pcall(function()
         local pick = request.pick
         local node = C_Traits.GetNodeInfo(request.configID, pick.nodeID)
+        request.ownsChanges = true
         if pick.choice and (not node.activeEntry or node.activeEntry.entryID ~= pick.entryID) then
             C_Traits.SetSelection(request.configID, pick.nodeID, pick.entryID)
         end
@@ -697,14 +789,23 @@ function NS.SpendNextTalentPoint(automatic)
         Fail(request, "Unable to stage the next talent.")
         return false
     end
+    request.stagedAllocation = ReadAllocation(request.configID, request.treeID)
+    if not request.stagedAllocation then
+        Fail(request, "Unable to verify the staged talent allocation.")
+        return false
+    end
     -- nil commits the active staged talents without supplying an unrelated
     -- saved-loadout ID. Active config IDs are not saved-loadout IDs.
     request.commitSent = true
     local called, success = pcall(C_ClassTalents.CommitConfig)
     if not called or not success then
-        Fail(request, "WoW could not apply the talent point.")
+        if not RecoverRejectedPoint(request, "WoW could not apply the talent point.") then
+            Fail(request, "WoW could not apply the talent point.")
+        end
         return false
     end
+    if pending ~= request then return false end
+    request.commitAccepted = true
     if pending == request then
         NS.C_Timer_After(COMMIT_TIMEOUT, function()
             if pending == request and not Finish(request) then
@@ -717,11 +818,18 @@ function NS.SpendNextTalentPoint(automatic)
     return true
 end
 
-function NS.RequestTalentSBARespec()
+function NS.RequestTalentSBARespec(repairRejectedCommit)
     local info = NS.GetTalentSBAAssessment()
-    if not info.canRespec or not info.hasMismatch then return false, info.message end
+    local repairing = repairRejectedCommit == true and recovery and recovery.phase == "rebuild"
+        and not recovery.waiting and RecoveryMatches(recovery)
+    if not (info.canRespec and (info.hasMismatch or info.failure)) and not (repairing and info.settled
+        and info.configID == recovery.configID and info.treeID == recovery.treeID
+        and C_Traits.ResetTree and C_Traits.RollbackConfig and C_Traits.IsReadyForCommit) then
+        return false, info.message
+    end
     local request = NewRequest(info)
     request.respec = true
+    request.repair = repairing == true
     request.targetName = info.targetName
     faults[request.specID] = nil
     pending = request -- Block normal spending and imports before reset emits events.
@@ -805,7 +913,8 @@ function NS.RequestTalentSBARespec()
     request.commitSent = true
     local called, success = pcall(C_ClassTalents.CommitConfig)
     if not called or not success then
-        local failure = Fail(request, "WoW could not apply the staged respec.")
+        local failure = Fail(request, request.repair and "WoW could not apply the automatic rebuild."
+            or "WoW could not apply the staged respec.")
         return false, failure
     end
     request.commitAccepted = true
@@ -957,16 +1066,31 @@ function NS.ScheduleTalentLevelingCheck()
         scheduled = nil
         if not NS.IsTalentBuildSystemEnabled() then return end
         if pending then
-            if pending.commitSent then Finish(pending) end
+            if pending.commitSent and not pending.recovering then Finish(pending) end
             return
         end
+        if recovery then
+            if recovery.waiting then return end
+            if not RecoveryMatches(recovery) then recovery = nil; return end
+        end
         local info = NS.GetTalentLevelingInfo()
-        if info.enabled and info.autoRespecEnabled and info.hasMismatch and info.canRespec then
+        if recovery and recovery.phase == "rebuild" then
+            if not info.settled then Refresh(); return end
+            local ok, reason = NS.RequestTalentSBARespec(true)
+            if not ok and not pending then
+                local failed = recovery
+                recovery = nil
+                faults[failed.specID] = (reason or "WoW could not start the automatic talent rebuild.")
+                NotifyWarning(NS.GetTalentSBAAssessment(), true)
+                Refresh()
+            end
+        elseif info.enabled and info.autoRespecEnabled and info.hasMismatch and info.canRespec then
             local ok = NS.RequestTalentSBARespec()
             if not ok then NotifyWarning(NS.GetTalentSBAAssessment()); Refresh() end
         elseif info.enabled and info.canSpend then
             NS.SpendNextTalentPoint(true)
         else
+            if recovery and info.settled and not info.hasPoints then recovery = nil end
             chainCount = 0
             NotifyWarning(NS.GetTalentSBAAssessment())
             Refresh()
@@ -976,7 +1100,14 @@ end
 
 function NS.OnTalentLevelingEvent(event, ...)
     if event == "CONFIG_COMMIT_FAILED" then
-        if pending and (...) == pending.configID then Fail(pending, "WoW rejected the talent change.") end
+        local configID = ...
+        if pending and pending.commitSent and configID == pending.configID then
+            local message = pending.repair and "WoW rejected the automatic rebuild."
+                or "WoW rejected the talent change."
+            if not RecoverRejectedPoint(pending, message) then
+                Fail(pending, message)
+            end
+        end
         return
     end
     if event == "PLAYER_SPECIALIZATION_CHANGED" then
@@ -985,7 +1116,7 @@ function NS.OnTalentLevelingEvent(event, ...)
         if pending then Fail(pending, "The specialization changed before the talent was confirmed.") end
     elseif event == "TRAIT_CONFIG_UPDATED" then
         if pending and (...) == pending.configID then
-            if not pending.commitSent then return end
+            if not pending.commitSent or pending.recovering then return end
             Finish(pending)
         end
     elseif event == "TRAIT_TREE_CURRENCY_INFO_UPDATED" then

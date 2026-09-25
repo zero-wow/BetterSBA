@@ -161,6 +161,7 @@ local function makeHarness(options)
             elseif h.beforeStage then
                 h.nodes, h.currencies, h.staged = copy(h.beforeStage.nodes), copy(h.beforeStage.currencies), h.beforeStage.staged
             end
+            if h.onRollback then h.onRollback() end
             return h.rollbackSucceeds ~= false
         end,
         IsReadyForCommit = function() return h.readyForCommit ~= false end,
@@ -477,12 +478,19 @@ end
 -- retries from later trait/currency events.
 do
     local h = makeHarness()
+    h.useBudgets = true
     h:selectTarget("A")
     h.commitSucceeds = false
     check(not h.NS.SpendNextTalentPoint(), "failed CommitConfig must report failure")
     check(h.purchases == 1 and not h.NS.IsTalentLevelingBusy(), "failed commit must clear pending state once")
     h.NS.OnTalentLevelingEvent("TRAIT_TREE_CURRENCY_INFO_UPDATED", 10); h:runDue(.25)
     check(h.purchases == 1, "faulted target must not retry in an event loop")
+    check(h.NS.GetTalentSBAAssessment().canRespec,
+        "a clean failed commit must leave the manual rebuild button available")
+    h.commitSucceeds = true
+    check(h.NS.RequestTalentSBARespec(),
+        "manual rebuild must be possible after a failed commit without a talent mismatch")
+    h:confirm()
 
     local timeout = makeHarness()
     timeout:selectTarget("A")
@@ -827,6 +835,111 @@ do
         check(not h.NS.IsTalentLevelingBusy() and h.rollbacks == 0 and reported,
             "accepted commit failure must stop, retain ownership boundaries, and refresh the UI: " .. failure)
     end
+end
+
+-- A rejected automatic point is explicitly uncommitted. Discard only the
+-- verified staged rank, retry once, then rebuild the current-level target
+-- even when proactive mismatch rebuilding is off. A rejected rebuild stops.
+do
+    local h = makeHarness()
+    h.useBudgets = true
+    h:selectTarget("A")
+    check(h.NS.SetTalentLevelingEnabled(true))
+    h:runDue(.25)
+    check(h.commits == 1 and h.purchases == 1 and h.staged,
+        "automatic recovery fixture must start with one staged point")
+    h.onRollback = function()
+        h.NS.OnTalentLevelingEvent("TRAIT_CONFIG_UPDATED", h.configID)
+    end
+    h.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", h.configID + 1)
+    check(h.rollbacks == 0 and h.NS.IsTalentLevelingBusy(),
+        "a failure for another config must not touch the pending talent change")
+    h.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", h.configID)
+    check(h.rollbacks == 1 and h.nodes[1].ranksPurchased == 0 and not h.staged
+        and not h.NS.IsTalentLevelingBusy() and not h.NS.GetTalentSBAAssessment().failure,
+        "the first rejected point must roll back its own rank without alerting or resetting")
+    h:runDue(.5); h:runDue(.25)
+    check(h.commits == 2 and h.purchases == 2 and h.resets == 0,
+        "Auto-Spend must retry the rejected point without user toggling")
+    h.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", h.configID)
+    check(h.rollbacks == 2 and not h.staged,
+        "a second rejection must safely discard its staged rank")
+    h.combat = true
+    h:runDue(.5); h:runDue(.25)
+    check(h.resets == 0 and h.commits == 2,
+        "automatic rebuild must wait for combat to end")
+    h.combat = false
+    h.NS.OnTalentLevelingEvent("PLAYER_REGEN_ENABLED")
+    h:runDue(.25)
+    check(h.resets == 1 and h.commits == 3 and h.purchases == 3,
+        "Auto-Spend must rebuild once after a rejected retry, even with Auto-Rebuild Off")
+    h:confirm()
+    check(not h.NS.IsTalentLevelingBusy() and h.nodes[1].ranksPurchased == 1
+        and not h.NS.GetTalentSBAAssessment().failure,
+        "a confirmed rebuild must clear recovery and preserve the target allocation")
+
+    local blocked = makeHarness()
+    blocked:selectTarget("A")
+    check(blocked.NS.SetTalentLevelingEnabled(true))
+    blocked:runDue(.25)
+    blocked.nodes[2].ranksPurchased = 1 -- another actor changed the pending plan
+    blocked.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", blocked.configID)
+    blocked:runDue(.5); blocked:runDue(.25)
+    check(blocked.rollbacks == 0 and blocked.resets == 0 and blocked.commits == 1
+        and blocked.NS.GetTalentSBAAssessment().failure,
+        ("recovery must stop rather than replace staged talents it does not own (rollbacks=%s resets=%s commits=%s failure=%s)")
+            :format(tostring(blocked.rollbacks), tostring(blocked.resets), tostring(blocked.commits),
+                tostring(blocked.NS.GetTalentSBAAssessment().failure)))
+
+    local failed = makeHarness()
+    failed:selectTarget("A")
+    check(failed.NS.SetTalentLevelingEnabled(true))
+    failed:runDue(.25)
+    failed.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", failed.configID)
+    failed:runDue(.5); failed:runDue(.25)
+    failed.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", failed.configID)
+    failed:runDue(.5); failed:runDue(.25)
+    failed.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", failed.configID)
+    failed.NS.OnTalentLevelingEvent("PLAYER_LEVEL_UP")
+    failed:runDue(.25); failed:runDue(.5)
+    check(failed.commits == 3 and failed.resets == 1 and failed.NS.GetTalentSBAAssessment().failure,
+        "a rejected rebuild must stop without an unlimited recovery loop")
+
+    local cancelled = makeHarness()
+    cancelled:selectTarget("A")
+    check(cancelled.NS.SetTalentLevelingEnabled(true))
+    cancelled:runDue(.25)
+    cancelled.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", cancelled.configID)
+    cancelled:runDue(.5); cancelled:runDue(.25)
+    cancelled.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", cancelled.configID)
+    check(cancelled.NS.SetTalentLevelingEnabled(false))
+    cancelled:runDue(.5); cancelled:runDue(.25)
+    check(cancelled.resets == 0 and cancelled.commits == 2,
+        "turning Auto-Spend off must cancel a queued automatic rebuild")
+
+    local optedOut = makeHarness()
+    optedOut:selectTarget("A")
+    check(optedOut.NS.SetTalentLevelingEnabled(true))
+    optedOut:runDue(.25)
+    check(optedOut.NS.SetTalentLevelingEnabled(false))
+    optedOut.NS.OnTalentLevelingEvent("CONFIG_COMMIT_FAILED", optedOut.configID)
+    optedOut:runDue(.5); optedOut:runDue(.25)
+    check(optedOut.rollbacks == 1 and optedOut.commits == 1 and not optedOut.staged,
+        "opting out during a rejected commit must discard its owned stage without retrying")
+
+    local immediate = makeHarness()
+    immediate:selectTarget("A")
+    immediate.commitSucceeds = false
+    check(immediate.NS.SetTalentLevelingEnabled(true))
+    immediate:runDue(.25)
+    check(immediate.rollbacks == 1 and not immediate.staged
+        and not immediate.NS.GetTalentSBAAssessment().failure,
+        "an immediately refused automatic commit must roll back and enter recovery")
+    immediate.commitSucceeds = true
+    immediate:runDue(.5); immediate:runDue(.25)
+    immediate:confirm()
+    check(immediate.commits == 2 and immediate.nodes[1].ranksPurchased == 1,
+        "an immediately refused commit must recover without a switch toggle")
 end
 
 print("talent leveling mock: guided spending, warning deduplication, transactional respec, budget/rollback and commit safety passed")

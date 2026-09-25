@@ -444,12 +444,15 @@ function NS.CheckTalentSBAWarning(assessment)
 
     local popup = EnsureSBAWarningPopup()
     popup._signature = signature
-    popup._title:SetText(assessment.failure and "SBA TALENT CHANGE FAILED" or "SBA TALENT MISMATCH")
+    popup._title:SetText(assessment.failure and "SBA Talent Change Failed" or "SBA Talent Mismatch")
     popup._target:SetText("Target: " .. (assessment.targetName or "Selected SBA build"))
     popup._body:SetText((assessment.failure or assessment.message or "Your learned talents do not match the selected SBA target.")
         .. (assessment.mismatchDetails and ("\n\nDifferences from this target:\n" .. assessment.mismatchDetails) or "")
         .. "\n\n" .. (assessment.detail or "")
-        .. "\n\nRespec To SBA resets your class, specialization, and hero talent points, then applies the selected target at your current level. This only happens after you press the button.")
+        .. "\n\nRespec To SBA resets your class, specialization, and hero talent points, then applies the selected target at your current level."
+        .. " When Auto-Spend is on, BetterSBA automatically retries a rejected point and can rebuild once if that retry fails."
+        .. (assessment.canRespec and " Press the button to retry manually after recovery stops."
+            or " Apply or discard any pending talent edits before a manual retry."))
     popup._bodyContent:SetHeight(math.max(160, popup._body:GetStringHeight() + 6))
     popup._bodyScroll:SetVerticalScroll(0)
     popup._body:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
