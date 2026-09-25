@@ -44,6 +44,7 @@ local GROUPS = {
     },
     ["Colors & Fonts"] = {
         { "Theme", Words("themePreset importanceBorders buttonBgColor priorityBgColor priorityBorderColor") },
+        { "Comic Studio Lettering", Words("configStudioHeadingFont configStudioButtonFont") },
         { "Spell Importance", Words("importColorAutoAttack importColorFiller importColorShortCD importColorLongCD importColorMajorCD") },
         { "Global & Panel Fonts", Words("fontFace fontOutline configPanelFontOverride configPanelFont configPanelOutline") },
         { "Button Keybind Font", Words("keybindFontOverride keybindFont keybindOutline keybindFontSize") },
@@ -90,6 +91,8 @@ local LABELS = {
     priorityBorderColor = "Priority Border",
     pauseSymbolStyle = "Pause Symbol Style",
     animCloneMasque = "Apply Masque To Clone",
+    configStudioHeadingFont = "Comic Heading Font",
+    configStudioButtonFont = "Comic Button Font",
 }
 
 local RANGES = {
@@ -109,6 +112,8 @@ local RANGES = {
     priorityLabelOffsetX = {-50, 50, 1}, priorityLabelOffsetY = {-50, 50, 1},
 }
 local OPTIONS = {
+    configStudioHeadingFont = {"Bangers", "VTC Letterer Pro", "Kalam"},
+    configStudioButtonFont = {"Kalam", "VTC Letterer Pro", "Bangers"},
     buttonStyle = {"Soft", "Classic"}, trinketMode = {"Off", "Approved"},
     castFeedback = {"Motion", "Classic", "Off"},
     motionPreset = {"Pulse", "Echo", "Sweep", "Sheen", "Snap", "Orbit"},
@@ -207,6 +212,8 @@ local function Apply(key, value, studio)
     end
     if (key:find("Font") or key == "fontFace" or key == "fontOutline")
         and NS.UpdateAllConfigFonts then NS.UpdateAllConfigFonts() end
+    if (key == "configStudioHeadingFont" or key == "configStudioButtonFont")
+        and studio.Comic then studio.Comic.RefreshTypography() end
     if NS.ApplyProfileVisuals then NS:ApplyProfileVisuals() end
     if key == "configPanelScale" then studio:ApplyScale() end
 end
@@ -551,6 +558,7 @@ local function BuildPage(studio, page, groups)
     studio.pages[page] = view
     local pageTitle = UI.Label(view, page, 25, C.bright, 420, "TOPLEFT", view, "TOPLEFT", 26, -8)
     if studio.Comic then studio.Comic.StyleHeading(pageTitle, 25) end
+    view._pageTitle = pageTitle
     if studio.Comic then studio.Comic.DecorateTalentPage(view) end
     local count = 0
     for _, group in ipairs(groups or {}) do count = count + #group[2] end

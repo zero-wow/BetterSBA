@@ -51,8 +51,10 @@ end
 function M.textMetrics(fontString, constrainedWidth)
     local font = rawget(fontString, "_font") or {}
     local size = font.size or 10
-    local isCarter = tostring(font.path or ""):find("CarterOne", 1, true) ~= nil
-    local charWidth, lineHeight = size * (isCarter and 0.50 or 0.55), math.ceil(size * 1.2)
+    local path = tostring(font.path or "")
+    local isVTC = path:find("VTC-Letterer-Pro", 1, true) ~= nil
+    local isKalam = path:find("Kalam-Bold", 1, true) ~= nil
+    local charWidth, lineHeight = size * (isVTC and .40 or (isKalam and .47 or .55)), math.ceil(size * 1.2)
     local widest, lines = 0, 0
     local text = visibleText(rawget(fontString, "_text"))
     for line in (text .. "\n"):gmatch("(.-)\n") do
@@ -399,7 +401,7 @@ function M.writeSVG(root, path)
     end
     local lines = {
         ('<svg xmlns="http://www.w3.org/2000/svg" width="%g" height="%g" viewBox="0 0 %g %g">'):format(width, height, width, height),
-        '<style>@font-face{font-family:Bangers;src:url("Fonts/Comic/Bangers-Regular.ttf")}@font-face{font-family:Carter;src:url("Fonts/Comic/CarterOne.ttf")}</style>',
+        '<style>@font-face{font-family:Bangers;src:url("Fonts/Comic/Bangers-Regular.ttf")}@font-face{font-family:VTC;src:url("Fonts/Comic/VTC-Letterer-Pro.ttf")}@font-face{font-family:Kalam;src:url("Fonts/Comic/Kalam-Bold.ttf")}</style>',
         '<rect width="100%" height="100%" fill="#101419"/>',
     }
     local defs, clipID = {}, 0
@@ -461,7 +463,8 @@ function M.writeSVG(root, path)
                 local font = rawget(node, "_font") or {}
                 local fontPath = tostring(font.path or "")
                 local family = fontPath:find("Bangers",1,true) and "Bangers"
-                    or (fontPath:find("CarterOne",1,true) and "Carter" or "Arial, sans-serif")
+                    or (fontPath:find("VTC-Letterer-Pro",1,true) and "VTC"
+                    or (fontPath:find("Kalam-Bold",1,true) and "Kalam" or "Arial, sans-serif"))
                 local color, alpha = cssColor(rawget(node, "_textColor"), {0.9, 0.9, 0.9, 1})
                 local tx = rawget(node, "_justifyH") == "RIGHT" and x + w
                     or (rawget(node, "_justifyH") == "CENTER" and x + w / 2 or x)

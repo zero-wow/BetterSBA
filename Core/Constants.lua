@@ -228,6 +228,8 @@ NS.defaults = {
     configExperience = "classic",
     configStudioWidth = 1120,
     configStudioHeight = 620,
+    configStudioHeadingFont = "Bangers",
+    configStudioButtonFont = "Kalam",
 
     -- Visibility
     onlyInCombat = false,

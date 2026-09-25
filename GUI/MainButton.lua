@@ -6,6 +6,28 @@ local wasOnSpecialBar = false
 local lastRescanTime = nil
 local PRESS_DURATION = 0.09
 
+local function Clamp(value, low, high)
+    return math.max(low, math.min(high, value))
+end
+
+-- All values use UIParent coordinates. Keep the same point of the button under
+-- the cursor while clamping its visible rectangle to the screen.
+function NS.CalculateCursorAnchoredButtonPosition(cursorX, cursorY, oldLeft, oldBottom,
+    oldWidth, oldHeight, newWidth, newHeight, screenWidth, screenHeight)
+    if not oldWidth or oldWidth <= 0 or not oldHeight or oldHeight <= 0
+        or not newWidth or newWidth <= 0 or not newHeight or newHeight <= 0
+        or not screenWidth or screenWidth <= 0 or not screenHeight or screenHeight <= 0 then
+        return nil
+    end
+    local across = Clamp((cursorX - oldLeft) / oldWidth, 0, 1)
+    local up = Clamp((cursorY - oldBottom) / oldHeight, 0, 1)
+    local left = Clamp(cursorX - across * newWidth, 0,
+        math.max(0, screenWidth - newWidth))
+    local bottom = Clamp(cursorY - up * newHeight, 0,
+        math.max(0, screenHeight - newHeight))
+    return left, bottom
+end
+
 local function LayoutPauseVisual(button)
     local pause = button and button.pauseOverlay
     if not pause then return end
@@ -411,16 +433,44 @@ function NS:CreateMainButton()
         NS.DebugPrintAlways("Macro done | Target:", hasTarget and "yes" or "no")
     end)
 
-    -- Modifier+scroll scaling (Ctrl+MouseWheel adjusts button scale)
+    -- Modifier+scroll scaling keeps the icon under the mouse. SetPoint offsets
+    -- use the button's scale, while cursor and screen bounds use UIParent's.
     secure:EnableMouseWheel(true)
     secure:SetScript("OnMouseWheel", function(_, delta)
-        if not NS.db.modifierScaling or not IsControlKeyDown() then return end
-        local scale = NS.db.scale or 1.0
-        scale = scale + delta * 0.05
-        scale = math.max(0.5, math.min(2.0, scale))
+        if not NS.db.modifierScaling or not IsControlKeyDown()
+            or NS.InCombatLockdown() then return end
+        local oldScale = NS.db.scale or 1.0
+        local scale = Clamp(oldScale + delta * 0.05, 0.5, 2.0)
         scale = tonumber(string.format("%.2f", scale))
+        if scale == oldScale then return end
+
+        local parent = NS.UIParent
+        local parentScale = parent:GetEffectiveScale()
+        local oldEffectiveScale = btn:GetEffectiveScale()
+        local oldLeft, oldBottom = btn:GetLeft(), btn:GetBottom()
+        local cursorX, cursorY = GetCursorPosition()
+        if not parentScale or parentScale <= 0 or not oldEffectiveScale
+            or oldEffectiveScale <= 0 or not oldLeft or not oldBottom
+            or not cursorX or not cursorY then return end
+        local oldRatio = oldEffectiveScale / parentScale
+        local oldWidth = btn:GetWidth() * oldRatio
+        local oldHeight = btn:GetHeight() * oldRatio
+        local oldScreenLeft = oldLeft * oldRatio
+        local oldScreenBottom = oldBottom * oldRatio
+
         NS.db.scale = scale
         NS.ApplyButtonSettings()
+        local newRatio = btn:GetEffectiveScale() / parentScale
+        local left, bottom = NS.CalculateCursorAnchoredButtonPosition(
+            cursorX / parentScale, cursorY / parentScale,
+            oldScreenLeft, oldScreenBottom, oldWidth, oldHeight,
+            btn:GetWidth() * newRatio, btn:GetHeight() * newRatio,
+            parent:GetWidth(), parent:GetHeight())
+        if not left then return end
+        local x, y = left / newRatio, bottom / newRatio
+        btn:ClearAllPoints()
+        btn:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", x, y)
+        NS.db.position = { point = "BOTTOMLEFT", relPoint = "BOTTOMLEFT", x = x, y = y }
     end)
 
     -- Restore position

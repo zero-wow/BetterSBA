@@ -93,6 +93,9 @@ function NS.UpdateAllConfigFonts()
     end
     if NS.Config and NS.Config.frame then WalkFrame(NS.Config.frame) end
     if NS.ConfigStudio and NS.ConfigStudio.frame then WalkFrame(NS.ConfigStudio.frame) end
+    if NS.ConfigStudio and NS.ConfigStudio.Comic then
+        NS.ConfigStudio.Comic.RefreshTypography()
+    end
 end
 
 -- Resolve font path: context-specific if override enabled, else global fallback

@@ -56,6 +56,59 @@ local function run(hasMasque)
     onEvent(eventFrame, "ADDON_LOADED", "BetterSBA")
 
     assert(NS.mainButton and NS.secureButton, "main and secure buttons must finish creation")
+    local button = NS.mainButton
+    local wheel = assert(NS.secureButton:GetScript("OnMouseWheel"),
+        "the live button needs a Ctrl+wheel resize handler")
+    local oldCursor, oldControl = GetCursorPosition, IsControlKeyDown
+    local oldSetPoint = button.SetPoint
+    button._testScreenX, button._testScreenY = 100, 100
+    function button:GetLeft() return self._testScreenX / self:GetScale() end
+    function button:GetBottom() return self._testScreenY / self:GetScale() end
+    function button:SetPoint(point, relative, relativePoint, x, y)
+        oldSetPoint(self, point, relative, relativePoint, x, y)
+        if point == "BOTTOMLEFT" and relativePoint == "BOTTOMLEFT" then
+            self._testScreenX, self._testScreenY = x * self:GetScale(), y * self:GetScale()
+        end
+    end
+    _G.IsControlKeyDown = function() return true end
+    _G.GetCursorPosition = function() return 124, 135 end
+    NS.db.modifierScaling = true
+    wheel(NS.secureButton, 1)
+    assert(NS.db.scale == 1.05 and math.abs(button._testScreenX - 98.8) < .01
+        and math.abs(button._testScreenY - 98.25) < .01,
+        "growing the button must preserve the hovered point")
+    assert(NS.db.position.point == "BOTTOMLEFT"
+        and math.abs(NS.db.position.x * NS.db.scale - button._testScreenX) < .01,
+        "wheel resize must persist its new on-screen anchor")
+    wheel(NS.secureButton, -1)
+    assert(NS.db.scale == 1 and math.abs(button._testScreenX - 100) < .01
+        and math.abs(button._testScreenY - 100) < .01,
+        "shrinking must return the button to its original position")
+    for _ = 1, 6 do
+        wheel(NS.secureButton, 1)
+        assert(math.abs((124 - button._testScreenX)
+            / (button:GetWidth() * button:GetScale()) - .5) < .001,
+            "successive wheel steps must retain the same hovered button point")
+    end
+    for _ = 1, 6 do wheel(NS.secureButton, -1) end
+    assert(NS.db.scale == 1 and math.abs(button._testScreenX - 100) < .01,
+        "reversing several wheel steps must preserve the button's position")
+    button._testScreenX, button._testScreenY = 1872, 1032
+    _G.GetCursorPosition = function() return 1918, 1078 end
+    wheel(NS.secureButton, 1)
+    assert(button._testScreenX >= 0 and button._testScreenY >= 0
+        and button._testScreenX + button:GetWidth() * button:GetScale() <= 1920.01
+        and button._testScreenY + button:GetHeight() * button:GetScale() <= 1080.01
+        and 1918 >= button._testScreenX and 1078 >= button._testScreenY,
+        "resizing beside a screen edge must keep the button visible and under the cursor")
+    local beforeCombatScale = NS.db.scale
+    local oldCombat = NS.InCombatLockdown
+    NS.InCombatLockdown = function() return true end
+    wheel(NS.secureButton, -1)
+    assert(NS.db.scale == beforeCombatScale,
+        "protected combat state must not defer an unanchored resize")
+    NS.InCombatLockdown = oldCombat
+    _G.GetCursorPosition, _G.IsControlKeyDown = oldCursor, oldControl
     local pause = assert(NS.mainButton.pauseOverlay, "pause treatment must exist")
     assert(not pause:IsShown(), "pause treatment must stay hidden until a pause reason applies")
     pause:Show()

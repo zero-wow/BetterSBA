@@ -102,6 +102,8 @@ local function Action(parent, value, x, y, w, h, callback, tone)
         -- Fixed action labels need only a small inset beyond their measured text.
         -- Value controls and picker rows can change later, so keep their width.
         if value ~= "" and w >= 88 and w <= 220 and h >= 24 then
+            label._comicActionButton = b
+            label._comicActionMaxWidth = w
             local measured = label:GetStringWidth()
             if measured > 0 then
                 local compact = math.max(88, math.ceil(measured) + 26)

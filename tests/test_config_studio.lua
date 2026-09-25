@@ -104,15 +104,18 @@ studio:SelectPage("Overview")
 overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButton)
 assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
 studio:SelectPage("Overview")
-assert(overview._groupHeaders[1]._font.path:find("CarterOne", 1, true),
+assert(overview._groupHeaders[1]._font.path:find("Kalam-Bold", 1, true),
     "small section headings need the bundled comic lettering")
-local comicFont = assert(io.open("Fonts/Comic/CarterOne.ttf", "rb"),
+local comicFont = assert(io.open("Fonts/Comic/VTC-Letterer-Pro.ttf", "rb"),
     "the comic button font must ship with the addon")
 comicFont:close()
-local comicLicense = assert(io.open("Fonts/Comic/CarterOne-OFL.txt", "r"),
+local comicLicense = assert(io.open("Fonts/Comic/VTCinfo.txt", "r"),
     "the bundled comic font must include its license")
 comicLicense:close()
-assert(overview._overviewTalentButton._label._font.path:find("CarterOne", 1, true)
+local kalamFont = assert(io.open("Fonts/Comic/Kalam-Bold.ttf", "rb"),
+    "the optional comic letterer must ship with the addon")
+kalamFont:close()
+assert(overview._overviewTalentButton._label._font.path:find("Kalam-Bold", 1, true)
     and overview._overviewTalentButton:GetWidth() < 136,
     "action labels need comic lettering and tighter button lengths")
 local fontProbe = {
@@ -129,7 +132,7 @@ assert(fontProbe.path == NS.GetConfigFontPath(),
 local handProbe = {
     SetFont = function(self, path)
         self.path = path
-        return not path:find("CarterOne", 1, true)
+        return not path:find("Kalam-Bold", 1, true)
     end,
     SetShadowColor = function() end,
     SetShadowOffset = function() end,
@@ -137,6 +140,33 @@ local handProbe = {
 studio.Comic.StyleButtonText(handProbe, 14)
 assert(handProbe.path == NS.GetConfigFontPath(),
     "failed button-font loads must fall back instead of leaving blank labels")
+local fontsPage = studio.pages["Colors & Fonts"]
+assert(fontsPage._controls.configStudioButtonFont
+    and fontsPage._controls.configStudioHeadingFont,
+    "comic heading and button fonts must be user-selectable")
+local fontChoice = fontsPage._controls.configStudioButtonFont._control
+local compactButtonWidth = overview._overviewTalentButton:GetWidth()
+fontChoice:GetScript("OnClick")(fontChoice)
+studio._choicePopup.rows[2]:GetScript("OnClick")(studio._choicePopup.rows[2])
+assert(db.configStudioButtonFont == "VTC Letterer Pro"
+    and overview._overviewTalentButton._label._font.path:find("VTC-Letterer-Pro", 1, true)
+    and overview._groupHeaders[1]._font.path:find("VTC-Letterer-Pro", 1, true),
+    "changing comic button lettering must restyle existing labels immediately")
+assert(overview._overviewTalentButton:GetWidth() <= compactButtonWidth
+    and overview._overviewTalentButton._label:GetStringWidth()
+        <= overview._overviewTalentButton._label:GetWidth(),
+    "changing lettering must resize action buttons without clipping")
+fontChoice:GetScript("OnClick")(fontChoice)
+studio._choicePopup.rows[1]:GetScript("OnClick")(studio._choicePopup.rows[1])
+assert(db.configStudioButtonFont == "Kalam")
+local headingChoice = fontsPage._controls.configStudioHeadingFont._control
+headingChoice:GetScript("OnClick")(headingChoice)
+studio._choicePopup.rows[3]:GetScript("OnClick")(studio._choicePopup.rows[3])
+assert(db.configStudioHeadingFont == "Kalam"
+    and overview._pageTitle._font.path:find("Kalam-Bold", 1, true),
+    "changing comic heading lettering must restyle the existing page title")
+headingChoice:GetScript("OnClick")(headingChoice)
+studio._choicePopup.rows[1]:GetScript("OnClick")(studio._choicePopup.rows[1])
 assert(overview._controls.enabled._control._comicMini,
     "On/Off switches must use compact styling rather than action-button art")
 local enabledSwitch = overview._controls.enabled._control

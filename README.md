@@ -53,7 +53,9 @@ It also gives you a **rotation queue display** showing your full SBA spell pool 
 
 ## New Settings Panel
 
-The **New Panel** organizes settings into Overview, Combat, Button & Queue, Motion, Talents, Visibility, Colors & Fonts, Advanced, and Profiles. Its compact pages scroll within the window, and the Talents page opens the build library and talent options without leaving the panel. Use **Try New Panel** in Classic Settings or `/bs new` to switch to it. It opens on future visits until you choose **Classic Settings** or `/bs classic`. Both panels edit the same saved settings. The Talents page includes the selected leveling route, Auto-Spend New Points, Spend Available Points, mismatch alerts, and respec/undo actions. Resize from the lower-right grip; the panel also scales to fit the screen.
+The **New Panel** organizes settings into Overview, Combat, Button & Queue, Motion, Talents, Visibility, Colors & Fonts, Advanced, and Profiles. Its compact pages scroll within the window, and the Talents page opens the build library and talent options without leaving the panel. Use **Try New Panel** in Classic Settings or `/bs new` to switch to it. It opens on future visits until you choose **Classic Settings** or `/bs classic`. Both panels edit the same saved settings. The Talents page includes the selected leveling route, Auto-Spend New Points, Spend Available Points, mismatch alerts, and respec/undo actions. Resize from the lower-right grip; the panel also scales to fit the screen. Colors & Fonts offers separate Comic Heading Font and Comic Button Font choices; Kalam is the default button lettering, with VTC Letterer Pro and Bangers also bundled.
+
+With Modifier Scaling enabled, Ctrl+mousewheel over the live button resizes it around the point under your cursor and keeps the button on screen. The new position is saved.
 
 ## Animations
 

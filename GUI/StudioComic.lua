@@ -6,8 +6,14 @@ local Studio = NS.ConfigStudio
 local Comic = {}
 Studio.Comic = Comic
 local ROOT = "Interface\\AddOns\\BetterSBA\\IMG\\Comic\\"
-local COMIC_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\Bangers-Regular.ttf"
-local COMIC_LABEL_FONT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\CarterOne.ttf"
+local FONT_ROOT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\"
+local COMIC_FONTS = {
+    Bangers = FONT_ROOT .. "Bangers-Regular.ttf",
+    ["VTC Letterer Pro"] = FONT_ROOT .. "VTC-Letterer-Pro.ttf",
+    Kalam = FONT_ROOT .. "Kalam-Bold.ttf",
+}
+Comic.fontChoices = { "Bangers", "VTC Letterer Pro", "Kalam" }
+Comic._fontTargets = setmetatable({}, { __mode = "k" })
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local unpack = NS.unpack or unpack
 local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "Horde" or "Alliance"
@@ -25,22 +31,53 @@ Comic.paths = P
 
 function Comic.StyleHeading(label,size)
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    local face = size >= 18 and COMIC_FONT or (size >= 12 and COMIC_LABEL_FONT or fallback)
+    local db = NS.db or {}
+    local face = size >= 18 and (COMIC_FONTS[db.configStudioHeadingFont] or COMIC_FONTS.Bangers)
+        or (size >= 12 and (COMIC_FONTS[db.configStudioButtonFont]
+            or COMIC_FONTS.Kalam))
+        or fallback
     if not label:SetFont(face,size,"") then
         label:SetFont(fallback,size,"OUTLINE")
     end
     label:SetShadowColor(0,0,0,.9)
     label:SetShadowOffset(size >= 18 and 2 or 1,-1)
+    Comic._fontTargets[label] = { kind = "heading", size = size }
 end
 
 function Comic.StyleButtonText(label,size)
     if not label then return end
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    if not label:SetFont(COMIC_LABEL_FONT,size or 14,"") then
+    local face = COMIC_FONTS[NS.db and NS.db.configStudioButtonFont or "Kalam"]
+        or COMIC_FONTS.Kalam
+    if not label:SetFont(face,size or 14,"") then
         label:SetFont(fallback,size or 14,"OUTLINE")
     end
     label:SetShadowColor(0,0,0,.95)
     label:SetShadowOffset(1,-1)
+    Comic._fontTargets[label] = { kind = "button", size = size or 14 }
+end
+
+function Comic.RefreshTypography()
+    for label, style in pairs(Comic._fontTargets) do
+        if style.kind == "heading" then
+            Comic.StyleHeading(label, style.size)
+        else
+            Comic.StyleButtonText(label, style.size)
+            if label._comicActionButton then
+                local button = label._comicActionButton
+                local measured = label:GetStringWidth()
+                if label:GetText() == "Change Build" then
+                    label:SetText("Choose a Build")
+                    measured = math.max(measured, label:GetStringWidth())
+                    label:SetText("Change Build")
+                end
+                local width = math.min(label._comicActionMaxWidth,
+                    math.max(88, math.ceil(measured) + 26))
+                button:SetWidth(width)
+                label:SetWidth(width - 16)
+            end
+        end
+    end
 end
 
 local function tint(t, color)
