@@ -155,6 +155,8 @@ assert(enabledSwitch._label:GetText() == "On"
     and enabledSwitch._label._comicLettering:IsShown()
     and enabledSwitch._label:GetHeight() >= 18,
     "compact On/Off switches must have visible illustrated labels at WoW UI scale")
+local onLetteringWidth = enabledSwitch._label._comicLettering:GetWidth()
+local onLetteringHeight = enabledSwitch._label._comicLettering:GetHeight()
 local wasEnabled = db.enabled
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(db.enabled == not wasEnabled and enabledSwitch._comicOn == not wasEnabled,
@@ -163,6 +165,10 @@ assert(enabledSwitch._label._comicLettering._texture:find("ButtonOff", 1, true),
     "illustrated switch lettering must follow its state")
 assert(not enabledSwitch._label:IsShown() and enabledSwitch._label._comicLettering:IsShown(),
     "changing a switch must never reveal a second live-text layer")
+assert(math.abs(enabledSwitch._label._comicLettering:GetHeight() - onLetteringHeight) < .1
+    and enabledSwitch._label._comicLettering:GetWidth() > onLetteringWidth
+    and enabledSwitch._label._comicLettering:GetWidth() < onLetteringWidth * 1.3,
+    "On and Off lettering must share a height without distorting Off")
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(not studio.navButtons.Overview._stripe,
     "navigation artwork must not have a second accent stripe on the left")

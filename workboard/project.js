@@ -9,9 +9,9 @@ window.WORKBOARD_PROJECT = {
   spotlight: "F02",
   repository: "https://github.com/zero-wow/BetterSBA",
   activity: [
+    { date: "Sep 25", id: "F01", text: "Replaced the spindly Off switch lettering with a heavier comic face; On and Off now share one rendered height. In-game check remains." },
     { date: "Sep 25", id: "F01", text: "Removed doubled switch and heading text layers; regenerated comic lettering and checked header gutters locally. In-game check remains." },
-    { date: "Sep 25", id: "A02", text: "Per-spec talent routes verified across specialization switches." },
-    { date: "Sep 25", id: "F07", text: "Overlapping Studio navigation lettering removed; in-game check remains." }
+    { date: "Sep 25", id: "A02", text: "Per-spec talent routes verified across specialization switches." }
   ],
   items: [
     { id: "A01", lane: "Add", title: "Middle-Click Settings Access", priority: "High", state: "Verify", summary: "Open the saved configuration panel from the live button.", doneWhen: "Middle-click toggles settings and never runs the SBA macro or cast press visual.", evidence: "Implemented in GUI/MainButton.lua; startup mock passes. In-game check remains." },
@@ -25,7 +25,7 @@ window.WORKBOARD_PROJECT = {
     { id: "A09", lane: "Add", title: "Copy Diagnostics Report", priority: "Medium", state: "Backlog", summary: "Collect addon version, client build, spec, route, and recent errors for support.", doneWhen: "One action produces a short report without character-private data or secrets." },
     { id: "A10", lane: "Add", title: "Build Favorites", priority: "Low", state: "Backlog", summary: "Pin frequently used talent routes in the library.", doneWhen: "Favorites persist by profile and remain distinct from the active leveling target." },
 
-    { id: "F01", lane: "Fix", title: "Verify Compact Labels In WoW", priority: "High", state: "Verify", summary: "Confirm illustrated headings and On/Off values render at real game scale.", doneWhen: "No blank or doubled labels at minimum, default, or enlarged UI scale on both factions.", evidence: "Fixed labels now hide native glyphs while their raster art remains visible; On/Off art was redrawn as single-layer Kalam lettering. Studio mock and faction previews pass; in-game visual verification remains." },
+    { id: "F01", lane: "Fix", title: "Verify Compact Labels In WoW", priority: "High", state: "Verify", summary: "Confirm illustrated headings and On/Off values render at real game scale.", doneWhen: "No blank, doubled, or distorted labels at minimum, default, or enlarged UI scale on both factions.", evidence: "Fixed labels hide native glyphs. The compact switch lettering now uses a heavier Lilita One face with equal On/Off height; mock bounds and faction previews pass. In-game visual verification remains." },
     { id: "F02", lane: "Fix", title: "Resolve Invalid Talent Rank Reports", priority: "Critical", state: "Next", summary: "Trace the remaining purchased-rank warning, including node 99822.", doneWhen: "Valid partial leveling builds decode without the warning; invalid data names the exact cause.", evidence: "Local fixtures defer node 99822 when its hero entries are locked or missing. The reported live-tree rank mismatch still needs its actual import rank and node capacity checked before changing the decoder." },
     { id: "F03", lane: "Fix", title: "Recover Rejected Talent Commits", priority: "Critical", state: "Verify", summary: "Retry safely after WoW rejects a talent change while auto-spend is already enabled.", doneWhen: "A failed commit cannot leave the route stuck until the user toggles auto-spend.", evidence: "TalentLeveling.lua rolls back only the staged rank it owns, retries once, then attempts one guarded rebuild. Tests cover rejection, combat delay, cancellation, and recovery limits; an in-game rejection has not been verified." },
     { id: "F04", lane: "Fix", title: "Keep Auto-Spend State In Sync", priority: "High", state: "Backlog", summary: "Reconcile checkbox, route summary, death state, and reload status.", doneWhen: "All surfaces show one state and resume correctly after death, resurrection, and reload." },

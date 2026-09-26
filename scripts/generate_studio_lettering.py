@@ -60,9 +60,9 @@ def power_of_two(value):
 def draw_lettering(value, kind):
     scale = 4
     compact_state = kind == "button" and value in ("On", "Off")
-    font_name = ("Kalam-Bold.ttf" if compact_state else "VTC-Letterer-Pro.ttf") \
+    font_name = ("LilitaOne-Regular.ttf" if compact_state else "VTC-Letterer-Pro.ttf") \
         if kind == "button" else "Bangers-Regular.ttf"
-    full_size = 19 if compact_state else (18 if kind == "button" else 23)
+    full_size = 18 if kind == "button" else 23
     font = ImageFont.truetype(FONT_ROOT / font_name, full_size * scale)
     small_font = ImageFont.truetype(FONT_ROOT / font_name,
                                     (15 if kind == "button" else 19) * scale)

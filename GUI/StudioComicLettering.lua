@@ -21,8 +21,8 @@ NS.StudioLettering.button["Fit Window"] = { file = "ButtonFitWindow", width = 82
 NS.StudioLettering.button["New Profile"] = { file = "ButtonNewProfile", width = 87.0, height = 17.5, u = 0.679688, v = 0.546875 }
 NS.StudioLettering.button["Next"] = { file = "ButtonNext", width = 36.5, height = 17.5, u = 0.570312, v = 0.546875 }
 NS.StudioLettering.button["Not Set"] = { file = "ButtonNotSet", width = 60.5, height = 17.5, u = 0.945312, v = 0.546875 }
-NS.StudioLettering.button["Off"] = { file = "ButtonOff", width = 35.5, height = 21.0, u = 0.554688, v = 0.65625 }
-NS.StudioLettering.button["On"] = { file = "ButtonOn", width = 27.0, height = 20.0, u = 0.84375, v = 0.625 }
+NS.StudioLettering.button["Off"] = { file = "ButtonOff", width = 32.0, height = 19.0, u = 1.0, v = 0.59375 }
+NS.StudioLettering.button["On"] = { file = "ButtonOn", width = 27.0, height = 19.0, u = 0.84375, v = 0.59375 }
 NS.StudioLettering.button["Open Talents"] = { file = "ButtonOpenTalents", width = 93.5, height = 17.5, u = 0.730469, v = 0.546875 }
 NS.StudioLettering.button["Preview Motion"] = { file = "ButtonPreviewMotion", width = 110.0, height = 17.0, u = 0.859375, v = 0.53125 }
 NS.StudioLettering.button["Previous"] = { file = "ButtonPrevious", width = 66.0, height = 17.0, u = 0.515625, v = 0.53125 }
