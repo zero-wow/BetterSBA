@@ -44,7 +44,6 @@ local GROUPS = {
     },
     ["Colors & Fonts"] = {
         { "Theme", Words("themePreset importanceBorders buttonBgColor priorityBgColor priorityBorderColor") },
-        { "Comic Studio Lettering", Words("configStudioHeadingFont configStudioButtonFont") },
         { "Spell Importance", Words("importColorAutoAttack importColorFiller importColorShortCD importColorLongCD importColorMajorCD") },
         { "Global & Panel Fonts", Words("fontFace fontOutline configPanelFontOverride configPanelFont configPanelOutline") },
         { "Button Keybind Font", Words("keybindFontOverride keybindFont keybindOutline keybindFontSize") },
@@ -112,8 +111,6 @@ local RANGES = {
     priorityLabelOffsetX = {-50, 50, 1}, priorityLabelOffsetY = {-50, 50, 1},
 }
 local OPTIONS = {
-    configStudioHeadingFont = {"Bangers", "VTC Letterer Pro", "Kalam"},
-    configStudioButtonFont = {"Lilita One", "VTC Letterer Pro", "Bangers"},
     buttonStyle = {"Soft", "Classic"}, trinketMode = {"Off", "Approved"},
     castFeedback = {"Motion", "Classic", "Off"},
     motionPreset = {"Pulse", "Echo", "Sweep", "Sheen", "Snap", "Orbit"},
@@ -126,6 +123,7 @@ local EXCLUDE = {
     talentBuildSortColumn = true, talentBuildSortAscending = true,
     configPanelBaseHeight = true, configPanelHeight = true,
     configExperience = true, configStudioWidth = true, configStudioHeight = true,
+    configStudioHeadingFont = true, configStudioButtonFont = true,
     configPanelLayoutVersion = true, trinketApproved = true,
     animCloneReapplyKey = true, enableGC = true, gcTargetMB = true,
     talentBuildAutoApplyMode = true, talentBuildManagedLoadouts = true,
@@ -212,8 +210,6 @@ local function Apply(key, value, studio)
     end
     if (key:find("Font") or key == "fontFace" or key == "fontOutline")
         and NS.UpdateAllConfigFonts then NS.UpdateAllConfigFonts() end
-    if (key == "configStudioHeadingFont" or key == "configStudioButtonFont")
-        and studio.Comic then studio.Comic.RefreshTypography() end
     if NS.ApplyProfileVisuals then NS:ApplyProfileVisuals() end
     if key == "configPanelScale" then studio:ApplyScale() end
     if studio.Refresh then studio:Refresh() end
@@ -326,7 +322,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
             label:SetText(info and info.name or Title(key))
             local available = info and info.canApprove
             local approved = available and NS.IsTrinketApproved and NS.IsTrinketApproved(slot)
-            control._label:SetText(not available and "Unavailable" or approved and "Approved" or "Approve")
+            UI.SetActionText(control, not available and "Unavailable" or approved and "Approved" or "Approve")
             control:SetEnabled(available == true)
             control:SetAlpha(available and 1 or .5)
         end
@@ -358,7 +354,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
         end, "quiet")
         clear:ClearAllPoints(); clear:SetPoint("RIGHT", row, "RIGHT", -8, 0)
         row.Refresh = function()
-            control._label:SetText(NS.GetAnimCloneReapplyBindingText
+            UI.SetActionText(control, NS.GetAnimCloneReapplyBindingText
                 and NS.GetAnimCloneReapplyBindingText() or (NS.db.animCloneReapplyKey or "Not Set"))
         end
         row._control = control
@@ -370,7 +366,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
         control:SetPoint("RIGHT", row, "RIGHT", -8, 0)
         row.Refresh = function()
             local on = NS.db[key] == true
-            control._label:SetText(on and "On" or "Off")
+            UI.SetActionText(control, on and "On" or "Off")
             if studio.Comic then
                 studio.Comic.SetMiniState(control,on)
             else
@@ -797,7 +793,7 @@ local function BuildProfiles(studio)
         name:SetText("Active Profile: " .. NS:GetActiveProfileName())
         message:SetText(NS:HasCharProfile() and "This character uses the selected profile."
             or "This character follows the account default profile.")
-        bind._label:SetText(NS:HasCharProfile() and "Unbind Character" or "Bind To This Profile")
+        UI.SetActionText(bind, NS:HasCharProfile() and "Unbind Character" or "Bind To This Profile")
         font:SetText(NS:GetActiveProfileName())
     end
     return view

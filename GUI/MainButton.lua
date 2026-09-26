@@ -300,7 +300,9 @@ function NS:CreateMainButton()
     secure:RegisterForClicks("AnyDown", "AnyUp")
 
     -- Secure macro action
-    secure:SetAttribute("type", "macro")
+    -- Keep casting on left click (including override bindings). Middle click
+    -- has no secure action and can safely open the settings in PostClick.
+    secure:SetAttribute("type1", "macro")
     secure:SetAttribute("macrotext", NS.BuildMacroText())
 
     -- Hide ALL template-created visual elements so they don't render
@@ -341,6 +343,7 @@ function NS:CreateMainButton()
             GameTooltip:AddLine(" ")
         end
         GameTooltip:AddLine("BetterSBA", T.ACCENT[1], T.ACCENT[2], T.ACCENT[3])
+        GameTooltip:AddLine("Middle-Click to Open Settings", 0.6, 0.8, 1)
         if not NS.db.locked then
             GameTooltip:AddLine("Drag to move | /bs lock", 0.6, 0.6, 0.6)
         end
@@ -351,7 +354,8 @@ function NS:CreateMainButton()
         GameTooltip:Hide()
     end)
 
-    secure:SetScript("OnMouseDown", function()
+    secure:SetScript("OnMouseDown", function(_, button)
+        if button ~= "LeftButton" then return end
         if NS.PlayRecommendationPressVisual then
             NS.PlayRecommendationPressVisual(btn.spellID, true)
         end
@@ -360,7 +364,8 @@ function NS:CreateMainButton()
         end
     end)
 
-    secure:SetScript("OnMouseUp", function()
+    secure:SetScript("OnMouseUp", function(_, button)
+        if button ~= "LeftButton" then return end
         if NS.ReleaseRecommendationPressVisual then
             NS.ReleaseRecommendationPressVisual()
         end
@@ -371,6 +376,7 @@ function NS:CreateMainButton()
 
     -- Debug: PreClick fires BEFORE the macro executes
     secure:SetScript("PreClick", function(self, button, down)
+        if button ~= "LeftButton" then return end
         if not NS.IsDebugChannelEnabled or not NS.IsDebugChannelEnabled("other") then return end
         local macro = self:GetAttribute("macrotext") or ""
         local spellName = btn.spellID and NS.C_Spell and NS.C_Spell.GetSpellName
@@ -428,6 +434,11 @@ function NS:CreateMainButton()
 
     -- Debug: PostClick fires AFTER the macro executes
     secure:SetScript("PostClick", function(self, button, down)
+        if button == "MiddleButton" then
+            if not down and NS.ToggleSettingsPanel then NS.ToggleSettingsPanel() end
+            return
+        end
+        if button ~= "LeftButton" then return end
         if not NS.IsDebugChannelEnabled or not NS.IsDebugChannelEnabled("other") then return end
         local hasTarget = NS.UnitExists("target")
         NS.DebugPrintAlways("Macro done | Target:", hasTarget and "yes" or "no")
@@ -669,7 +680,7 @@ local function UpdateVisibility()
         local enabled = db.enabled == true
         if secure._inputEnabled ~= enabled then
             secure._inputEnabled = enabled
-            secure:SetAttribute("type", enabled and "macro" or nil)
+            secure:SetAttribute("type1", enabled and "macro" or nil)
             secure:EnableMouse(enabled)
         end
     end

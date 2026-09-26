@@ -9,6 +9,7 @@ local function run(hasMasque)
     local NS, ui = harness.NS, harness.ui
     NS.db.buttonSize, NS.db.scale = 48, 1
     NS.db.buttonStyle = "Soft"
+    NS.db.enabled = true
     NS.ICON_TEXCOORD = {.07, .93, .07, .93}
     NS.ResolveFontPath = function() return "Fonts\\FRIZQT__.TTF" end
     NS.ResolveFontOutline = function() return "" end
@@ -56,6 +57,9 @@ local function run(hasMasque)
     onEvent(eventFrame, "ADDON_LOADED", "BetterSBA")
 
     assert(NS.mainButton and NS.secureButton, "main and secure buttons must finish creation")
+    assert(NS.secureButton:GetAttribute("type1") == "macro"
+        and NS.secureButton:GetAttribute("type") == nil,
+        "only left click and its keybind may cast the SBA macro")
     local button = NS.mainButton
     local wheel = assert(NS.secureButton:GetScript("OnMouseWheel"),
         "the live button needs a Ctrl+wheel resize handler")
@@ -137,6 +141,16 @@ local function run(hasMasque)
     assert(NS.Config.frame and NS.Config.frame:IsShown(), "/bs must open the actual Config frame")
     NS.Config:Hide()
     NS.db.configExperience = "studio"
+    local postClick = assert(NS.secureButton:GetScript("PostClick"))
+    postClick(NS.secureButton, "MiddleButton", true)
+    assert(not NS.ConfigStudio.frame or not NS.ConfigStudio.frame:IsShown(),
+        "middle-button down must not toggle settings")
+    postClick(NS.secureButton, "MiddleButton", false)
+    assert(NS.ConfigStudio.frame and NS.ConfigStudio.frame:IsShown(),
+        "middle clicking the live button must open the saved settings panel")
+    postClick(NS.secureButton, "MiddleButton", false)
+    assert(not NS.ConfigStudio.frame:IsShown(),
+        "middle clicking the live button again must close settings")
     SlashCmdList.BETTERSBA("")
     assert(NS.ConfigStudio.frame and NS.ConfigStudio.frame:IsShown(),
         "/bs must open Studio when it is the saved panel")

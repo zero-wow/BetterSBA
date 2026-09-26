@@ -31,7 +31,9 @@ end
 
 local function Label(parent, value, size, color, width, point, relative, relativePoint, x, y)
     local f = parent:CreateFontString(nil, "OVERLAY")
-    f:SetFont(NS.GetConfigFontPath(), size, "")
+    if not f:SetFont(NS.GetConfigFontPath(), size, "") then
+        f:SetFont("Fonts\\FRIZQT__.TTF", size, "")
+    end
     f:SetTextColor(NS.unpack(color or C.text))
     f:SetText(value or "")
     if width then f:SetWidth(width) end
@@ -106,7 +108,10 @@ local function Action(parent, value, x, y, w, h, callback, tone)
             label._comicActionMaxWidth = w
             local measured = label:GetStringWidth()
             if measured > 0 then
-                local compact = math.max(88, math.ceil(measured) + 26)
+                local art = type(NS.StudioLettering) == "table"
+                    and NS.StudioLettering.button[value]
+                local compact = math.max(88, math.ceil(measured) + 26,
+                    art and math.ceil(art.width) + 16 or 0)
                 if value == "Change Build" then
                     label:SetText("Choose a Build")
                     compact = math.max(compact, math.ceil(label:GetStringWidth()) + 22)
@@ -127,6 +132,11 @@ local function Action(parent, value, x, y, w, h, callback, tone)
         b:SetScript("OnLeave", function(self) self:SetBackdropBorderColor(NS.unpack(C.border)) end)
     end
     return b
+end
+
+local function SetActionText(button, value)
+    button._label:SetText(value)
+    if Studio.Comic then Studio.Comic.SetLettering(button._label, "button", value) end
 end
 
 local function Caption(parent, value, x, y)
@@ -165,6 +175,7 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
         track:SetBackdropColor(NS.unpack(on and C.accent or C.rail))
         if Studio.Comic then Studio.Comic.SetToggleState(track,on) end
         stateText:SetText(on and "On" or "Off")
+        if Studio.Comic then Studio.Comic.SetLettering(stateText, "button") end
         stateText:SetTextColor(NS.unpack(Studio.Comic and C.bright or (on and C.gutter or C.dim)))
     end
     row:SetScript("OnClick", function() setter(not getter()); row.Refresh() end)
@@ -175,7 +186,7 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
 end
 
 Studio.UI = { Surface = Surface, Action = Action, Label = Label,
-    Paint = Paint, FitText = FitText, colors = C }
+    Paint = Paint, FitText = FitText, SetActionText = SetActionText, colors = C }
 
 local function OpenClassic(section, makeDefault)
     if makeDefault then NS.db.configExperience = "classic" end
@@ -420,7 +431,7 @@ local function BuildTalentPage(self)
     view.Refresh = function()
         local info = NS.GetTalentLevelingInfo()
         WrapRouteName(routeName, routeNameMeasure, info.targetName, routeName:GetWidth())
-        change._label:SetText(info.buildID and info.targetName ~= "No Build Selected"
+        SetActionText(change, info.buildID and info.targetName ~= "No Build Selected"
             and "Change Build" or "Choose a Build")
         routeDetail:SetText((info.specName and ("Active Specialization: " .. info.specName)
             or "Current specialization") .. "  •  Auto-Spend: " .. (info.enabled and "On" or "Off"))

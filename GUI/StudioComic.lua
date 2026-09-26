@@ -6,14 +6,7 @@ local Studio = NS.ConfigStudio
 local Comic = {}
 Studio.Comic = Comic
 local ROOT = "Interface\\AddOns\\BetterSBA\\IMG\\Comic\\"
-local FONT_ROOT = "Interface\\AddOns\\BetterSBA\\Fonts\\Comic\\"
-local COMIC_FONTS = {
-    Bangers = FONT_ROOT .. "Bangers-Regular.ttf",
-    ["VTC Letterer Pro"] = FONT_ROOT .. "VTC-Letterer-Pro.ttf",
-    Kalam = FONT_ROOT .. "Kalam-Bold.ttf",
-    ["Lilita One"] = FONT_ROOT .. "LilitaOne-Regular.ttf",
-}
-Comic.fontChoices = { "Lilita One", "VTC Letterer Pro", "Bangers" }
+local LETTER_ROOT = ROOT .. "Lettering\\"
 Comic._fontTargets = setmetatable({}, { __mode = "k" })
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local unpack = NS.unpack or unpack
@@ -30,20 +23,52 @@ local P = {
 }
 Comic.paths = P
 
+-- Keep the native FontString for text measurement and variable values. Fixed
+-- labels use transparent, pre-rendered lettering on top of the existing art.
+function Comic.SetLettering(label, kind, value, size)
+    if not label or not label.GetText then return false end
+    local catalog = type(NS.StudioLettering) == "table" and NS.StudioLettering[kind]
+    local entry = catalog and catalog[value or label:GetText()]
+    local art = label._comicLettering
+    if not entry then
+        if art then art:Hide() end
+        label:SetAlpha(1)
+        return false
+    end
+    if not art then
+        art = label:GetParent():CreateTexture(nil, "OVERLAY", nil, 1)
+        label._comicLettering = art
+    end
+    art:SetTexture(LETTER_ROOT .. entry.file)
+    art:SetTexCoord(0, entry.u, 0, entry.v)
+    art:ClearAllPoints()
+    art:SetPoint(kind == "button" and "CENTER" or "LEFT", label,
+        kind == "button" and "CENTER" or "LEFT", 0, 0)
+    local width = label:GetWidth()
+    if kind == "button" then
+        local parentWidth = label:GetParent():GetWidth()
+        width = math.min(width, parentWidth - (parentWidth >= 80 and 18 or 8))
+    end
+    local height = kind == "button" and math.max(12, label:GetParent():GetHeight() - 6)
+        or (size or 16) + 3
+    local scale = math.min(1, width > 0 and width / entry.width or 1,
+        height / entry.height)
+    art:SetSize(entry.width * scale, entry.height * scale)
+    art:Show()
+    label:SetAlpha(0)
+    return true
+end
+
 function Comic.StyleHeading(label,size)
-    local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
-    local db = NS.db or {}
-    local face = size >= 18 and (COMIC_FONTS[db.configStudioHeadingFont] or COMIC_FONTS.Bangers)
-        or (size >= 12 and (COMIC_FONTS[db.configStudioButtonFont]
-            or COMIC_FONTS["Lilita One"]))
-        or fallback
-    if not label:SetFont(face,size,"") then
-        label:SetFont(fallback,size,"OUTLINE")
+    local fallback = "Fonts\\FRIZQT__.TTF"
+    if not label:SetFont(fallback,size,"") then
+        label:SetFont(NS.GetConfigFontPath(),size,"OUTLINE")
     end
     label:SetShadowColor(0,0,0,.9)
     label:SetShadowOffset(size >= 18 and 2 or 1,-1)
     if size < 18 then label:SetHeight(size + 6) end
     Comic._fontTargets[label] = { kind = "heading", size = size }
+    Comic.SetLettering(label, "heading", nil, size)
 end
 
 function Comic.StyleButtonText(label,size)
@@ -53,9 +78,9 @@ function Comic.StyleButtonText(label,size)
     -- Tiny state controls need a compact face and a real text box. Display
     -- fonts that work at 14px can have taller metrics than a 21px switch.
     local tiny = size < 13
-    local face = tiny and "Fonts\\FRIZQT__.TTF"
-        or COMIC_FONTS[NS.db and NS.db.configStudioButtonFont or "Lilita One"]
-        or COMIC_FONTS["Lilita One"]
+    -- Live values still need a font. Use a client-provided face, since the
+    -- illustrated fixed labels no longer depend on third-party font loading.
+    local face = "Fonts\\FRIZQT__.TTF"
     if not label:SetFont(face,size,tiny and "OUTLINE" or "") then
         label:SetFont(fallback,size,"OUTLINE")
     end
@@ -63,6 +88,7 @@ function Comic.StyleButtonText(label,size)
     label:SetShadowColor(0,0,0,.95)
     label:SetShadowOffset(1,-1)
     Comic._fontTargets[label] = { kind = "button", size = size }
+    Comic.SetLettering(label, "button", nil, size)
 end
 
 function Comic.RefreshTypography()
@@ -79,10 +105,14 @@ function Comic.RefreshTypography()
                     measured = math.max(measured, label:GetStringWidth())
                     label:SetText("Change Build")
                 end
+                local art = type(NS.StudioLettering) == "table"
+                    and NS.StudioLettering.button[label:GetText()]
                 local width = math.min(label._comicActionMaxWidth,
-                    math.max(88, math.ceil(measured) + 26))
+                    math.max(88, math.ceil(measured) + 26,
+                        art and math.ceil(art.width) + 18 or 0))
                 button:SetWidth(width)
                 label:SetWidth(width - 16)
+                Comic.SetLettering(label, "button", nil, style.size)
             end
         end
     end

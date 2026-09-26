@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>BetterSBA Workboard</title>
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="project.js"></script>
+  <script defer src="workboard.js"></script>
+</head>
+<body data-theme="alliance">
+  <div class="board-shell">
+    <header class="masthead">
+      <div class="brand-block">
+        <span class="brand-strike" aria-hidden="true"></span>
+        <div class="brand-copy">
+          <span class="brand-kicker">Project Operations</span>
+          <span class="brand-name" id="brandName">Workboard</span>
+        </div>
+        <span class="project-name" id="projectName">BetterSBA</span>
+      </div>
+      <div class="header-tools">
+        <span class="update-stamp" id="updateStamp"></span>
+        <fieldset class="faction-switch" aria-label="Faction Theme">
+          <legend class="sr-only">Faction Theme</legend>
+          <button id="allianceTheme" type="button" aria-pressed="true">Alliance</button>
+          <button id="hordeTheme" type="button" aria-pressed="false">Horde</button>
+        </fieldset>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="rail" aria-label="Work Lanes">
+        <div class="rail-heading">
+          <span class="micro-label">Choose A Lane</span>
+          <strong>Work Streams</strong>
+        </div>
+        <nav class="lane-nav" id="laneNav"></nav>
+        <div class="faction-mark" aria-hidden="true"></div>
+        <div class="rail-footer">
+          <span class="rail-slash" aria-hidden="true">///</span>
+          <p>One board. Forty concrete missions. Source-controlled progress.</p>
+        </div>
+      </aside>
+
+      <main class="work-surface">
+        <section class="mission-header" aria-labelledby="boardTitle">
+          <div class="mission-copy">
+            <span class="angled-tag">Development Workboard</span>
+            <h1 id="boardTitle">BetterSBA <em>Workboard</em></h1>
+            <p id="projectSubtitle">Development work, decisions, and next checks in one place.</p>
+            <div class="progress-row">
+              <div class="progress-label"><span id="doneCount">0</span> Done <span class="divider-dot">·</span> <span id="totalCount">40</span> Total</div>
+              <div class="progress-track" role="progressbar" aria-label="Completed Work" aria-valuemin="0" aria-valuemax="40" aria-valuenow="0" id="progressTrack"><span id="progressFill"></span></div>
+            </div>
+          </div>
+          <img id="factionHero" class="faction-hero" src="assets/AllianceTalentHero.png" alt="Alliance comic-book character and banner">
+          <div class="hero-scratch" aria-hidden="true"></div>
+        </section>
+
+        <div class="content-grid">
+          <section class="list-column" aria-labelledby="queueTitle">
+            <div class="section-title-row">
+              <div>
+                <span class="micro-label">The Queue</span>
+                <h2 id="queueTitle">Missions</h2>
+              </div>
+              <span class="visible-count" id="visibleCount">40 Showing</span>
+            </div>
+            <div class="controls">
+              <label class="search-wrap">
+                <span class="sr-only">Search Missions</span>
+                <span class="search-icon" aria-hidden="true">⌕</span>
+                <input id="searchInput" type="search" placeholder="Search Missions…" autocomplete="off">
+                <kbd>/</kbd>
+              </label>
+              <div class="state-filters" id="stateFilters" aria-label="Filter By State"></div>
+            </div>
+            <div class="mission-list" id="missionList"></div>
+            <p class="no-results" id="noResults" hidden>No missions match those filters.</p>
+          </section>
+
+          <aside class="inspector" aria-labelledby="inspectorHeading">
+            <div class="inspector-topline"><span>Selected Mission</span><span class="crosshair" aria-hidden="true">⊕</span></div>
+            <div class="inspector-id" id="inspectorId">F02</div>
+            <h2 id="inspectorHeading">Select A Mission</h2>
+            <p class="inspector-summary" id="inspectorSummary"></p>
+            <div class="inspector-meta">
+              <div><span>Lane</span><strong id="inspectorLane"></strong></div>
+              <div><span>Priority</span><strong id="inspectorPriority"></strong></div>
+              <div><span>State</span><strong id="inspectorState"></strong></div>
+            </div>
+            <div class="acceptance">
+              <span class="micro-label">Done When</span>
+              <p id="inspectorDoneWhen"></p>
+            </div>
+            <div class="evidence" id="evidenceBox" hidden>
+              <span class="micro-label">Current Evidence</span>
+              <p id="inspectorEvidence"></p>
+            </div>
+            <div class="inspector-actions">
+              <button class="comic-button" id="copyLink" type="button"><span>Copy Mission Link</span></button>
+              <button class="text-button" id="downloadSnapshot" type="button">Download Snapshot</button>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+    <footer class="board-footer"><span id="footerProject">BetterSBA</span><span>Workboard Data Lives In <code>project.js</code></span><span id="footerCount">40 Missions</span></footer>
+  </div>
+</body>
+</html>

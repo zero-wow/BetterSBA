@@ -776,6 +776,7 @@ end
 local studioFaction = arg and arg[4] == "horde" and "Horde" or "Alliance"
 _G.UnitFactionGroup = function() return studioFaction end
 assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/StudioComicLettering.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioComic.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
 NS.SwitchSettingsPanel("studio")

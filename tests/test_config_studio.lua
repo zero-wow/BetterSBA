@@ -81,6 +81,7 @@ for key, value in pairs(NS.defaults) do
     if db[key] == nil then db[key] = value end
 end
 assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/StudioComicLettering.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioComic.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
 NS.SwitchSettingsPanel("studio")
@@ -104,9 +105,9 @@ studio:SelectPage("Overview")
 overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButton)
 assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
 studio:SelectPage("Overview")
-assert(overview._groupHeaders[1]._font.path:find("LilitaOne-Regular", 1, true)
+assert(overview._groupHeaders[1]._comicLettering._texture:find("HeadingEssentials", 1, true)
     and overview._groupHeaders[1]:GetHeight() >= 19,
-    "small section headings need legible comic lettering with explicit bounds")
+    "small section headings need illustrated lettering with explicit bounds")
 local comicFont = assert(io.open("Fonts/Comic/VTC-Letterer-Pro.ttf", "rb"),
     "the comic button font must ship with the addon")
 comicFont:close()
@@ -122,69 +123,37 @@ lilitaFont:close()
 local lilitaLicense = assert(io.open("Fonts/Comic/LilitaOne-OFL.txt", "r"),
     "the default comic action font must include its license")
 lilitaLicense:close()
-assert(overview._overviewTalentButton._label._font.path:find("LilitaOne-Regular", 1, true)
+assert(overview._overviewTalentButton._label._comicLettering._texture:find("ButtonOpenTalents", 1, true)
+    and overview._overviewTalentButton._label:GetAlpha() == 0
     and overview._overviewTalentButton:GetWidth() < 136,
-    "action labels need comic lettering and tighter button lengths")
-local fontProbe = {
-    SetFont = function(self, path)
-        self.path = path
-        return not path:find("Bangers", 1, true)
-    end,
-    SetShadowColor = function() end,
-    SetShadowOffset = function() end,
-}
-studio.Comic.StyleHeading(fontProbe, 25)
-assert(fontProbe.path == NS.GetConfigFontPath(),
-    "failed display-font loads must fall back instead of leaving blank headings")
-local handProbe = {
-    SetFont = function(self, path)
-        self.path = path
-        return not path:find("LilitaOne-Regular", 1, true)
-    end,
-    SetShadowColor = function() end,
-    SetShadowOffset = function() end,
-}
-studio.Comic.StyleButtonText(handProbe, 14)
-assert(handProbe.path == NS.GetConfigFontPath(),
-    "failed button-font loads must fall back instead of leaving blank labels")
+    "fixed action labels need visible image lettering and tighter button lengths")
+local letteringFile = assert(io.open("IMG/Comic/Lettering/ButtonOpenTalents.tga", "rb"))
+letteringFile:close()
+local unknownAction = overview._overviewTalentButton
+studio.UI.SetActionText(unknownAction, "Custom Route Name")
+assert(unknownAction._label:GetAlpha() == 1
+    and not unknownAction._label._comicLettering:IsShown(),
+    "variable action values need a live-text fallback")
+studio.UI.SetActionText(unknownAction, "Open Talents")
+assert(unknownAction._label:GetAlpha() == 0
+    and unknownAction._label._comicLettering:IsShown(),
+    "fixed action art must return when its label returns")
 local fontsPage = studio.pages["Colors & Fonts"]
-assert(fontsPage._controls.configStudioButtonFont
-    and fontsPage._controls.configStudioHeadingFont,
-    "comic heading and button fonts must be user-selectable")
-local fontChoice = fontsPage._controls.configStudioButtonFont._control
-local compactButtonWidth = overview._overviewTalentButton:GetWidth()
-fontChoice:GetScript("OnClick")(fontChoice)
-studio._choicePopup.rows[2]:GetScript("OnClick")(studio._choicePopup.rows[2])
-assert(db.configStudioButtonFont == "VTC Letterer Pro"
-    and overview._overviewTalentButton._label._font.path:find("VTC-Letterer-Pro", 1, true)
-    and overview._groupHeaders[1]._font.path:find("VTC-Letterer-Pro", 1, true),
-    "changing comic button lettering must restyle existing labels immediately")
-assert(overview._overviewTalentButton:GetWidth() <= compactButtonWidth
-    and overview._overviewTalentButton._label:GetStringWidth()
-        <= overview._overviewTalentButton._label:GetWidth(),
-    "changing lettering must resize action buttons without clipping")
-fontChoice:GetScript("OnClick")(fontChoice)
-studio._choicePopup.rows[1]:GetScript("OnClick")(studio._choicePopup.rows[1])
-assert(db.configStudioButtonFont == "Lilita One")
-local headingChoice = fontsPage._controls.configStudioHeadingFont._control
-headingChoice:GetScript("OnClick")(headingChoice)
-studio._choicePopup.rows[3]:GetScript("OnClick")(studio._choicePopup.rows[3])
-assert(db.configStudioHeadingFont == "Kalam"
-    and overview._pageTitle._font.path:find("Kalam-Bold", 1, true),
-    "changing comic heading lettering must restyle the existing page title")
-headingChoice:GetScript("OnClick")(headingChoice)
-studio._choicePopup.rows[1]:GetScript("OnClick")(studio._choicePopup.rows[1])
+assert(fontsPage._controls.fontFace and not fontsPage._controls.configStudioButtonFont,
+    "retired live-font choices should not appear beside illustrated labels")
 assert(overview._controls.enabled._control._comicMini,
     "On/Off switches must use compact styling rather than action-button art")
 local enabledSwitch = overview._controls.enabled._control
 assert(enabledSwitch._label:GetText() == "On"
-    and enabledSwitch._label._font.path == "Fonts\\FRIZQT__.TTF"
+    and enabledSwitch._label._comicLettering._texture:find("ButtonOn", 1, true)
     and enabledSwitch._label:GetHeight() >= 18,
-    "compact On/Off switches must have visible labels at WoW UI scale")
+    "compact On/Off switches must have visible illustrated labels at WoW UI scale")
 local wasEnabled = db.enabled
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(db.enabled == not wasEnabled and enabledSwitch._comicOn == not wasEnabled,
     "compact On/Off controls must update their setting and visual state")
+assert(enabledSwitch._label._comicLettering._texture:find("ButtonOff", 1, true),
+    "illustrated switch lettering must follow its state")
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(not studio.navButtons.Overview._stripe,
     "navigation artwork must not have a second accent stripe on the left")
