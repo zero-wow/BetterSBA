@@ -106,8 +106,10 @@ overview._overviewMotionButton:GetScript("OnClick")(overview._overviewMotionButt
 assert(studio.page == "Motion", "Overview motion shortcut must open Motion")
 studio:SelectPage("Overview")
 assert(overview._groupHeaders[1]._comicLettering._texture:find("HeadingEssentials", 1, true)
-    and overview._groupHeaders[1]:GetHeight() >= 19,
-    "small section headings need illustrated lettering with explicit bounds")
+    and overview._groupHeaders[1]:GetHeight() >= 19
+    and not overview._groupHeaders[1]:IsShown()
+    and overview._groupHeaders[1]._comicLettering:IsShown(),
+    "small section headings must use one visible illustrated layer")
 local comicFont = assert(io.open("Fonts/Comic/VTC-Letterer-Pro.ttf", "rb"),
     "the comic button font must ship with the addon")
 comicFont:close()
@@ -125,6 +127,7 @@ local lilitaLicense = assert(io.open("Fonts/Comic/LilitaOne-OFL.txt", "r"),
 lilitaLicense:close()
 assert(overview._overviewTalentButton._label._comicLettering._texture:find("ButtonOpenTalents", 1, true)
     and overview._overviewTalentButton._label:GetAlpha() == 0
+    and not overview._overviewTalentButton._label:IsShown()
     and overview._overviewTalentButton:GetWidth() < 136,
     "fixed action labels need visible image lettering and tighter button lengths")
 local letteringFile = assert(io.open("IMG/Comic/Lettering/ButtonOpenTalents.tga", "rb"))
@@ -132,10 +135,12 @@ letteringFile:close()
 local unknownAction = overview._overviewTalentButton
 studio.UI.SetActionText(unknownAction, "Custom Route Name")
 assert(unknownAction._label:GetAlpha() == 1
+    and unknownAction._label:IsShown()
     and not unknownAction._label._comicLettering:IsShown(),
     "variable action values need a live-text fallback")
 studio.UI.SetActionText(unknownAction, "Open Talents")
 assert(unknownAction._label:GetAlpha() == 0
+    and not unknownAction._label:IsShown()
     and unknownAction._label._comicLettering:IsShown(),
     "fixed action art must return when its label returns")
 local fontsPage = studio.pages["Colors & Fonts"]
@@ -146,6 +151,8 @@ assert(overview._controls.enabled._control._comicMini,
 local enabledSwitch = overview._controls.enabled._control
 assert(enabledSwitch._label:GetText() == "On"
     and enabledSwitch._label._comicLettering._texture:find("ButtonOn", 1, true)
+    and not enabledSwitch._label:IsShown()
+    and enabledSwitch._label._comicLettering:IsShown()
     and enabledSwitch._label:GetHeight() >= 18,
     "compact On/Off switches must have visible illustrated labels at WoW UI scale")
 local wasEnabled = db.enabled
@@ -154,6 +161,8 @@ assert(db.enabled == not wasEnabled and enabledSwitch._comicOn == not wasEnabled
     "compact On/Off controls must update their setting and visual state")
 assert(enabledSwitch._label._comicLettering._texture:find("ButtonOff", 1, true),
     "illustrated switch lettering must follow its state")
+assert(not enabledSwitch._label:IsShown() and enabledSwitch._label._comicLettering:IsShown(),
+    "changing a switch must never reveal a second live-text layer")
 enabledSwitch:GetScript("OnClick")(enabledSwitch)
 assert(not studio.navButtons.Overview._stripe,
     "navigation artwork must not have a second accent stripe on the left")
@@ -280,6 +289,19 @@ local function inside(child, parent, name)
     assert(a.left >= b.left - .1 and a.right <= b.right + .1
         and a.top <= b.top + .1 and a.bottom >= b.bottom - .1,
         name .. " escapes its parent")
+end
+for page, view in pairs(studio.pages) do
+    for index, heading in ipairs(view._groupHeaders or {}) do
+        local art, bar, divider = heading._comicLettering,
+            view._groupBars[index], view._groupDividers[index]
+        assert(art and bar and divider and not heading:IsShown() and art:IsShown(),
+            page .. " group heading must show only its illustrated lettering")
+        inside(art, bar, page .. " group lettering")
+        assert(rect(art).left - rect(bar).left >= 25,
+            page .. " group lettering must clear the slanted ribbon edge")
+        assert(rect(art).bottom - rect(divider).top >= 4,
+            page .. " group lettering needs a visible gutter above its divider")
+    end
 end
 for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     local frame = studio.frame

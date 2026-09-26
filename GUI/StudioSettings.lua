@@ -579,19 +579,22 @@ local function BuildPage(studio, page, groups)
     form:SetSize(child:GetWidth(), 1)
     view._studioForm = form
     local y, refreshers, controls = -2, {}, {}
-    view._groupHeaders = {}
+    view._groupHeaders, view._groupBars, view._groupDividers = {}, {}, {}
     for _, group in ipairs(groups or {}) do
         if #group[2] > 0 then
-            if studio.Comic then studio.Comic.DecorateGroup(form, y) end
-            local groupTitle = UI.Label(form, group[1], 13, C.bright, 300, "TOPLEFT", form, "TOPLEFT", 8, y - 2)
+            if studio.Comic then
+                view._groupBars[#view._groupBars+1] = studio.Comic.DecorateGroup(form, y)
+            end
+            local groupTitle = UI.Label(form, group[1], 13, C.bright, 190, "TOPLEFT", form, "TOPLEFT", 30, y - 2)
             if studio.Comic then studio.Comic.StyleHeading(groupTitle, 13) end
             view._groupHeaders[#view._groupHeaders+1] = groupTitle
             local line = UI.Paint(form, C.border)
             line:ClearAllPoints()
-            line:SetPoint("TOPLEFT", form, "TOPLEFT", 8, y - 22)
-            line:SetPoint("TOPRIGHT", form, "TOPRIGHT", -8, y - 22)
+            line:SetPoint("TOPLEFT", form, "TOPLEFT", 8, y - 26)
+            line:SetPoint("TOPRIGHT", form, "TOPRIGHT", -8, y - 26)
             line:SetHeight(1)
-            y = y - 24
+            view._groupDividers[#view._groupDividers+1] = line
+            y = y - 30
             for _, key in ipairs(group[2]) do
                 local row = MakeSetting(studio, form, key, y, refreshers)
                 if row then controls[key] = row; y = y - 28 end

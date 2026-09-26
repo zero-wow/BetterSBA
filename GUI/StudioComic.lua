@@ -33,6 +33,7 @@ function Comic.SetLettering(label, kind, value, size)
     if not entry then
         if art then art:Hide() end
         label:SetAlpha(1)
+        label:Show()
         return false
     end
     if not art then
@@ -55,7 +56,11 @@ function Comic.SetLettering(label, kind, value, size)
         height / entry.height)
     art:SetSize(entry.width * scale, entry.height * scale)
     art:Show()
+    -- SetAlpha(0) alone does not reliably suppress WoW FontString glyphs
+    -- after later state/color updates. The art is a sibling on the parent,
+    -- so hiding this measurement label leaves the illustrated text visible.
     label:SetAlpha(0)
+    label:Hide()
     return true
 end
 
@@ -84,6 +89,7 @@ function Comic.StyleNavText(label,size)
     label:SetHeight(size + 6)
     if label._comicLettering then label._comicLettering:Hide() end
     label:SetAlpha(1)
+    label:Show()
     Comic._fontTargets[label] = { kind = "nav", size = size }
 end
 
@@ -673,8 +679,9 @@ end
 
 function Comic.DecorateGroup(parent,y)
     local bar=texture(parent,"BACKGROUND",P.caption,.52)
-    bar:SetSize(230,20)
-    bar:SetPoint("TOPLEFT",parent,"TOPLEFT",0,y+3)
+    bar:SetSize(230,22)
+    bar:SetPoint("TOPLEFT",parent,"TOPLEFT",0,y+1)
+    return bar
 end
 
 function Comic.DecorateDialog(card,width)
