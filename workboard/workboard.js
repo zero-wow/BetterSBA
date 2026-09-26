@@ -173,6 +173,31 @@
     renderList();
   }
 
+  function renderActivity() {
+    const activity = Array.isArray(project.activity) ? project.activity : [];
+    $("activityFeed").hidden = activity.length === 0;
+    const list = $("activityList");
+    list.replaceChildren();
+    for (const event of activity.slice(0, 3)) {
+      if (!ids.has(event.id)) continue;
+      const button = make("button", "activity-item");
+      button.type = "button";
+      button.setAttribute("aria-label", `${event.id}: ${event.text}`);
+      button.append(make("span", "activity-date", event.date),
+        make("span", "activity-id", event.id),
+        make("span", "activity-text", event.text));
+      button.addEventListener("click", () => {
+        state.lane = "All";
+        state.status = "All";
+        state.query = "";
+        $("searchInput").value = "";
+        render();
+        selectItem(event.id);
+      });
+      list.append(button);
+    }
+  }
+
   $("brandName").textContent = "Workboard";
   $("projectName").textContent = project.name;
   $("boardTitle").replaceChildren(document.createTextNode(`${project.name} `), make("em", "", "Workboard"));
@@ -233,5 +258,6 @@
   });
 
   setTheme(state.theme);
+  renderActivity();
   render();
 })();

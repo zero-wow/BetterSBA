@@ -443,6 +443,12 @@ do
     h.NS.OnTalentLevelingEvent("PLAYER_SPECIALIZATION_CHANGED", "player")
     check(not h.NS.IsTalentLevelingBusy(), "spec switch must cancel the old pending request")
     check(h:info().buildID == "CUSTOM", "the other spec must retain its independent default target")
+    h:selectTarget("B")
+    check(h:info().buildID == "B", "the second spec must save its own route")
+    h.specID, h.configID = 100, 1
+    check(h:info().buildID == "A", "returning to the first spec must restore its route")
+    h.specID, h.configID = 101, 2
+    check(h:info().buildID == "B", "restoring one spec must not overwrite the other spec's route")
 
     local configSwitch = makeHarness()
     configSwitch:selectTarget("A")
