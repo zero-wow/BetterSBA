@@ -522,8 +522,8 @@ function Studio:Create()
             "LEFT", button, "LEFT", 16, 0)
         local name = Label(button, page, 13, C.text, 133, "LEFT", button, "LEFT", 47, 0)
         if self.Comic then
-            self.Comic.StyleHeading(number, 12)
-            self.Comic.StyleHeading(name, 13)
+            self.Comic.StyleNavText(number, 12)
+            self.Comic.StyleNavText(name, 13)
         end
         button:SetScript("OnClick", function() self:SelectPage(page) end)
         button._bg, button._number, button._name = bg, number, name

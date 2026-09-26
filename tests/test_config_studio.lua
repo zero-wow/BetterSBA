@@ -160,6 +160,14 @@ assert(not studio.navButtons.Overview._stripe,
 assert(studio.navButtons.Overview:GetWidth() == 190
     and studio.navButtons.Overview._comicNavPlate[1]._texture == studio.Comic.paths.button,
     "active navigation needs a compact rounded plate instead of the pointed caption")
+for _, page in ipairs({"Overview", "Combat", "Button & Queue", "Motion", "Talents",
+        "Visibility", "Colors & Fonts", "Advanced", "Profiles"}) do
+    local row = studio.navButtons[page]
+    assert(row._name:GetText() == page and row._name:GetAlpha() == 1
+        and not row._name._comicLettering
+        and row._number:GetAlpha() == 1,
+        "navigation must show a single live label without overlapping heading art")
+end
 studio:SelectPage("Talents")
 local talents = studio.pages.Talents
 assert(talents._comicHero and studio.frame._children,

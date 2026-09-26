@@ -71,6 +71,22 @@ function Comic.StyleHeading(label,size)
     Comic.SetLettering(label, "heading", nil, size)
 end
 
+-- Navigation has a narrow, fixed row. Keep its text native so the illustrated
+-- heading texture cannot collide with the page number or neighbouring rows.
+function Comic.StyleNavText(label,size)
+    size = size or 13
+    local fallback = "Fonts\\FRIZQT__.TTF"
+    if not label:SetFont(fallback,size,"") then
+        label:SetFont(NS.GetConfigFontPath(),size,"")
+    end
+    label:SetShadowColor(0,0,0,.9)
+    label:SetShadowOffset(1,-1)
+    label:SetHeight(size + 6)
+    if label._comicLettering then label._comicLettering:Hide() end
+    label:SetAlpha(1)
+    Comic._fontTargets[label] = { kind = "nav", size = size }
+end
+
 function Comic.StyleButtonText(label,size)
     if not label then return end
     local fallback = NS.GetConfigFontPath and NS.GetConfigFontPath() or "Fonts\\FRIZQT__.TTF"
@@ -95,6 +111,8 @@ function Comic.RefreshTypography()
     for label, style in pairs(Comic._fontTargets) do
         if style.kind == "heading" then
             Comic.StyleHeading(label, style.size)
+        elseif style.kind == "nav" then
+            Comic.StyleNavText(label, style.size)
         else
             Comic.StyleButtonText(label, style.size)
             if label._comicActionButton then
