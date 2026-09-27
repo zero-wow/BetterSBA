@@ -677,11 +677,34 @@ function Comic.StyleInput(input)
     input:SetBackdropBorderColor(unpack(c.gold))
 end
 
-function Comic.DecorateGroup(parent,y)
-    local bar=texture(parent,"BACKGROUND",P.caption,.52)
-    bar:SetSize(230,22)
+function Comic.DecorateGroup(parent,y,width)
+    -- Keep the angled ends at their intended aspect ratio. Only the straight
+    -- middle of the ribbon changes width to follow the heading lettering.
+    local bar=NS.CreateFrame("Frame",nil,parent)
+    local cap=22
+    width=math.max(cap*2+20,width or 230)
+    bar:SetSize(width,22)
     bar:SetPoint("TOPLEFT",parent,"TOPLEFT",0,y+1)
+    local left=texture(bar,"BACKGROUND",P.caption,.52)
+    left:SetTexCoord(0,.125,0,1)
+    left:SetSize(cap,22)
+    left:SetPoint("TOPLEFT",bar,"TOPLEFT",0,0)
+    local middle=texture(bar,"BACKGROUND",P.caption,.52)
+    middle:SetTexCoord(.125,.875,0,1)
+    middle:SetSize(width-cap*2,22)
+    middle:SetPoint("TOPLEFT",bar,"TOPLEFT",cap,0)
+    local right=texture(bar,"BACKGROUND",P.caption,.52)
+    right:SetTexCoord(.875,1,0,1)
+    right:SetSize(cap,22)
+    right:SetPoint("TOPRIGHT",bar,"TOPRIGHT",0,0)
+    bar._comicRibbonParts={left,middle,right}
     return bar
+end
+
+function Comic.SizeGroupBar(bar,width)
+    width=math.max(64,width)
+    bar:SetWidth(width)
+    bar._comicRibbonParts[2]:SetWidth(width-44)
 end
 
 function Comic.DecorateDialog(card,width)

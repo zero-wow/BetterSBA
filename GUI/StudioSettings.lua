@@ -582,11 +582,19 @@ local function BuildPage(studio, page, groups)
     view._groupHeaders, view._groupBars, view._groupDividers = {}, {}, {}
     for _, group in ipairs(groups or {}) do
         if #group[2] > 0 then
+            local bar = studio.Comic and studio.Comic.DecorateGroup(form, y)
+            local titleParent = bar or form
+            local groupTitle = UI.Label(titleParent, group[1], 16, C.bright, 190,
+                "TOPLEFT", titleParent, "TOPLEFT", 30, bar and 1 or y + 2)
             if studio.Comic then
-                view._groupBars[#view._groupBars+1] = studio.Comic.DecorateGroup(form, y)
+                studio.Comic.StyleHeading(groupTitle, 16)
+                local art = groupTitle._comicLettering
+                local letteringWidth = art and art:IsShown() and art:GetWidth()
+                    or groupTitle:GetStringWidth()
+                local ribbonWidth = math.max(90, math.ceil(30 + letteringWidth + 28))
+                studio.Comic.SizeGroupBar(bar, ribbonWidth)
+                view._groupBars[#view._groupBars+1] = bar
             end
-            local groupTitle = UI.Label(form, group[1], 13, C.bright, 190, "TOPLEFT", form, "TOPLEFT", 30, y - 2)
-            if studio.Comic then studio.Comic.StyleHeading(groupTitle, 13) end
             view._groupHeaders[#view._groupHeaders+1] = groupTitle
             local line = UI.Paint(form, C.border)
             line:ClearAllPoints()

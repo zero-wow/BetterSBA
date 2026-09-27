@@ -296,19 +296,42 @@ local function inside(child, parent, name)
         and a.top <= b.top + .1 and a.bottom >= b.bottom - .1,
         name .. " escapes its parent")
 end
+local ribbonWidths = {}
 for page, view in pairs(studio.pages) do
     for index, heading in ipairs(view._groupHeaders or {}) do
         local art, bar, divider = heading._comicLettering,
             view._groupBars[index], view._groupDividers[index]
         assert(art and bar and divider and not heading:IsShown() and art:IsShown(),
             page .. " group heading must show only its illustrated lettering")
+        assert(heading:GetParent() == bar and art:GetParent() == bar,
+            page .. " group lettering must layer above the ribbon on its own frame")
+        ribbonWidths[heading:GetText()] = bar:GetWidth()
+        inside(bar, view._studioForm, page .. " group ribbon")
         inside(art, bar, page .. " group lettering")
+        assert(math.abs(bar:GetWidth() - math.max(90, math.ceil(art:GetWidth() + 58))) <= 1,
+            page .. " group ribbon must fit its lettering")
+        assert(art:GetHeight() >= 18 and rect(bar).top - rect(art).top <= 3
+            and rect(art).bottom - rect(bar).bottom >= 1,
+            page .. " group lettering must sit high on its ribbon")
         assert(rect(art).left - rect(bar).left >= 25,
             page .. " group lettering must clear the slanted ribbon edge")
+        local left, middle, right = bar._comicRibbonParts[1],
+            bar._comicRibbonParts[2], bar._comicRibbonParts[3]
+        assert(left:GetWidth() == right:GetWidth() and left:GetWidth() == bar:GetHeight()
+            and middle:GetWidth() == bar:GetWidth() - left:GetWidth() - right:GetWidth(),
+            page .. " group ribbon must preserve its angled ends")
+        inside(left, bar, page .. " ribbon left end")
+        inside(middle, bar, page .. " ribbon center")
+        inside(right, bar, page .. " ribbon right end")
         assert(rect(art).bottom - rect(divider).top >= 4,
             page .. " group lettering needs a visible gutter above its divider")
     end
 end
+assert(ribbonWidths["Cast Feedback"] < 230
+    and ribbonWidths["Cast Feedback"] < ribbonWidths["Minimap & Data Broker"],
+    "short section titles must not retain the former full-width ribbon")
+assert(ribbonWidths["Pop! Particles"],
+    "dynamically disclosed particle sections must receive fitted ribbons")
 for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     local frame = studio.frame
     frame:SetSize(size[1], size[2])

@@ -125,7 +125,8 @@ def main():
             }
             if value in ("Open Talents", "Switch Profile", "Spend Available Points",
                          "On", "Off", "Your Adventure", "Essentials",
-                         "Class Abilities", "Automation & Safety"):
+                         "Class Abilities", "Cast Feedback",
+                         "Particle & Additional Options", "Automation & Safety"):
                 previews.append((kind, value, image))
 
     lua_lines = [
@@ -145,7 +146,7 @@ def main():
         "\n".join(lua_lines) + "\n", encoding="utf-8")
 
     for faction in ("Alliance", "Horde"):
-        sample = Image.new("RGB", (700, len(previews) * 60 + 28),
+        sample = Image.new("RGB", (920, len(previews) * 60 + 28),
                            (6, 15, 29) if faction == "Alliance" else (6, 18, 15))
         button_base = Image.open(ROOT / "IMG" / "Comic" /
                                  (faction + "ButtonRounded.png")).convert("RGBA")
@@ -168,14 +169,24 @@ def main():
                 enlarged = toggle.resize((100, 42), Image.Resampling.NEAREST)
                 sample.paste(enlarged, (130, row_y), enlarged)
                 caption = f"switch: {value} (2x preview)"
-            elif kind == "heading" and value in ("Essentials", "Class Abilities"):
-                plate = heading_base.resize((230, 22), Image.Resampling.LANCZOS)
-                art = image.resize((round(image.width * 16 / image.height), 16),
-                                   Image.Resampling.LANCZOS)
-                plate.alpha_composite(art, (30, 3))
-                enlarged = plate.resize((460, 44), Image.Resampling.NEAREST)
+            elif kind == "heading" and value in (
+                "Essentials", "Class Abilities", "Cast Feedback",
+                "Particle & Additional Options",
+            ):
+                art_width = min(round(image.width * 19 / image.height), 190)
+                art = image.resize((art_width, 19), Image.Resampling.LANCZOS)
+                ribbon_width = max(90, 30 + art_width + 28)
+                plate = Image.new("RGBA", (ribbon_width, 22))
+                slices = ((0, 64, 0, 22), (64, 448, 22, ribbon_width - 44),
+                          (448, 512, ribbon_width - 22, 22))
+                for src_left, src_right, dest_left, dest_width in slices:
+                    section = heading_base.crop((src_left, 0, src_right, 64))
+                    section = section.resize((dest_width, 22), Image.Resampling.LANCZOS)
+                    plate.alpha_composite(section, (dest_left, 0))
+                plate.alpha_composite(art, (30, 1))
+                enlarged = plate.resize((ribbon_width * 2, 44), Image.Resampling.NEAREST)
                 sample.paste(enlarged, (15, row_y), enlarged)
-                caption = f"heading: {value} (2x actual layout)"
+                caption = f"heading: {value} (2x fitted ribbon)"
             else:
                 base = button_base if kind == "button" else heading_base
                 plate = base.resize((330, 43), Image.Resampling.LANCZOS)
@@ -185,7 +196,10 @@ def main():
                 art = image.resize((target_w, target_h), Image.Resampling.LANCZOS)
                 sample.paste(art, (180 - target_w // 2, row_y + (43 - target_h) // 2), art)
                 caption = f"{kind}: {value}"
-            caption_x = 500 if kind == "heading" and value in ("Essentials", "Class Abilities") else 370
+            caption_x = 560 if kind == "heading" and value in (
+                "Essentials", "Class Abilities", "Cast Feedback",
+                "Particle & Additional Options",
+            ) else 370
             ImageDraw.Draw(sample).text((caption_x, row_y + 12), caption,
                                         fill=(220, 230, 240))
         sample.save(ROOT / "IMG" / "Comic" / ("LetteringPreview" + faction + ".png"))

@@ -9,9 +9,9 @@ window.WORKBOARD_PROJECT = {
   spotlight: "F02",
   repository: "https://github.com/zero-wow/BetterSBA",
   activity: [
+    { date: "Sep 26", id: "F07", text: "Section ribbons now fit their lettering, preserve their angled ends, and seat larger titles higher. Game-scale check remains." },
     { date: "Sep 25", id: "F01", text: "Replaced the spindly Off switch lettering with a heavier comic face; On and Off now share one rendered height. In-game check remains." },
-    { date: "Sep 25", id: "F01", text: "Removed doubled switch and heading text layers; regenerated comic lettering and checked header gutters locally. In-game check remains." },
-    { date: "Sep 25", id: "A02", text: "Per-spec talent routes verified across specialization switches." }
+    { date: "Sep 25", id: "F01", text: "Removed doubled switch and heading text layers; regenerated comic lettering and checked header gutters locally. In-game check remains." }
   ],
   items: [
     { id: "A01", lane: "Add", title: "Middle-Click Settings Access", priority: "High", state: "Verify", summary: "Open the saved configuration panel from the live button.", doneWhen: "Middle-click toggles settings and never runs the SBA macro or cast press visual.", evidence: "Implemented in GUI/MainButton.lua; startup mock passes. In-game check remains." },
@@ -31,7 +31,7 @@ window.WORKBOARD_PROJECT = {
     { id: "F04", lane: "Fix", title: "Keep Auto-Spend State In Sync", priority: "High", state: "Backlog", summary: "Reconcile checkbox, route summary, death state, and reload status.", doneWhen: "All surfaces show one state and resume correctly after death, resurrection, and reload." },
     { id: "F05", lane: "Fix", title: "Make Sweep Read Clearly", priority: "High", state: "Backlog", summary: "Repair the Sweep feedback so it is visible at common button sizes.", doneWhen: "The sweep is visible once per trigger without obscuring the spell icon." },
     { id: "F06", lane: "Fix", title: "Make Orbit Read Clearly", priority: "High", state: "Backlog", summary: "Repair the Orbit feedback path and timing.", doneWhen: "The light completes a visible orbit in preview and during live casts." },
-    { id: "F07", lane: "Fix", title: "Eliminate Studio Clipping", priority: "High", state: "Next", summary: "Audit controls, art, headings, and dialogs across window sizes.", doneWhen: "No content overlaps, clips, or touches a divider at minimum size or after resizing.", evidence: "Navigation collision was removed earlier. Every group heading now clears the ribbon's slanted edge and its divider in the Studio mock; broader in-game page and resize audit remains." },
+    { id: "F07", lane: "Fix", title: "Eliminate Studio Clipping", priority: "High", state: "Next", summary: "Audit controls, art, headings, and dialogs across window sizes.", doneWhen: "No content overlaps, clips, or touches a divider at minimum size or after resizing.", evidence: "Section ribbons now match each heading's rendered width. Their angled ends keep a fixed aspect ratio, and larger, raised lettering stays inside the ribbon with a divider gutter in the Studio mock. Broader in-game page and resize audit remains." },
     { id: "F08", lane: "Fix", title: "Validate Secure Input In Combat", priority: "High", state: "Backlog", summary: "Check left-click, keybind, drag, and middle-click behavior against combat lockdown.", doneWhen: "No taint or blocked casts; middle-click opens settings without casting." },
     { id: "F09", lane: "Fix", title: "Refresh Settings After Profile Changes", priority: "Medium", state: "Backlog", summary: "Remove stale values after switch, copy, rename, and reset actions.", doneWhen: "Every visible control and summary reflects the active profile immediately." },
     { id: "F10", lane: "Fix", title: "Recheck LazyGrip Build Imports", priority: "High", state: "Backlog", summary: "Validate current-season individual-page imports and SBA labels.", doneWhen: "Every listed LazyGrip route has correct spec identity, provenance, and import behavior." },
