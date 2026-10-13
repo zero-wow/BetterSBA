@@ -647,6 +647,10 @@ local function BuildPage(studio, page, groups)
         RefreshScrollControls()
     end
     if page == "Overview" then
+        local focus = UI.Action(view, "Focus Mode", 200, -8, 116, 24, function()
+            if studio.OpenFocusMode then studio:OpenFocusMode() end
+        end, "quiet")
+        view._focusButton = focus
         local card = UI.Surface(child, 8, y - 12, child:GetWidth() - 16, 126, C.card)
         card:ClearAllPoints()
         card:SetPoint("TOPLEFT", child, "TOPLEFT", 8, y - 12)

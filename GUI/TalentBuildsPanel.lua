@@ -272,6 +272,11 @@ end
 local function ShowURLPopup(owner, row)
     if not row then return end
     local popup = EnsureURLPopup(owner)
+    popup._editBox:Show()
+    popup._hint:Show()
+    popup._sourceScroll:ClearAllPoints()
+    popup._sourceScroll:SetPoint("TOPLEFT", 14, -96)
+    popup._sourceScroll:SetHeight(164)
     local hasSourceURL = row.sourceURL and row.sourceURL ~= ""
     local evidence = row.verificationStatus == "source-sba" and "Source supplies an assist-specific build"
         or (row.verificationStatus == "source-talent" and "Source supplies this WoW talent export; SBA suitability is unverified")
@@ -284,8 +289,9 @@ local function ShowURLPopup(owner, row)
     local priorityNote = row.verificationStatus == "user-provided"
         and "User-provided imports are selectable but have no independent SBA verification. Legal prerequisites always apply."
         or "Guide-informed priorities only influence matched talents in this selected target. Legal prerequisites always apply; this is not an optimality claim."
-    popup._provenance:SetText(evidence .. "\nPatch: " .. ((row.patch and row.patch ~= "") and row.patch or "unverified")
-        .. "   Checked: " .. (row.checkedAt or "not recorded")
+    local sourceInfo = NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(row)
+    popup._provenance:SetText(evidence .. "\n" .. (sourceInfo and sourceInfo.summary or "Patch Unverified")
+        .. "\nCatalog Reviewed: " .. (row.checkedAt or "not recorded") .. " (not the post date)"
         .. "\nHero tree: " .. (row.heroTree or "not recorded")
         .. "\n\n" .. (row.notes or "")
         .. "\n\n" .. priorityNote)
@@ -305,6 +311,26 @@ local function ShowURLPopup(owner, row)
     else
         popup._editBox:ClearFocus()
     end
+end
+
+function NS.ShowTalentClassInfo(owner, specID)
+    owner = owner or NS.UIParent
+    specID = specID or NS.GetTalentBuildCurrentSpecID()
+    local popup = EnsureURLPopup(owner)
+    popup._title:SetText((NS.GetTalentBuildSpecName(specID) or "Your Specialization") .. " - Class Info")
+    popup._editBox:ClearFocus()
+    popup._editBox:Hide()
+    popup._hint:Hide()
+    popup._sourceScroll:ClearAllPoints()
+    popup._sourceScroll:SetPoint("TOPLEFT", 14, -36)
+    popup._sourceScroll:SetHeight(224)
+    popup._provenance:SetText(NS.GetTalentClassInfoText and NS.GetTalentClassInfoText(specID)
+        or "Not Tested\nNo comparison results are available for this specialization yet.")
+    popup._sourceContent:SetHeight(math.max(224, popup._provenance:GetStringHeight() + 6))
+    popup._sourceScroll:SetVerticalScroll(0)
+    popup:ClearAllPoints()
+    popup:SetPoint("CENTER", owner, "CENTER", 0, 0)
+    popup:Show()
 end
 
 local function SetFittedText(label, value)
@@ -603,6 +629,7 @@ local function GetSpecTextColor(specID, fallbackColor, isOffSpec, isSelected)
 end
 
 local function BuildSearchText(row)
+    local sourceInfo = NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(row)
     return table.concat({
         NormalizeText(row.name),
         NormalizeText(row.specName or NS.GetTalentBuildSpecName(row.specID)),
@@ -611,6 +638,7 @@ local function BuildSearchText(row)
         NormalizeText(row.catalogSource),
         NormalizeText(row.rating),
         NormalizeText(row.buildType),
+        NormalizeText(sourceInfo and sourceInfo.summary),
     }, "\n")
 end
 
@@ -850,6 +878,14 @@ local function EnsureTalentBuildEditorPopup(owner)
             notes = notes,
             category = (seed and seed.category) or "",
         }
+        -- Copy source dates only while this is still the exact sourced export.
+        if seed and seed.importString == importString and seed.specID == entry.specID then
+            for _, key in ipairs({"sourcePublishedAt", "sourcePublishedTime", "sourceRegion", "patchBasis", "checkedAt", "heroTree"}) do
+                entry[key] = seed[key]
+            end
+        else
+            entry.patch = ""
+        end
 
         local buildID = NS.SaveUserTalentBuild(entry)
         if not buildID then
@@ -1358,6 +1394,10 @@ function NS.BuildTalentBuildsConfigSection(parent)
 
     local sourceBtn = CreateTextButton(parent, "View Source", 78, function() end)
     sourceBtn:SetPoint("TOPLEFT", detailsPanel, "BOTTOMLEFT", 4, -10)
+    local classInfoBtn = CreateTextButton(parent, "Class Info", 78, function()
+        NS.ShowTalentClassInfo(parent, NS.GetTalentBuildCurrentSpecID())
+    end)
+    classInfoBtn:SetPoint("LEFT", sourceBtn, "RIGHT", 16, 0)
 
     local tableHeader = CreateBackdropFrame(tablePanel)
     tableHeader:SetPoint("TOPLEFT", 1, -1)
@@ -1942,7 +1982,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
         local subColor = isOffSpec and MultiplyColor(T.TEXT_DIM, 0.72, 1) or T.TEXT_DIM
         local specColor = GetSpecTextColor(data.specID, subColor, isOffSpec, row._isSelected)
 
-        SetFittedText(row._labels.name, data.name or "")
+        SetFittedText(row._labels.name, NS.GetTalentBuildDisplayName and NS.GetTalentBuildDisplayName(data) or data.name or "")
         row._labels.name:SetTextColor(nameColor[1], nameColor[2], nameColor[3], alpha)
         SetFittedText(row._labels.spec, data.specName or NS.GetTalentBuildSpecName(data.specID) or "")
         row._labels.spec:SetTextColor(specColor[1], specColor[2], specColor[3], alpha)
@@ -2014,7 +2054,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
             statusKind = row.id == NS.TALENT_BUILD_CUSTOM_ID and "custom" or "selected"
         end
 
-        detailsName:SetText(row.name or "Custom")
+        detailsName:SetText(NS.GetTalentBuildDisplayName and NS.GetTalentBuildDisplayName(row) or row.name or "Custom")
         fieldValues.spec:SetText(row.specName or NS.GetTalentBuildSpecName(row.specID) or "-")
         local detailSpecColor = GetSpecTextColor(row.specID, T.TEXT, false, false)
         fieldValues.spec:SetTextColor(detailSpecColor[1], detailSpecColor[2], detailSpecColor[3], 1)
@@ -2026,7 +2066,8 @@ function NS.BuildTalentBuildsConfigSection(parent)
         local statusColor = GetStatusColor(statusKind, sectionColor)
         fieldValues.status:SetTextColor(statusColor[1], statusColor[2], statusColor[3])
         detailTooltip[1] = row.name or "Custom"
-        detailTooltip[2] = "Patch: " .. ((row.patch and row.patch ~= "") and row.patch or "unverified")
+        local sourceInfo = NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(row)
+        detailTooltip[2] = sourceInfo and sourceInfo.summary or "Patch Unverified"
         detailTooltip[3] = "Hero tree: " .. (row.heroTree or "not recorded")
         detailTooltip[4] = "Status: " .. statusText
         detailTooltip[5] = row.notes or ""

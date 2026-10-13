@@ -295,6 +295,36 @@ Those controls only affect the virtual animation clone. They do not change the s
 
 ---
 
+## Focus Mode And Class Info
+
+Open **Overview → Focus Mode** for a separate, quiet settings window. Choose a
+talent build, turn **Automatic Points** on when wanted, and adjust the basic
+button controls. **Details** explains a stopped talent route; **Advanced
+Settings** returns to the full comic interface. Both views use the same settings.
+
+**Class Info** opens the available simulation comparisons without changing any
+talents or settings. Initial Windwalker results use public example gear with the
+supplied September 10 talent export. They are provisional simulation estimates,
+not a prediction for every character. The simulator flags an unverified rune
+effect; this limitation is shown with the results. GSE, GRIP-EMS and custom
+one/two-button layouts remain **Not Tested** until their actual input behavior is
+modeled and checked. The default SimC rotation is not a substitute for a macro.
+
+Build labels compare their target patch with the running client. Source post
+dates are separate from catalog review dates. A guide's declared patch is kept
+even when the publication date falls in another patch. Regional maintenance-day
+ambiguity and dates beyond the reviewed release timeline remain unknown.
+The release table in `Core/TalentBuildProvenance.lua` records Blizzard article
+IDs, resolved as `https://news.blizzard.com/en-us/article/<article>` (EU uses
+`en-gb` and `euArticle` when supplied). Scheduled dates are not confirmed releases.
+
+For development, `scripts/run_sba_comparison.py --help` describes the local-only
+comparison runner. Supply an official SimC executable, a local profile, expected
+patch, target count and duration. Outputs must stay outside the addon repository;
+private profiles and raw reports must never be committed. The runner limits CPU
+threads and per-mode wall time, records input hashes and model-warning counts,
+and rejects unsupported profile directives. It does not find a global optimum.
+
 ## Profile System
 
 - **Global Default** &mdash; all characters share the "Default" profile unless overridden

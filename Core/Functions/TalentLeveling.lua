@@ -218,7 +218,7 @@ local function Inspect(options)
         end
         return info
     end
-    info.targetName = entry.name
+    info.targetName = NS.GetTalentBuildDisplayName and NS.GetTalentBuildDisplayName(entry) or entry.name
     local evidence = entry.verificationStatus == "source-sba" and "Assist-specific source build. "
         or (entry.verificationStatus == "source-talent" and "Source-published talent export; SBA suitability is unverified. ")
         or (entry.verificationStatus == "source-compatible" and "Source-recommended SBA-compatible build. ")
@@ -226,7 +226,10 @@ local function Inspect(options)
         or (entry.verificationStatus == "guide-inferred" and "Guide-discussed SBA spec; this exact import is not SBA-verified. ")
         or (entry.verificationStatus == "user-provided" and "Player-supplied SBA target; not independently performance-verified. ")
         or "SBA suitability unverified. "
-    info.detail = evidence .. (entry.patch and entry.patch ~= "" and ("Source patch: " .. entry.patch) or "Source patch unverified")
+    local sourceInfo = NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(entry)
+    local sourceNote = sourceInfo and sourceInfo.summary
+        or (entry.patch and entry.patch ~= "" and ("Source patch: " .. entry.patch) or "Source patch unverified")
+    info.detail = evidence .. sourceNote
         .. ". " .. (entry.levelingOrder and "Source priority; legal prerequisites first." or "Follows the build in prerequisite order; not an SBA-tested leveling order.")
     local function Block(text) info.status = text; return info end
     if not NS.IsTalentBuildSystemEnabled() then return Block("Talent assistance is disabled.") end
@@ -262,7 +265,7 @@ local function Inspect(options)
     if not map then return Block(ordered or "The build is not compatible with this talent tree.") end
     local guidance = GetGuidance(specID, entry.id)
     if guidance and not entry.levelingOrder then
-        info.detail = evidence .. "Patch " .. guidance.patch .. ". Guide-informed priorities, with legal prerequisites; not simulation-ranked."
+        info.detail = evidence .. sourceNote .. ". Guide-informed priorities, with legal prerequisites; not simulation-ranked."
     end
     local nodes = C_Traits.GetTreeNodes(treeID)
     if not nodes then return Block("Waiting for talent nodes.") end

@@ -84,6 +84,7 @@ assert(loadfile("GUI/ConfigStudio.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioComicLettering.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioComic.lua"))("BetterSBA", NS)
 assert(loadfile("GUI/StudioSettings.lua"))("BetterSBA", NS)
+assert(loadfile("GUI/ConfigSimple.lua"))("BetterSBA", NS)
 NS.SwitchSettingsPanel("studio")
 assert(db.configExperience == "studio" and NS.ConfigStudio.frame:IsShown())
 local studio = NS.ConfigStudio
@@ -362,6 +363,7 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
         if view._comicHero then inside(view._comicHero, view, page .. " character art") end
     end
     inside(overview._overviewCard, overview._studioChild, "Overview adventure card")
+    inside(overview._focusButton, overview, "Focus Mode launcher")
     if overview._studioChild:GetWidth() >= 790 then
         inside(overview._overviewCard, overview._studioScroll, "wide Overview adventure card")
         local form, card = rect(overview._studioForm), rect(overview._overviewCard)
@@ -448,6 +450,12 @@ if arg and arg[1] then
     end
     mock.writeSVG(studio.frame, arg[1])
 end
+overview._focusButton:GetScript("OnClick")(overview._focusButton)
+assert(NS.ConfigSimple.frame:IsShown() and not studio.frame:IsShown(),
+    "Overview must launch optional Focus Mode without another settings window behind it")
+NS.ConfigSimple.advanced:GetScript("OnClick")(NS.ConfigSimple.advanced)
+assert(studio.frame:IsShown() and studio.page == "Overview" and not NS.ConfigSimple.frame:IsShown(),
+    "Advanced Settings must return from Focus Mode to the existing comic panel")
 NS.SwitchSettingsPanel("classic")
 assert(db.configExperience == "classic" and classicShown and not studio.frame:IsShown())
 print("Config Studio: load, switching, and minimum/expanded bounds OK")

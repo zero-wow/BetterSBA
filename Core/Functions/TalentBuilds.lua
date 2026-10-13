@@ -109,6 +109,9 @@ local function NormalizeUserBuild(entry)
     normalized.importString = entry.importString or ""
     normalized.notes = entry.notes or ""
     normalized.category = entry.category or ""
+    for _, key in ipairs({"sourcePublishedAt", "sourcePublishedTime", "sourceRegion", "patchBasis", "checkedAt", "heroTree"}) do
+        normalized[key] = entry[key]
+    end
     normalized.buildType = NS.TALENT_BUILD_TYPE_USER
     return normalized
 end
