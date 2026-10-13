@@ -661,7 +661,8 @@ local function EnsureDeletePopup(owner)
     end
 
     local popup = CreateBackdropFrame(NS.UIParent)
-    popup:SetSize(420, 120)
+    popup:SetSize(420, 144)
+    popup:SetClampedToScreen(true)
     popup:SetFrameStrata("DIALOG")
     popup:SetFrameLevel(110)
     popup:SetBackdropColor(T.BG_DARK[1], T.BG_DARK[2], T.BG_DARK[3], 0.98)
@@ -674,12 +675,23 @@ local function EnsureDeletePopup(owner)
     title:SetTextColor(T.ACCENT[1], T.ACCENT[2], T.ACCENT[3])
     title:SetText("Delete Custom Build")
 
+    local target = popup:CreateFontString(nil, "OVERLAY")
+    target:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "")
+    target:SetPoint("TOPLEFT", 12, -34)
+    target:SetSize(396, 16)
+    target:SetJustifyH("LEFT")
+    target:SetWordWrap(false)
+    target:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
+
     local body = popup:CreateFontString(nil, "OVERLAY")
     body:SetFont(NS.GetConfigFontPath(), VALUE_FONT_SIZE, "")
-    body:SetPoint("TOPLEFT", 12, -34)
+    body:SetPoint("TOPLEFT", 12, -58)
     body:SetPoint("RIGHT", -12, 0)
     body:SetJustifyH("LEFT")
     body:SetJustifyV("TOP")
+    body:SetSize(396, 44)
+    body:SetWordWrap(true)
+    body:SetMaxLines(3)
     body:SetTextColor(T.TEXT[1], T.TEXT[2], T.TEXT[3])
     body:SetText("")
 
@@ -696,7 +708,7 @@ local function EnsureDeletePopup(owner)
     end)
     confirm:SetPoint("RIGHT", cancel, "LEFT", -18, 0)
 
-    popup._body = body
+    popup._body, popup._target = body, target
     popup._confirm = confirm
     owner._talentBuildDeletePopup = popup
     return popup
@@ -704,11 +716,10 @@ end
 
 local function ShowDeletePopup(owner, row, onConfirm)
     local popup = EnsureDeletePopup(owner)
-    popup._body:SetText(("Delete \"%s\"?\nThis cannot be undone. If it is currently selected, that specialization will switch back to Custom."):format(row.name or "this build"))
+    popup._target:SetText(("Delete \"%s\"?"):format(row.name or "this build"))
+    popup._body:SetText("This cannot be undone. If it is currently selected, that specialization will switch back to Custom.")
     popup._onConfirm = onConfirm
-    popup:ClearAllPoints()
-    popup:SetPoint("CENTER", owner, "CENTER", 0, 0)
-    popup:Show()
+    ShowFittedInfoPopup(popup, owner)
 end
 
 local function TrimText(value)
@@ -765,7 +776,7 @@ local function EnsureTalentBuildEditorPopup(owner)
     end
 
     local popup = CreateBackdropFrame(NS.UIParent)
-    popup:SetSize(560, 404)
+    popup:SetSize(560, 428)
     popup:SetFrameStrata("DIALOG")
     popup:SetFrameLevel(115)
     popup:SetClampedToScreen(true)
@@ -793,16 +804,16 @@ local function EnsureTalentBuildEditorPopup(owner)
     subtitle:SetText("Save a personal talent build for BetterSBA. SAVE stores only your own build entry and closes this panel.")
 
     local _, nameBox = CreatePopupField(popup, "Build Name", 14, -58, 248, 24, false)
-    local _, sourceBox = CreatePopupField(popup, "Source", 14, -118, 248, 24, false)
-    local _, urlBox = CreatePopupField(popup, "Source URL", 280, -118, 266, 24, false)
-    local _, importBox = CreatePopupField(popup, "Import String", 14, -178, 532, 24, false)
+    local _, sourceBox = CreatePopupField(popup, "Source", 14, -142, 248, 24, false)
+    local _, urlBox = CreatePopupField(popup, "Source URL", 280, -142, 266, 24, false)
+    local _, importBox = CreatePopupField(popup, "Import String", 14, -202, 532, 24, false)
     local importHint = popup:CreateFontString(nil, "OVERLAY")
     importHint:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "")
     importHint:SetPoint("TOPLEFT", importBox, "BOTTOMLEFT", 0, -4)
     importHint:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3], 0.9)
     importHint:SetText("Paste the in-game talent export string for the selected specialization.")
 
-    local _, notesBox = CreatePopupField(popup, "Notes", 14, -238, 532, 76, true)
+    local _, notesBox = CreatePopupField(popup, "Notes", 14, -262, 532, 76, true)
 
     local specLabel = popup:CreateFontString(nil, "OVERLAY")
     specLabel:SetFont(NS.GetConfigFontPath(), LABEL_FONT_SIZE, "OUTLINE")
@@ -812,21 +823,17 @@ local function EnsureTalentBuildEditorPopup(owner)
 
     local specButtons = {}
     local specs = NS.GetTalentBuildSpecsForCurrentClass()
-    local lastSpecBtn
     for i = 1, #specs do
         local spec = specs[i]
-        local width = math.max(72, math.floor((#(spec.name or "") * 4.6) + 18))
-        local btn = CreateChipButton(popup, spec.name or ("Spec " .. i), width, function()
+        local btn = CreateChipButton(popup, spec.name or ("Spec " .. i), 129, function()
             popup:SetSelectedSpec(spec.specID)
         end)
-        if i == 1 then
-            btn:SetPoint("TOPLEFT", specLabel, "BOTTOMLEFT", 0, -4)
-        else
-            btn:SetPoint("LEFT", lastSpecBtn, "RIGHT", 8, 0)
-        end
+        btn:SetPoint("TOPLEFT", popup, "TOPLEFT", 280 + ((i - 1) % 2) * 137,
+            -76 - math.floor((i - 1) / 2) * 30)
+        btn._text:SetWidth(113)
+        SetFittedText(btn._text, spec.name or ("Spec " .. i))
         btn._specID = spec.specID
         specButtons[#specButtons + 1] = btn
-        lastSpecBtn = btn
     end
 
     local statusText = popup:CreateFontString(nil, "OVERLAY")
@@ -834,6 +841,9 @@ local function EnsureTalentBuildEditorPopup(owner)
     statusText:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 14, 38)
     statusText:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -14, 38)
     statusText:SetJustifyH("LEFT")
+    statusText:SetHeight(28)
+    statusText:SetWordWrap(true)
+    statusText:SetMaxLines(2)
     statusText:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
     statusText:SetText("")
 
@@ -1017,11 +1027,29 @@ local function ShowTalentBuildEditor(owner, state, mode, seed)
     popup:SetSelectedSpec(defaultSpecID)
     popup:SetStatus("")
 
-    popup:ClearAllPoints()
-    popup:SetPoint("CENTER", owner, "CENTER", 0, 0)
-    popup:Show()
+    ShowFittedInfoPopup(popup, owner)
     popup._nameBox:SetFocus()
     popup._nameBox:HighlightText()
+end
+
+-- Reuse the same validation, storage and confirmations from alternate views.
+NS.ShowTalentBuildSource = ShowURLPopup
+NS.ShowTalentBuildEditor = ShowTalentBuildEditor
+
+function NS.RequestTalentBuildDelete(owner, row, onDeleted)
+    if not row or row.buildType ~= NS.TALENT_BUILD_TYPE_USER then return false end
+    ShowDeletePopup(owner, row, function()
+        local ok = NS.DeleteUserTalentBuild(row.id)
+        if onDeleted then onDeleted(ok) end
+    end)
+    return true
+end
+
+function NS.HideTalentBuildDialogs(owner)
+    for _, key in ipairs({ "_talentBuildURLPopup", "_talentBuildEditorPopup", "_talentBuildDeletePopup" }) do
+        local popup = owner and owner[key]
+        if popup then popup:Hide() end
+    end
 end
 
 local function CreateSubHeader(parent, text, yPos)
@@ -2385,8 +2413,7 @@ function NS.BuildTalentBuildsConfigSection(parent)
         if not state.selectedRow or state.selectedRow.buildType ~= NS.TALENT_BUILD_TYPE_USER then
             return
         end
-        ShowDeletePopup(parent, state.selectedRow, function()
-            NS.DeleteUserTalentBuild(state.selectedRow.id)
+        NS.RequestTalentBuildDelete(parent, state.selectedRow, function()
             state.selectedID = NS.TALENT_BUILD_CUSTOM_ID
             state.selectedSpecID = NS.GetTalentBuildCurrentSpecID()
             state:Refresh()

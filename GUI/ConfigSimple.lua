@@ -51,6 +51,31 @@ local function SetEnabled(button, enabled)
     button:SetAlpha(enabled and 1 or .5)
 end
 
+Simple.UI = { Label = Label, Button = Button, SetEnabled = SetEnabled, colors = COLOR }
+
+function Simple:RegisterView(name, view, refresh)
+    self.views[name] = view
+    if not view._focusDialogCleanup then
+        view._focusDialogCleanup = true
+        view:HookScript("OnHide", function()
+            if NS.HideTalentBuildDialogs then NS.HideTalentBuildDialogs(view) end
+        end)
+    end
+    self.viewRefreshers = self.viewRefreshers or {}
+    self.viewRefreshers[name] = refresh
+    view:SetShown(self.view == name)
+    return view
+end
+
+function Simple:CreateView(name)
+    if not self.frame then self:Create() end
+    if self.views[name] then return self.views[name] end
+    local view = NS.CreateFrame("Frame", nil, self.frame)
+    view:SetPoint("TOPLEFT", self.frame, "TOPLEFT", 20, -78)
+    view:SetSize(600, 382)
+    return self:RegisterView(name, view)
+end
+
 local function Info()
     return NS.GetTalentLevelingInfo and NS.GetTalentLevelingInfo() or {}
 end
@@ -64,11 +89,55 @@ local function SelectedEntry(info)
     end
 end
 
+function Simple:RequestSpendTalentPoints()
+    local info = NS.GetTalentSpendAllInfo()
+    if info.hasMismatch and info.canRespec then
+        if not self.Confirm then self:Report(false, "Open Points and Rebuilding to review a talent reset."); return end
+        self:Confirm("Your learned talents differ from the chosen route. Reset your talents and rebuild that route using only points your current level can spend?", function()
+            local ok, message = NS.RequestTalentSBARespec()
+            self:Report(ok, message)
+        end)
+        return
+    end
+    -- A spend-only click must never become a reset if the tree changes.
+    local ok, message = NS.SpendAllTalentPoints()
+    self:Report(ok, message)
+end
+
+function Simple:SelectTalentTarget(entry, onSelected)
+    if not entry then return end
+    local id, specID, importString = entry.id, entry.specID, entry.importString
+    local custom = id == NS.TALENT_BUILD_CUSTOM_ID
+    local function Select()
+        local current = not custom and NS.FindTalentBuildByID(id)
+        if not custom and (not current or current.specID ~= specID or current.importString ~= importString) then
+            self:Report(false, "That build changed. Choose it again to review the updated route.")
+            return
+        end
+        local ok, message = NS.SetTalentLevelingTarget(id)
+        if ok and onSelected then onSelected() end
+        local enabled = Info().enabled
+        self:Report(ok, message or (ok and (custom and "Automatic Points turned off. Your current talents are unchanged."
+            or enabled and "Build selected. Automatic Points is still on." or "Build selected. Automatic Points is off.")))
+    end
+    local info = Info()
+    if info.enabled and not custom then
+        if not self.Confirm then self:Report(false, "Turn off Automatic Points before choosing another route."); return end
+        local prompt = "Automatic Points is on. Choosing this route may spend available points right away."
+        if info.autoRespecEnabled then prompt = prompt .. " Automatic rebuilding is also on, so conflicting talents may be reset." end
+        self:Confirm(prompt .. " Choose this route and leave Automatic Points on?", Select)
+    else
+        Select()
+    end
+end
+
 function Simple:SelectView(name)
+    if self.CloseDialog then self:CloseDialog() end
     self.view = name
     self.message:SetText("")
     if name == "details" then self.detailScroll:SetVerticalScroll(0) end
     for key, view in pairs(self.views) do view:SetShown(key == name) end
+    if self.home then self.home:SetShown(name ~= "main") end
     self:Refresh()
 end
 
@@ -96,12 +165,13 @@ function Simple:Create()
     Label(frame, "BetterSBA", 20, -16, 230, 22)
     Label(frame, "Focus Mode", 20, -44, 260, 12, "muted")
     self.close = Button(frame, "Close", 542, -18, 78, function() self:Hide() end)
+    self.home = Button(frame, "Home", 454, -18, 78, function() self:SelectView("main") end)
     self.views = {}
     for _, name in ipairs({ "main", "picker", "details" }) do
         local view = NS.CreateFrame("Frame", nil, frame)
         view:SetPoint("TOPLEFT", frame, "TOPLEFT", 20, -78)
         view:SetSize(600, 382)
-        self.views[name] = view
+        self:RegisterView(name, view)
     end
     self.message = Label(frame, "", 20, -475, 600, 12, "accent", 3)
     local main, picker, details = self.views.main, self.views.picker, self.views.details
@@ -121,8 +191,7 @@ function Simple:Create()
             or "Automatic points turned off.")))
     end)
     self.spend = Button(main, "Spend Points Now", 0, -124, 170, function()
-        local ok, message = NS.SpendAllOrRespecTalentPoints()
-        self:Report(ok, message)
+        self:RequestSpendTalentPoints()
     end)
     self.status = Label(main, "", 190, -125, 410, 13, "text", 2)
     self.nextTalent = Label(main, "", 0, -174, 600, 13, "accent")
@@ -145,8 +214,11 @@ function Simple:Create()
     self.detailsButton = Button(main, "Details", 0, -350, 94, function() self:SelectView("details") end)
     self.classInfo = Button(main, "Class Info", 104, -350, 104, function()
         if NS.ShowTalentClassInfo then
-            NS.ShowTalentClassInfo(frame, NS.GetTalentBuildCurrentSpecID())
+            NS.ShowTalentClassInfo(main, NS.GetTalentBuildCurrentSpecID())
         end
+    end)
+    self.allSettings = Button(main, "All Settings", 220, -350, 150, function()
+        if self.OpenSettings then self:OpenSettings() end
     end)
     self.advanced = Button(main, "Advanced Settings", 422, -350, 178, function()
         self:Hide()
@@ -170,9 +242,7 @@ function Simple:Create()
         local row = Button(picker, "", 0, -66 - (index - 1) * 60, 600, function()
             local entry = self.pickerRows[index].entry
             if not entry then return end
-            local ok, message = NS.SetTalentLevelingTarget(entry.id)
-            if ok then self:SelectView("main") end
-            self:Report(ok, message or (ok and "Build selected. Turn on Automatic Points when you are ready."))
+            self:SelectTalentTarget(entry, function() self:SelectView("main") end)
         end)
         row:SetHeight(50)
         row._label:SetJustifyH("LEFT")
@@ -218,6 +288,7 @@ function Simple:Create()
     self.scrollHint = Label(details, "Scroll for more.", 0, -320, 400, 12, "muted")
     self.detailsBack = Button(details, "Back", 512, -350, 88, function() self:SelectView("main") end)
     self.talentOptions = Button(details, "Talent Options", 0, -350, 146, function()
+        if self.OpenSettingsTopic then self:OpenSettingsTopic("Talents"); return end
         self:Hide()
         NS.SwitchSettingsPanel("studio")
         NS.ConfigStudio:SelectPage("Talents")
@@ -233,6 +304,13 @@ end
 
 function Simple:Refresh()
     if not self.frame then return end
+    if self._profileDB ~= NS.db then
+        self._profileDB = NS.db
+        if self.CloseDialog then self:CloseDialog() end
+        self:ApplyScale()
+    end
+    local refresh = self.viewRefreshers and self.viewRefreshers[self.view]
+    if refresh then refresh(); return end
     if self.view == "picker" then
         local matches = self._pickerMatches or {}
         self._pickerMatches = matches
@@ -265,7 +343,7 @@ function Simple:Refresh()
             info.status or "Choose a build to get started.",
             source and source.summary or "Source information is unavailable.",
             info.detail or "", "Automatic points use only talents your level can learn. Higher-level talents wait until they unlock.",
-            "Talent Options opens the full panel for rebuild, undo and warning settings." }, "\n\n"))
+            "Talent Options includes rebuild, undo and warning settings." }, "\n\n"))
         if changed then
             local height = self.detailText:GetStringHeight() + 12
             self.detailText:SetHeight(height)
@@ -295,17 +373,25 @@ function Simple:Refresh()
     for key, button in pairs(self.settings) do SetTextIfChanged(button._label, NS.db[key] and "On" or "Off") end
 end
 
+function Simple:ApplyScale()
+    if not self.frame then return end
+    local preferred = tonumber(NS.db.configPanelScale) or 1
+    self.frame:SetScale(math.max(.1, math.min(preferred, (NS.UIParent:GetWidth() - 32) / 640,
+        (NS.UIParent:GetHeight() - 32) / 534)))
+end
+
 function Simple:Show()
     if not self.frame then self:Create() end
     NS.ConfigStudio:Hide()
     if NS.Config and NS.Config.Hide then NS.Config:Hide() end
-    self.frame:SetScale(math.min(1, (NS.UIParent:GetWidth() - 32) / 640,
-        (NS.UIParent:GetHeight() - 32) / 534))
+    NS.db.configExperience = "focus"
+    self:ApplyScale()
     self:SelectView("main")
     self.frame:Show()
 end
 
 function Simple:Hide()
+    if self.CloseDialog then self:CloseDialog() end
     if self.frame then self.frame:Hide() end
 end
 
@@ -317,14 +403,16 @@ local toggleSettings = NS.ToggleSettingsPanel
 if toggleSettings then
     function NS.ToggleSettingsPanel(...)
         if Simple.frame and Simple.frame:IsShown() then Simple:Hide(); return end
+        if NS.db and NS.db.configExperience == "focus" then Simple:Show(); return end
         return toggleSettings(...)
     end
 end
 
 local switchSettings = NS.SwitchSettingsPanel
 if switchSettings then
-    function NS.SwitchSettingsPanel(...)
+    function NS.SwitchSettingsPanel(experience, ...)
+        if experience == "focus" then Simple:Show(); return end
         Simple:Hide()
-        return switchSettings(...)
+        return switchSettings(experience, ...)
     end
 end

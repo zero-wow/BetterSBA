@@ -11,7 +11,7 @@ for index = 1, 6 do
 end
 entries[7] = { id = "other-spec", specID = 270, name = "Mistweaver" }
 local studioHidden, classicHidden, advancedPage, updateCount, spendCount, selectedID = false, false, nil, 0, 0, nil
-local talentReads, catalogReads = 0, 0
+local talentReads, catalogReads, selectionCount, respecCount = 0, 0, 0, 0
 local NS = {
     UIParent = ui.uiParent, CreateFrame = ui.createFrame, unpack = table.unpack,
     db = { enabled = true, locked = false, showPriority = false },
@@ -39,13 +39,17 @@ local NS = {
             summary = "Source posted June 23, 2026. " .. string.rep("Source evidence. ", 100) }
     end,
     SetTalentLevelingTarget = function(id)
+        selectionCount = selectionCount + 1
         selectedID = id
         info.buildID = id
         for _, entry in ipairs(entries) do if entry.id == id then info.targetName = entry.name end end
         return true
     end,
     SetTalentLevelingEnabled = function(value) info.enabled = value; return true end,
-    SpendAllOrRespecTalentPoints = function() spendCount = spendCount + 1; return true, "Spending points." end,
+    GetTalentSpendAllInfo = function() return info end,
+    SpendAllTalentPoints = function() spendCount = spendCount + 1; return true, "Spending points." end,
+    RequestTalentSBARespec = function() respecCount = respecCount + 1; return true, "Rebuilding talents." end,
+    SpendAllOrRespecTalentPoints = function() error("Focus must choose spending or confirmed rebuilding explicitly") end,
     ApplyProfileVisuals = function(self) assert(self.db); updateCount = updateCount + 1 end,
     UpdatePriorityDisplay = function() updateCount = updateCount + 1 end,
 }
@@ -93,6 +97,54 @@ info.canSpend = true
 simple:Refresh()
 click(simple.spend)
 assert(spendCount == 1 and simple.message:GetText() == "Spending points.")
+local confirmation, confirmationText
+simple.Confirm = function(_, prompt, callback) confirmationText, confirmation = prompt, callback end
+simple.CloseDialog = function() confirmation = nil end
+local function confirm()
+    local callback = assert(confirmation, "action must offer confirmation")
+    confirmation = nil
+    callback()
+end
+click(simple.choose)
+click(simple.pickerRows[2])
+assert(confirmation and selectedID == "build-1" and selectionCount == 1
+    and confirmationText:find("may spend available points right away", 1, true),
+    "choosing while Automatic Points is on must explain and wait before changing the route")
+simple:CloseDialog()
+assert(selectedID == "build-1" and info.enabled, "cancelling selection must preserve the current route and automation")
+click(simple.pickerRows[2])
+confirm()
+assert(selectedID == "build-2" and info.enabled and simple.view == "main"
+    and simple.message:GetText():find("still on", 1, true), "confirmed selection must preserve and describe Automatic Points")
+click(simple.choose)
+click(simple.pickerRows[1])
+entries[1].importString = "changed-after-review"
+confirm()
+assert(selectedID == "build-2" and selectionCount == 2 and simple.message:GetText():find("build changed", 1, true),
+    "the candidate build must be revalidated because it is not the currently selected target")
+entries[1].importString = nil
+info.autoRespecEnabled = true
+click(simple.pickerRows[1])
+assert(confirmationText:find("conflicting talents may be reset", 1, true),
+    "selection consent must disclose automatic rebuilding when it is enabled")
+confirm()
+assert(selectedID == "build-1" and info.enabled)
+info.autoRespecEnabled = false
+info.hasMismatch, info.canRespec = true, true
+click(simple.spend)
+assert(confirmation and respecCount == 0 and spendCount == 1
+    and confirmationText:find("Reset your talents", 1, true),
+    "Spend Points Now must explain a required reset instead of silently rebuilding")
+simple:CloseDialog()
+assert(respecCount == 0, "cancelling the rebuild must not reset talents")
+click(simple.spend)
+confirm()
+assert(respecCount == 1 and spendCount == 1 and simple.message:GetText() == "Rebuilding talents.",
+    "only a confirmed mismatch may dispatch the shared respec operation")
+info.hasMismatch, info.canRespec = false, false
+click(simple.spend)
+assert(not confirmation and spendCount == 2 and respecCount == 1,
+    "ordinary point spending must stay on the spend-only path")
 local stableWrites = 0
 local function CountTextWrites(node)
     if rawget(node, "_kind") == "FontString" then
@@ -139,8 +191,8 @@ click(simple.settings.showPriority)
 assert(NS.db.locked and NS.db.showPriority and updateCount == 3,
     "basic controls must update shared saved settings and visuals")
 click(simple.classInfo)
-assert(classOwner == simple.frame and classSpec == 269,
-    "Class Info must target the active specialization and the simple window")
+assert(classOwner == simple.views.main and classSpec == 269,
+    "Class Info must target the active specialization and its originating Focus page")
 click(simple.detailsButton)
 assert(simple.view == "details" and not simple.views.main:IsShown()
     and simple.detailText:GetText():find("Source posted June 23", 1, true),

@@ -135,7 +135,9 @@ local function Title(key)
     local value = key:gsub("(%u)(%u%l)", "%1 %2"):gsub("(%l)(%u)", "%1 %2")
     value = value:gsub("^%l", string.upper)
     value = value:gsub("(%s)(%l)", function(space, letter) return space .. letter:upper() end)
-    return value:gsub("Cd", "CD"):gsub("Gcd", "GCD"):gsub("Ooc", "OOC")
+    value = value:gsub("Cd", "CD"):gsub("Gcd", "GCD"):gsub("Ooc", "OOC")
+    if key:find("ParticleDelay$") then value = value .. " (seconds)" end
+    return value
 end
 
 local CHOICE_LABELS = {
@@ -179,7 +181,17 @@ local function OptionsFor(key)
         return NS.GetFontList and NS.GetFontList() or nil
     end
     if key:find("Outline$") then return NS.FONT_OUTLINE_OPTIONS end
-    if key:find("ParticleTiming$") then return NS.PARTICLE_TIMINGS end
+    if key:find("ParticleTiming$") then
+        -- Match CreateTimingDropdown without changing its shared preset enum.
+        -- The companion <animation>ParticleDelay row stores Specific seconds.
+        local choices, hasSpecific = {}, false
+        for _, timing in ipairs(NS.PARTICLE_TIMINGS or {}) do
+            choices[#choices + 1] = timing
+            if timing == "Specific" then hasSpecific = true end
+        end
+        if not hasSpecific then choices[#choices + 1] = "Specific" end
+        return choices
+    end
     if key:find("ParticleStyle$") then return NS.PARTICLE_STYLES end
     if key:find("ParticlePalette$") then
         return NS.GetPaletteList and NS:GetPaletteList() or NS.BUILTIN_PALETTE_ORDER
@@ -291,7 +303,19 @@ function Studio:OpenStudioChoices(title, choices, current, onChoose)
     popup.overlay:Show()
 end
 
+local function RefreshInput(input, text, UI)
+    if input._settingsProfile ~= NS.db then
+        input._settingsProfile = NS.db
+        input:ClearFocus()
+    end
+    if input:HasFocus() then return end
+    if UI.SetTextIfChanged then UI.SetTextIfChanged(input, text)
+    elseif input:GetText() ~= text then input:SetText(text) end
+end
+
 local function MakeSetting(studio, parent, key, y, refreshers)
+    local UI = studio.settingsUI or UI
+    local C = UI.colors
     local initial = (NS.defaults or {})[key]
     local custom = key == "trinketSlot13" or key == "trinketSlot14"
         or key == "createPalette" or key == "editPalette"
@@ -300,8 +324,9 @@ local function MakeSetting(studio, parent, key, y, refreshers)
     local row = NS.CreateFrame("Frame", nil, parent)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y)
     row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, y)
-    row:SetHeight(28)
-    local label = UI.Label(row, Title(key), 11, C.text, 280, "LEFT", row, "LEFT", 8, 0)
+    row:SetHeight(studio.settingsRowHeight or 28)
+    local label = UI.Label(row, Title(key), 11, C.text, studio.settingsLabelWidth or 280,
+        "LEFT", row, "LEFT", 8, 0)
     row._key, row._label = key, label
     local function Save(value)
         Apply(key, value, studio)
@@ -334,7 +359,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
             local prefix = NS.AnimKeyPrefix and NS.AnimKeyPrefix(animation)
                 or animation:gsub("[^%a]", ""):lower()
             if prefix == "" or prefix == "none" then prefix = "pop" end
-            NS.ShowPaletteEditor(studio.frame, prefix .. "ParticlePalette",
+            NS.ShowPaletteEditor(row, prefix .. "ParticlePalette",
                 function() studio:Refresh() end, key == "createPalette")
         end)
         control:ClearAllPoints(); control:SetPoint("RIGHT", row, "RIGHT", -8, 0)
@@ -343,7 +368,7 @@ local function MakeSetting(studio, parent, key, y, refreshers)
     elseif key == "animCloneReapplyKey" then
         local control = UI.Action(row, "Not Set", 0, 0, 150, 21, function()
             if NS.OpenAnimCloneReapplyKeyCapture then
-                NS.OpenAnimCloneReapplyKeyCapture(row.Refresh, studio.frame)
+                NS.OpenAnimCloneReapplyKeyCapture(row.Refresh, studio.frame, row)
             end
         end, "quiet")
         control:ClearAllPoints(); control:SetPoint("RIGHT", row, "RIGHT", -65, 0)
@@ -385,15 +410,16 @@ local function MakeSetting(studio, parent, key, y, refreshers)
         local minus = UI.Action(row, "−", 0, 0, 23, 21, function() Adjust(-step) end)
         minus:ClearAllPoints(); minus:SetPoint("RIGHT", row, "RIGHT", -128, 0)
         local value = NS.CreateFrame("EditBox", nil, row, "BackdropTemplate")
-        value:SetSize(72, 21)
+        value:SetSize(72, studio.settingsControlHeight or 21)
         value:SetPoint("RIGHT", row, "RIGHT", -47, 0)
         value:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
         value:SetBackdropColor(unpack(C.rail)); value:SetBackdropBorderColor(unpack(C.border))
         if studio.Comic then studio.Comic.StyleInput(value) end
-        value:SetFont(NS.GetConfigFontPath(), 11, "")
+        value:SetFont(studio.settingsFontPath or NS.GetConfigFontPath(), studio.settingsFontSize or 11, "")
         value:SetTextColor(unpack(C.text)); value:SetJustifyH("CENTER")
         value:SetAutoFocus(false)
         value:SetScript("OnEnterPressed", function(self)
+            if self._settingsProfile ~= NS.db then row.Refresh(); return end
             local parsed = tonumber(self:GetText())
             if parsed then
                 parsed = math.max(minimum, math.min(maximum, parsed))
@@ -407,7 +433,9 @@ local function MakeSetting(studio, parent, key, y, refreshers)
         value:SetScript("OnEscapePressed", function(self) self:ClearFocus(); row.Refresh() end)
         local plus = UI.Action(row, "+", 0, 0, 23, 21, function() Adjust(step) end)
         plus:ClearAllPoints(); plus:SetPoint("RIGHT", row, "RIGHT", -15, 0)
-        row.Refresh = function() value:SetText(tostring(NS.db[key] or initial)) end
+        row.Refresh = function()
+            RefreshInput(value, tostring(NS.db[key] or initial), UI)
+        end
         row._control = value
     elseif type(initial) == "string" then
         local choices = OptionsFor(key)
@@ -422,51 +450,83 @@ local function MakeSetting(studio, parent, key, y, refreshers)
             row._control = control
         else
             local value = NS.CreateFrame("EditBox", nil, row, "BackdropTemplate")
-            value:SetSize(198, 21); value:SetPoint("RIGHT", row, "RIGHT", -8, 0)
+            value:SetSize(198, studio.settingsControlHeight or 21)
+            value:SetPoint("RIGHT", row, "RIGHT", -8, 0)
             value:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
             value:SetBackdropColor(unpack(C.rail)); value:SetBackdropBorderColor(unpack(C.border))
             if studio.Comic then studio.Comic.StyleInput(value) end
-            value:SetFont(NS.GetConfigFontPath(), 11, "")
+            value:SetFont(studio.settingsFontPath or NS.GetConfigFontPath(), studio.settingsFontSize or 11, "")
             value:SetTextColor(unpack(C.text)); value:SetTextInsets(6, 6, 0, 0)
             value:SetAutoFocus(false)
             value:SetScript("OnEnterPressed", function(self)
-                Save(self:GetText()); self:ClearFocus()
+                if self._settingsProfile ~= NS.db then row.Refresh(); return end
+                Save(self:GetText()); self:ClearFocus(); row.Refresh()
             end)
             value:SetScript("OnEscapePressed", function(self) self:ClearFocus(); row.Refresh() end)
-            row.Refresh = function() value:SetText(NS.db[key] or initial) end
+            row.Refresh = function()
+                RefreshInput(value, NS.db[key] or initial, UI)
+            end
             row._control = value
         end
     elseif type(initial) == "table" and type(initial[1]) == "number" then
+        local activeColor
+        local function CloseColor(session)
+            if not session then return end
+            if activeColor == session then activeColor = nil end
+            -- The picker is shared with Blizzard and other addons. Hide only
+            -- the selection opened by this row, never a replacement picker.
+            if session.picker.cancelFunc == session.cancel then session.picker:Hide() end
+        end
+        row:HookScript("OnHide", function() CloseColor(activeColor) end)
         local swatch = UI.Action(row, "", 0, 0, 50, 21, function()
             if not ColorPickerFrame then return end
+            CloseColor(activeColor)
+            local picker = ColorPickerFrame
+            local session = { picker = picker, profile = NS.db, opening = true }
+            activeColor = session
             local current = NS.db[key] or initial
             local previous = Clone(current)
+            local function IsCurrent()
+                if activeColor ~= session or picker.cancelFunc ~= session.cancel then return false end
+                if NS.db ~= session.profile or not row:IsVisible() or not picker:IsShown() then
+                    CloseColor(session)
+                    return false
+                end
+                return true
+            end
             local function PaintColor()
-                local r, g, b = ColorPickerFrame:GetColorRGB()
-                local alpha = ColorPickerFrame.GetColorAlpha and ColorPickerFrame:GetColorAlpha() or 1
+                if session.opening or not IsCurrent() then return end
+                local r, g, b = picker:GetColorRGB()
+                local alpha = picker.GetColorAlpha and picker:GetColorAlpha() or 1
                 Save({r, g, b, alpha})
+            end
+            session.cancel = function()
+                if IsCurrent() then Save(previous) end
+                CloseColor(session)
             end
             local info = { r = current[1], g = current[2], b = current[3],
                 opacity = current[4] or 1, hasOpacity = true,
                 swatchFunc = PaintColor, opacityFunc = PaintColor,
-                cancelFunc = function() Save(previous) end }
-            if ColorPickerFrame.SetupColorPickerAndShow then
-                ColorPickerFrame:SetupColorPickerAndShow(info)
+                cancelFunc = session.cancel }
+            if picker.SetupColorPickerAndShow then
+                picker:SetupColorPickerAndShow(info)
             else
-                ColorPickerFrame:SetColorRGB(current[1], current[2], current[3])
-                ColorPickerFrame.hasOpacity = true
-                ColorPickerFrame.opacity = 1 - (current[4] or 1)
-                ColorPickerFrame.func = PaintColor
-                ColorPickerFrame.opacityFunc = PaintColor
-                ColorPickerFrame.cancelFunc = info.cancelFunc
-                ColorPickerFrame:Show()
+                picker.hasOpacity = true
+                picker.opacity = 1 - (current[4] or 1)
+                picker.func = PaintColor
+                picker.opacityFunc = PaintColor
+                picker.cancelFunc = info.cancelFunc
+                picker:SetColorRGB(current[1], current[2], current[3])
+                picker:Show()
             end
+            session.opening = false
         end)
         swatch:ClearAllPoints(); swatch:SetPoint("RIGHT", row, "RIGHT", -8, 0)
         local color = swatch:CreateTexture(nil, "ARTWORK")
         color:SetPoint("TOPLEFT", swatch, "TOPLEFT", 3, -3)
         color:SetPoint("BOTTOMRIGHT", swatch, "BOTTOMRIGHT", -3, 3)
         row.Refresh = function()
+            if activeColor and activeColor.profile ~= NS.db then CloseColor(activeColor) end
             local value = NS.db[key] or initial
             color:SetColorTexture(value[1], value[2], value[3], value[4] or 1)
         end
@@ -725,6 +785,8 @@ local function BuildPage(studio, page, groups)
 end
 
 local function BuildProfiles(studio)
+    local UI = studio.settingsUI or UI
+    local C = UI.colors
     if studio.pages.Profiles then studio.pages.Profiles:Hide() end
     local view = NS.CreateFrame("Frame", nil, studio.content)
     view:SetAllPoints()
@@ -755,7 +817,9 @@ local function BuildProfiles(studio)
     end)
     local bind = UI.Action(view, "", 26, -152, 190, 27, function()
         local bound = NS:HasCharProfile()
-        NS:SetCharProfile(bound and nil or NS:GetActiveProfileName())
+        local profileName
+        if not bound then profileName = NS:GetActiveProfileName() end
+        NS:SetCharProfile(profileName)
         Report(true, nil, bound and "Character unbound." or "Character bound to this profile.")
     end)
     local copy = UI.Action(view, "Copy From Profile", 26, -204, 190, 27, function()
@@ -791,28 +855,45 @@ local function BuildProfiles(studio)
         end)
     end, "quiet")
     local font = NS.CreateFrame("EditBox", nil, view, "BackdropTemplate")
-    font:SetSize(240, 25); font:SetPoint("TOPLEFT", view, "TOPLEFT", 26, -312)
+    font:SetSize(240, studio.settingsControlHeight or 25)
+    font:SetPoint("TOPLEFT", view, "TOPLEFT", 26, -312)
     font:SetBackdrop({ bgFile = WHITE, edgeFile = WHITE, edgeSize = 1 })
     font:SetBackdropColor(unpack(C.rail)); font:SetBackdropBorderColor(unpack(C.border))
     if studio.Comic then studio.Comic.StyleInput(font) end
-    font:SetFont(NS.GetConfigFontPath(), 11, ""); font:SetTextColor(unpack(C.text))
+    font:SetFont(studio.settingsFontPath or NS.GetConfigFontPath(), studio.settingsFontSize or 11, "")
+    font:SetTextColor(unpack(C.text))
     font:SetTextInsets(7, 7, 0, 0); font:SetAutoFocus(false)
     UI.Label(view, "Rename Current Profile", 11, C.dim, 250, "TOPLEFT", view, "TOPLEFT", 26, -293)
     local rename = UI.Action(view, "Rename", 276, -312, 90, 25, function()
+        if font._settingsProfile ~= NS.db then view.Refresh(); return end
         local old, nextName = NS:GetActiveProfileName(), font:GetText()
         local ok, err = NS:RenameProfile(old, nextName)
+        if ok then font:ClearFocus() end
         Report(ok, err, "Renamed profile to " .. nextName .. ".")
     end)
     view._profileActions = {choose, create, bind, copy, reset, delete, rename}
     view.Refresh = function()
-        name:SetText("Active Profile: " .. NS:GetActiveProfileName())
-        message:SetText(NS:HasCharProfile() and "This character uses the selected profile."
-            or "This character follows the account default profile.")
+        UI.FitText(name, "Active Profile: " .. NS:GetActiveProfileName(), name:GetWidth())
+        UI.FitText(message, NS:HasCharProfile() and "This character uses the selected profile."
+            or "This character follows the account default profile.", message:GetWidth())
         UI.SetActionText(bind, NS:HasCharProfile() and "Unbind Character" or "Bind To This Profile")
-        font:SetText(NS:GetActiveProfileName())
+        RefreshInput(font, NS:GetActiveProfileName(), UI)
     end
     return view
 end
+
+-- Alternate settings hosts share these definitions and action handlers while
+-- supplying their own presentation. settingsUI implements colors, Label,
+-- Action, SetActionText and FitText; settingsFontPath is an optional font path.
+-- MakeSetting also accepts settingsRowHeight/settingsLabelWidth; edit boxes use
+-- settingsControlHeight/settingsFontSize. SetTextIfChanged is optional. Hosts provide
+-- frame, content, pages, notice, Refresh, ApplyScale, OpenStudioChoices and
+-- ConfirmStudioAction. They own layout, visibility and popup lifetimes.
+NS.StudioSettingsModel = {
+    CompileGroups = CompileGroups, MakeSetting = MakeSetting,
+    BuildProfiles = BuildProfiles, Title = Title, ChoiceLabel = ChoiceLabel,
+    OptionsFor = OptionsFor, RangeFor = RangeFor, Apply = Apply,
+}
 
 function Studio:ConfirmStudioAction(prompt, confirm)
     local popup = self._confirmPopup

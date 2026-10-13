@@ -3,6 +3,245 @@ local ADDON_NAME, NS = ...
 local T = NS.THEME
 NS.Config = {}
 
+-- Exact key sets shared by Classic resets and the optional Focus tools.
+local CONFIG_RESET_GROUPS = {
+    ["Combat Helpers"] = {"enableDismount", "enableTargeting", "enablePetAttack", "enableChannelProtection"},
+    ["Trinket Mode"] = {"trinketMode"},
+    ["Input Method"] = {"interceptionType"},
+    ["Motion Feedback"] = {"castFeedback", "motionPreset", "motionDuration", "motionIntensity", "motionReduced"},
+    ["Classic Animation"] = {"castAnimation", "animateIncoming", "animHideButton", "cfgAnimTransitions", "gcdDuration"},
+    ["Fonts"] = {"fontFace", "fontOutline", "configPanelFont", "configPanelOutline", "configPanelFontOverride", "keybindFont", "keybindOutline", "keybindFontOverride", "keybindFontSize", "priorityKeybindFont", "priorityKeybindOutline", "priorityKeybindFontOverride", "priorityKeybindFontSize", "priorityLabelFont", "priorityLabelOutline", "priorityLabelFontOverride", "priorityLabelFontSize", "pauseSymbolFont", "pauseSymbolOutline", "pauseSymbolFontOverride", "pauseSymbolFontSize", "pauseReasonFont", "pauseReasonOutline", "pauseReasonFontOverride", "pauseReasonFontSize"},
+    ["Button Style"] = {"buttonStyle"},
+    ["Button Layout"] = {"buttonSize", "scale", "showKeybind", "showCooldown", "manualCooldownReminders", "rangeColoring", "outOfRangeSound", "spellUsability", "keybindFontSize", "keybindOffsetX", "keybindOffsetY", "keybindAnchor"},
+    ["Animated Clone"] = {"animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX", "animCloneKeybindOffsetY", "animCloneKeybindFont", "animCloneKeybindOutline", "animCloneKeybindFontSize"},
+    ["Next Spells"] = {"showPriority", "priorityIconSize", "prioritySpacing", "priorityPosition", "showPriorityKeybinds", "priorityKeybindFontSize", "priorityKeybindOffsetX", "priorityKeybindOffsetY", "priorityKeybindAnchor", "showActiveGlow", "priorityAlphaOOC", "priorityScale", "priorityDetached", "priorityLocked", "priorityBindFrame", "priorityMyPoint", "priorityTheirPoint"},
+    ["Visibility"] = {"onlyInCombat", "alphaCombat", "alphaOOC", "hideInVehicle"},
+    ["Importance Colors"] = {"importanceBorders", "importColorAutoAttack", "importColorFiller", "importColorShortCD", "importColorLongCD", "importColorMajorCD"},
+    ["Section Colors"] = {"sectionColorCombat", "sectionColorAppearance", "sectionColorActive", "sectionColorPriority", "sectionColorTalentBuilds", "sectionColorVisibility", "sectionColorImportance", "sectionColorAdvanced", "sectionColorProfiles"},
+    ["Moving The Button"] = {"modifierScaling", "locked"},
+    ["Debug Messages"] = {"debug", "debugSpellUpdates", "debugAnimClone", "debugOther"},
+    ["Color Theme"] = {"themePreset"},
+    ["Minimap"] = {"showMinimapButton", "ldbShowText", "minimapIconSize", "minimapIconOffsetX", "minimapIconOffsetY"},
+}
+
+local function GetActiveCombatAssistAbilities()
+    local W, R = NS.TC and NS.TC.WARN or "", NS.TC and NS.TC.R or ""
+    -- Class-specific off-GCD abilities (only shown for the relevant tank spec)
+    -- Each entry: { dbKey, label, spellID, specCheck, tooltip, comment }
+    local CLASS_ABILITIES = {
+        { "enableDemonSpikes",      "Demon Spikes",           NS.DEMON_SPIKES_SPELL_ID,   "Vengeance",
+            "Vengeance Demon Hunter only.",
+            "Attempts off-GCD mitigation on each combat press.",
+            "Does not time charges around incoming damage.", nil, true },
+        { "enableConvokeTheSpirits","Convoke the Spirits",    NS.CONVOKE_THE_SPIRITS_ID,  "DRUID",
+            "Druid only.",
+            "Attempts the channel before SBA on each combat press.",
+            "May take that press instead of SBA; does not choose burst windows.",
+            "before", true },
+        { "enableShieldBlock",      "Shield Block",           NS.SHIELD_BLOCK_SPELL_ID,   "Protection:W",
+            "Protection Warrior only.",
+            "Attempts off-GCD blocking on each combat press.",
+            "Consumes Rage and charges when the client allows it.", nil, true },
+        { "enableIgnorePain",       "Ignore Pain",            NS.IGNORE_PAIN_SPELL_ID,    "Protection:W",
+            "Protection Warrior only.",
+            "Off-GCD Rage dump that applies an absorb shield.",
+            W .. "Off by default" .. R .. " \226\128\148 drains Rage quickly.", nil, true },
+        { "enableIronfur",          "Ironfur",                NS.IRONFUR_SPELL_ID,        "Guardian",
+            "Guardian Druid only.",
+            "Attempts off-GCD stacking armor before SBA.",
+            "Spends available Rage without choosing an armor target.",
+            "before", true },
+        { "enableShieldOfRighteous","Shield of the Righteous",NS.SHIELD_OF_RIGHTEOUS_ID,  "Protection:Pa",
+            "Protection Paladin only.",
+            "Attempts off-GCD mitigation; spends Holy Power.",
+            W .. "Competes with Word of Glory for HP." .. R, nil, true },
+        { "enableRuneTap",          "Rune Tap",               NS.RUNE_TAP_SPELL_ID,       "Blood",
+            "Blood Death Knight only.",
+            "Attempts off-GCD damage reduction on each combat press.",
+            W .. "Off by default" .. R .. " - spends runes without timing incoming damage.", nil, true },
+        { "enablePurifyingBrew",    "Purifying Brew",         NS.PURIFYING_BREW_SPELL_ID, "Brewmaster",
+            "Brewmaster Monk only.",
+            "Attempts off-GCD purification on each combat press.",
+            W .. "Off by default" .. R .. " - does not wait for high Stagger.", nil, true },
+    }
+
+    local function IsCombatAssistAbilityVisible(info)
+        local gate = info[4]
+        if gate == "DRUID" then
+            return NS.IsClass and NS.IsClass("DRUID")
+        end
+        return NS.IsSpec and NS.IsSpec(gate)
+    end
+
+    -- Collect which abilities apply to this character's current spec
+    local activeAbilities, keys = {}, {}
+    for _, info in ipairs(CLASS_ABILITIES) do
+        if IsCombatAssistAbilityVisible(info) then
+            activeAbilities[#activeAbilities + 1] = info
+            keys[#keys + 1] = info[1]
+        end
+    end
+
+    return activeAbilities, keys
+end
+
+function NS.GetConfigResetGroups()
+    local groups = {}
+    for name in pairs(CONFIG_RESET_GROUPS) do groups[#groups + 1] = name end
+    groups[#groups + 1] = "Particles"
+    local _, classKeys = GetActiveCombatAssistAbilities()
+    if #classKeys > 0 then groups[#groups + 1] = "Class Abilities" end
+    table.sort(groups)
+    return groups
+end
+
+function NS.GetConfigResetKeys(name)
+    if name == "Class Abilities" then
+        local _, keys = GetActiveCombatAssistAbilities()
+        return #keys > 0 and keys or nil
+    end
+    if name ~= "Particles" then return CONFIG_RESET_GROUPS[name] end
+    local keys = {}
+    for _, animation in ipairs(NS.CAST_ANIMATIONS or {}) do
+        if animation ~= "NONE" then
+            local prefix = NS.AnimKeyPrefix(animation)
+            for _, suffix in ipairs({"Particles", "ParticleTiming", "ParticleStyle", "ParticlePalette"}) do
+                keys[#keys + 1] = prefix .. suffix
+            end
+        end
+    end
+    return keys
+end
+
+local function ResetConfigKeys(keys)
+    for _, key in ipairs(keys) do
+        local value = NS.defaults[key]
+        NS.db[key] = type(value) == "table" and CopyTable(value) or value
+    end
+    NS:ApplyProfileVisuals()
+end
+
+function NS.ResetConfigGroup(name)
+    local keys = NS.GetConfigResetKeys(name)
+    if not keys then return false, "Choose a settings group first." end
+    if NS.InCombatLockdown and NS.InCombatLockdown() then
+        return false, "Finish combat before resetting settings."
+    end
+    ResetConfigKeys(keys)
+    return true, name .. " reset to defaults."
+end
+
+function NS.BuildConfigDiagnosticReport(includeIdentity)
+    UpdateAddOnMemoryUsage(ADDON_NAME)
+    local memKB = GetAddOnMemoryUsage(ADDON_NAME)
+    local memStr = memKB >= 1024
+        and string.format("%.2f MB", memKB / 1024)
+        or string.format("%.0f KB", memKB)
+
+    local rate = NS.db.updateRate or 0.1
+    local elapsed = GetTime() - (NS._loadTime or GetTime())
+    local mins = math.floor(elapsed / 60)
+    local secs = math.floor(elapsed % 60)
+    local uptimeStr = mins >= 60
+        and string.format("%dh %dm %ds", math.floor(mins / 60), mins % 60, secs)
+        or string.format("%dm %ds", mins, secs)
+
+    local frameCount = 0
+    if NS.mainButton then frameCount = frameCount + 1 end
+    if NS.secureButton then frameCount = frameCount + 1 end
+    if NS._priorityIcons then frameCount = frameCount + #NS._priorityIcons end
+    if NS.Config and NS.Config.frame then frameCount = frameCount + 1 end
+
+    local keys = NS._overrideKeys
+    local keybindStr = "Inactive"
+    if keys and #keys > 0 then
+        keybindStr = includeIdentity and ("Intercepting [KEYBIND: " .. table.concat(keys, ", ") .. "]")
+            or ("Active (" .. #keys .. " bindings; key names omitted)")
+        if includeIdentity and NS._overrideSlot then
+            local bar = math.floor((NS._overrideSlot - 1) / 12) + 1
+            local btn = ((NS._overrideSlot - 1) % 12) + 1
+            keybindStr = keybindStr .. " [ACTION BAR: " .. bar .. "] [ACTION BAR SLOT: " .. btn .. "]"
+        end
+    else
+        local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+        if reason then keybindStr = "Paused: " .. reason end
+    end
+
+    local profName, charKey
+    if includeIdentity then
+        profName = NS.GetActiveProfileName and NS:GetActiveProfileName() or "Default"
+        local name, realm = UnitFullName("player")
+        charKey = (name or "?") .. " - " .. (realm or GetRealmName() or "?")
+    end
+    local _, class = UnitClass("player")
+    local spec = GetSpecialization and GetSpecialization() or 0
+    local specName = spec > 0 and (select(2, GetSpecializationInfo(spec)) or "?") or "?"
+    local level = UnitLevel("player") or "?"
+
+    local sbaAvail = "No"
+    if NS.C_AssistedCombat and NS.C_AssistedCombat.IsAvailable then
+        local ok, avail = pcall(NS.C_AssistedCombat.IsAvailable)
+        if ok then sbaAvail = avail and "Yes" or "No" end
+    end
+
+    local gcCount = collectgarbage("count")
+    local gcStr = string.format("%.2f MB", gcCount / 1024)
+
+    -- Cache diagnostics
+    local cacheDiag = NS.GetCacheDiagnostics and NS.GetCacheDiagnostics() or {}
+    local cdEntries = cacheDiag.cooldownEntries or 0
+    local texEntries = cacheDiag.textureEntries or 0
+    local resEntries = cacheDiag.resolveEntries or 0
+    local cdDirty = cacheDiag.cooldownDirty and "Yes" or "No"
+
+    local lines = {
+        "=== BetterSBA Diagnostic Report ===",
+        "Version: " .. (NS.VERSION or "?"),
+        "Date: " .. date("%Y-%m-%d %H:%M:%S"),
+        "",
+        "--- Character ---",
+        includeIdentity and ("Character: " .. charKey) or "Character identity omitted.",
+        "Class: " .. (class or "?") .. " (" .. specName .. ")",
+        "Level: " .. level,
+        includeIdentity and ("Profile: " .. profName) or "Profile name omitted.",
+        "",
+        "--- Performance ---",
+        "Addon Memory: " .. memStr,
+        "Lua GC Total: " .. gcStr,
+        "Update Rate: " .. string.format("%.0f ms (%.0f Hz)", rate * 1000, 1 / rate),
+        "Managed Frames: " .. frameCount,
+        "Session Uptime: " .. uptimeStr,
+        "",
+        "--- Cache ---",
+        "GC Policy: Native (no forced collection)",
+        "Cooldown Cache: " .. cdEntries .. " entries (dirty: " .. cdDirty .. ")",
+        "Texture Cache: " .. texEntries .. " entries",
+        "Resolve Cache: " .. resEntries .. " entries",
+        "",
+        "--- Keybind ---",
+        "Override Status: " .. keybindStr,
+        "SBA Available: " .. sbaAvail,
+        "",
+        "--- Settings ---",
+        "Enabled: " .. tostring(NS.db.enabled),
+        "Locked: " .. tostring(NS.db.locked),
+        "Show Priority: " .. tostring(NS.db.showPriority),
+        "Button Size: " .. tostring(NS.db.buttonSize),
+        "Scale: " .. tostring(NS.db.scale),
+        "Combat Only: " .. tostring(NS.db.onlyInCombat),
+        "Targeting: " .. tostring(NS.db.enableTargeting),
+        "Pet Attack: " .. tostring(NS.db.enablePetAttack),
+        "Channel Protect: " .. tostring(NS.db.enableChannelProtection),
+        "",
+        "--- Client ---",
+        "Interface: " .. (select(4, GetBuildInfo()) or "?"),
+        "Build: " .. (select(1, GetBuildInfo()) or "?"),
+        "Locale: " .. (GetLocale() or "?"),
+        "================================",
+    }
+    return table.concat(lines, "\n")
+end
+
 -- Dimensions and screen bounds share UIParent's coordinate space. Its scale
 -- already includes WoW's UI scaling; do not apply an OS DPI multiplier again.
 function NS.Config:ApplyScale()
@@ -98,9 +337,10 @@ function NS.GetAnimCloneReapplyBindingText()
     return key
 end
 
-function NS.OpenAnimCloneReapplyKeyCapture(onApplied, parentOverride)
+function NS.OpenAnimCloneReapplyKeyCapture(onApplied, parentOverride, ownerOverride)
     local popup = NS.Config and NS.Config._animCloneReapplyKeyPopup
     local parent = parentOverride or (NS.Config and NS.Config.frame) or NS.UIParent
+    local owner = ownerOverride or parent
     if not popup then
         popup = NS.CreateFrame("Frame", "BetterSBA_AnimCloneReapplyKeyPopup", parent, "BackdropTemplate")
         popup:SetSize(300, 92)
@@ -134,9 +374,17 @@ function NS.OpenAnimCloneReapplyKeyCapture(onApplied, parentOverride)
         hint2:SetText("ESC cancels. Pick a spare combo.")
 
         popup:SetScript("OnHide", function(self)
+            if self._owner and self._owner._betterSBAKeyCapturePopup == self then
+                self._owner._betterSBAKeyCapturePopup = nil
+            end
             self._onApplied = nil
+            self._owner, self._profile = nil, nil
         end)
         popup:SetScript("OnKeyDown", function(self, key)
+            if not self:IsVisible() or not self._owner or not self._owner:IsVisible() or NS.db ~= self._profile then
+                self:Hide()
+                return
+            end
             if key == "ESCAPE" and not IsShiftKeyDown() and not IsControlKeyDown() and not IsAltKeyDown() then
                 self:Hide()
                 return
@@ -150,12 +398,22 @@ function NS.OpenAnimCloneReapplyKeyCapture(onApplied, parentOverride)
         end)
         NS.Config._animCloneReapplyKeyPopup = popup
     end
+    popup:Hide()
+    popup._owner, popup._profile = owner, NS.db
     popup._onApplied = onApplied
+    owner._betterSBAKeyCapturePopup = popup
+    if not owner._betterSBAKeyCaptureHideHook then
+        owner._betterSBAKeyCaptureHideHook = true
+        owner:HookScript("OnHide", function(source)
+            if source._betterSBAKeyCapturePopup then source._betterSBAKeyCapturePopup:Hide() end
+        end)
+    end
     popup:SetParent(parent)
     popup:SetFrameLevel(parent:GetFrameLevel() + 20)
     popup:ClearAllPoints()
     popup:SetPoint("CENTER", parent, "CENTER")
     popup:Show()
+    return popup
 end
 
 function NS.CreateAnimCloneReapplyKeyControl(parent, yOffset, width)
@@ -980,15 +1238,7 @@ function NS.Config:Create()
         lbl:SetTextColor(T.TEXT_MUTED[1], T.TEXT_MUTED[2], T.TEXT_MUTED[3])
         lbl:SetText("Reset")
         btn:SetScript("OnClick", function()
-            for i = 1, #keys do
-                local def = NS.defaults[keys[i]]
-                if NS.type(def) == "table" then
-                    NS.db[keys[i]] = CopyTable(def)
-                else
-                    NS.db[keys[i]] = def
-                end
-            end
-            NS:ApplyProfileVisuals()
+            ResetConfigKeys(keys)
             rebuildPanel()
         end)
         btn:SetScript("OnEnter", function()
@@ -1046,7 +1296,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local macroHdr = CreateSubHeader(c, "MACRO ACTIONS", y)
-    CreateDefaultBtn(c, macroHdr, {"enableDismount", "enableTargeting", "enablePetAttack", "enableChannelProtection"})
+    CreateDefaultBtn(c, macroHdr, CONFIG_RESET_GROUPS["Combat Helpers"])
     y = y - 18
     local r1 = NS.CreateToggle(c, "Auto-Dismount", "enableDismount", y, function()
         NS.RebuildMacroText()
@@ -1093,63 +1343,9 @@ function NS.Config:Create()
     }, c)
     y = y - 28
 
-    -- Class-specific off-GCD abilities (only shown for the relevant tank spec)
-    -- Each entry: { dbKey, label, spellID, specCheck, tooltip, comment }
-    local CLASS_ABILITIES = {
-        { "enableDemonSpikes",      "Demon Spikes",           NS.DEMON_SPIKES_SPELL_ID,   "Vengeance",
-            "Vengeance Demon Hunter only.",
-            "Attempts off-GCD mitigation on each combat press.",
-            "Does not time charges around incoming damage.", nil, true },
-        { "enableConvokeTheSpirits","Convoke the Spirits",    NS.CONVOKE_THE_SPIRITS_ID,  "DRUID",
-            "Druid only.",
-            "Attempts the channel before SBA on each combat press.",
-            "May take that press instead of SBA; does not choose burst windows.",
-            "before", true },
-        { "enableShieldBlock",      "Shield Block",           NS.SHIELD_BLOCK_SPELL_ID,   "Protection:W",
-            "Protection Warrior only.",
-            "Attempts off-GCD blocking on each combat press.",
-            "Consumes Rage and charges when the client allows it.", nil, true },
-        { "enableIgnorePain",       "Ignore Pain",            NS.IGNORE_PAIN_SPELL_ID,    "Protection:W",
-            "Protection Warrior only.",
-            "Off-GCD Rage dump that applies an absorb shield.",
-            W .. "Off by default" .. R .. " \226\128\148 drains Rage quickly.", nil, true },
-        { "enableIronfur",          "Ironfur",                NS.IRONFUR_SPELL_ID,        "Guardian",
-            "Guardian Druid only.",
-            "Attempts off-GCD stacking armor before SBA.",
-            "Spends available Rage without choosing an armor target.",
-            "before", true },
-        { "enableShieldOfRighteous","Shield of the Righteous",NS.SHIELD_OF_RIGHTEOUS_ID,  "Protection:Pa",
-            "Protection Paladin only.",
-            "Attempts off-GCD mitigation; spends Holy Power.",
-            W .. "Competes with Word of Glory for HP." .. R, nil, true },
-        { "enableRuneTap",          "Rune Tap",               NS.RUNE_TAP_SPELL_ID,       "Blood",
-            "Blood Death Knight only.",
-            "Attempts off-GCD damage reduction on each combat press.",
-            W .. "Off by default" .. R .. " - spends runes without timing incoming damage.", nil, true },
-        { "enablePurifyingBrew",    "Purifying Brew",         NS.PURIFYING_BREW_SPELL_ID, "Brewmaster",
-            "Brewmaster Monk only.",
-            "Attempts off-GCD purification on each combat press.",
-            W .. "Off by default" .. R .. " - does not wait for high Stagger.", nil, true },
-    }
-
-    local function IsCombatAssistAbilityVisible(info)
-        local gate = info[4]
-        if gate == "DRUID" then
-            return NS.IsClass("DRUID")
-        end
-        return NS.IsSpec(gate)
-    end
-
+    local activeAbilities, classKeys = GetActiveCombatAssistAbilities()
     local function IsCombatAssistAbilityAvailable(info)
         return NS.IsCombatAssistSpellKnown(info[3])
-    end
-
-    -- Collect which abilities apply to this character's current spec
-    local activeAbilities = {}
-    for _, info in NS.ipairs(CLASS_ABILITIES) do
-        if IsCombatAssistAbilityVisible(info) then
-            activeAbilities[#activeAbilities + 1] = info
-        end
     end
 
     local classToggles = {}
@@ -1173,10 +1369,8 @@ function NS.Config:Create()
         end
         y = y - 18
 
-        local classKeys = {}
         for _, info in NS.ipairs(activeAbilities) do
             local dbKey, label, _, _, specNote, desc1, desc2, castOrder = NS.unpack(info)
-            classKeys[#classKeys + 1] = dbKey
             local toggle = NS.CreateToggle(c, label, dbKey, y, function() NS.RebuildMacroText() end)
             local available = IsCombatAssistAbilityAvailable(info)
             toggle:SetEnabledState(available)
@@ -1215,7 +1409,7 @@ function NS.Config:Create()
     end
 
     local trinketHdr = CreateSubHeader(c, "TRINKETS", y)
-    CreateDefaultBtn(c, trinketHdr, {"trinketMode"})
+    CreateDefaultBtn(c, trinketHdr, CONFIG_RESET_GROUPS["Trinket Mode"])
     y = y - 18
     local trinketModeRow = NS.CreateOptionsDropdown(c, "Trinket Use", "trinketMode", {"Off", "Approved"}, y, function()
         if NS.RefreshTrinkets then NS.RefreshTrinkets() end
@@ -1334,7 +1528,7 @@ function NS.Config:Create()
     -- Sub-header: INTERCEPTION TYPE
     do
         local intHdr = CreateSubHeader(c, "INTERCEPTION TYPE", y)
-        CreateDefaultBtn(c, intHdr, {"interceptionType"})
+        CreateDefaultBtn(c, intHdr, CONFIG_RESET_GROUPS["Input Method"])
     end
     y = y - 18
 
@@ -1566,9 +1760,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local motionHdr = CreateSubHeader(c, "MOTION FEEDBACK", y)
-    CreateDefaultBtn(c, motionHdr, {
-        "castFeedback", "motionPreset", "motionDuration", "motionIntensity", "motionReduced",
-    })
+    CreateDefaultBtn(c, motionHdr, CONFIG_RESET_GROUPS["Motion Feedback"])
     y = y - 18
 
     local motionDropW = contentW - 28 - 80 - 6
@@ -1648,7 +1840,7 @@ function NS.Config:Create()
 
     if NS.db.castFeedback == "Classic" then
     local classicHdr = CreateSubHeader(c, "CLASSIC ANIMATION", y)
-    CreateDefaultBtn(c, classicHdr, {"castAnimation", "animateIncoming", "animHideButton", "cfgAnimTransitions", "gcdDuration"})
+    CreateDefaultBtn(c, classicHdr, CONFIG_RESET_GROUPS["Classic Animation"])
     y = y - 18
 
     local ScheduleParticleRebuild
@@ -1763,16 +1955,7 @@ function NS.Config:Create()
         line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = line
-        local pKeys = {}
-        for _, a in NS.ipairs(NS.CAST_ANIMATIONS) do
-            if a ~= "NONE" then
-                local k = NS.AnimKeyPrefix(a)
-                pKeys[#pKeys + 1] = k .. "Particles"
-                pKeys[#pKeys + 1] = k .. "ParticleTiming"
-                pKeys[#pKeys + 1] = k .. "ParticleStyle"
-                pKeys[#pKeys + 1] = k .. "ParticlePalette"
-            end
-        end
+        local pKeys = NS.GetConfigResetKeys("Particles")
         CreateDefaultBtn(c, hdr, pKeys)
     end
     y = y - 18
@@ -2022,15 +2205,7 @@ function NS.Config:Create()
         line:SetPoint("TOPLEFT", hdr, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = line
-        CreateDefaultBtn(c, hdr, {
-            "fontFace", "fontOutline",
-            "configPanelFont", "configPanelOutline", "configPanelFontOverride",
-            "keybindFont", "keybindOutline", "keybindFontOverride", "keybindFontSize",
-            "priorityKeybindFont", "priorityKeybindOutline", "priorityKeybindFontOverride", "priorityKeybindFontSize",
-            "priorityLabelFont", "priorityLabelOutline", "priorityLabelFontOverride", "priorityLabelFontSize",
-            "pauseSymbolFont", "pauseSymbolOutline", "pauseSymbolFontOverride", "pauseSymbolFontSize",
-            "pauseReasonFont", "pauseReasonOutline", "pauseReasonFontOverride", "pauseReasonFontSize",
-        })
+        CreateDefaultBtn(c, hdr, CONFIG_RESET_GROUPS["Fonts"])
     end
     y = y - 18
 
@@ -2282,7 +2457,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local styleHdr = CreateSubHeader(c, "BUTTON STYLE", y)
-    CreateDefaultBtn(c, styleHdr, {"buttonStyle"})
+    CreateDefaultBtn(c, styleHdr, CONFIG_RESET_GROUPS["Button Style"])
     y = y - 18
     local styleRow = NS.CreateOptionsDropdown(c, "Button Style", "buttonStyle", {"Soft", "Classic"}, y, function()
         NS.ApplyButtonSettings()
@@ -2294,11 +2469,7 @@ function NS.Config:Create()
     y = y - 46
 
     local btnHdr = CreateSubHeader(c, "BUTTON LAYOUT", y)
-    CreateDefaultBtn(c, btnHdr, {
-        "buttonSize", "scale", "showKeybind", "showCooldown", "manualCooldownReminders", "rangeColoring",
-        "outOfRangeSound", "spellUsability", "keybindFontSize",
-        "keybindOffsetX", "keybindOffsetY", "keybindAnchor",
-    })
+    CreateDefaultBtn(c, btnHdr, CONFIG_RESET_GROUPS["Button Layout"])
     y = y - 18
     local halfW3 = math.floor((contentW - 28 - 6) / 2)
     local btnSzRow = NS.CreateSlider(c, "Button Size", "buttonSize", 24, 80, 1, y, function()
@@ -2422,11 +2593,7 @@ function NS.Config:Create()
     end
 
     local cloneHdr = CreateSubHeader(c, "ACTIVE ANIMATION CLONE", y)
-    CreateDefaultBtn(c, cloneHdr, {
-        "animCloneMasque", "animCloneReapplyKey", "animCloneKeybindOffsetX",
-        "animCloneKeybindOffsetY", "animCloneKeybindFont",
-        "animCloneKeybindOutline", "animCloneKeybindFontSize",
-    })
+    CreateDefaultBtn(c, cloneHdr, CONFIG_RESET_GROUPS["Animated Clone"])
     y = y - 18
 
     local animMasque = NS.CreateToggle(c, "Masque Skin Animated Clone", "animCloneMasque", y, function()
@@ -2521,13 +2688,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local pdHdr = CreateSubHeader(c, "DISPLAY OPTIONS", y)
-    CreateDefaultBtn(c, pdHdr, {
-        "showPriority", "priorityIconSize", "prioritySpacing", "priorityPosition",
-        "showPriorityKeybinds", "priorityKeybindFontSize", "priorityKeybindOffsetX",
-        "priorityKeybindOffsetY", "priorityKeybindAnchor", "showActiveGlow",
-        "priorityAlphaOOC", "priorityScale", "priorityDetached", "priorityLocked",
-        "priorityBindFrame", "priorityMyPoint", "priorityTheirPoint",
-    })
+    CreateDefaultBtn(c, pdHdr, CONFIG_RESET_GROUPS["Next Spells"])
     y = y - 18
     local halfW = math.floor((contentW - 28 - 6) / 2)
 
@@ -2820,7 +2981,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local visHdr = CreateSubHeader(c, "COMBAT STATE", y)
-    CreateDefaultBtn(c, visHdr, {"onlyInCombat", "alphaCombat", "alphaOOC", "hideInVehicle"})
+    CreateDefaultBtn(c, visHdr, CONFIG_RESET_GROUPS["Visibility"])
     y = y - 18
     local coRow = NS.CreateToggle(c, "Combat Only", "onlyInCombat", y, function() NS.UpdateNow() end)
     NS.AddTooltip(coRow, "Combat Only", {
@@ -2869,10 +3030,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local impHdr = CreateSubHeader(c, "PRIORITY IMPORTANCE COLORS", y)
-    CreateDefaultBtn(c, impHdr, {
-        "importanceBorders", "importColorAutoAttack", "importColorFiller",
-        "importColorShortCD", "importColorLongCD", "importColorMajorCD",
-    })
+    CreateDefaultBtn(c, impHdr, CONFIG_RESET_GROUPS["Importance Colors"])
     y = y - 18
     local ibRow = NS.CreateToggle(c, "Importance Borders", "importanceBorders", y, function() NS.UpdateNow() end)
     NS.AddTooltip(ibRow, "Importance Borders", {
@@ -2928,11 +3086,7 @@ function NS.Config:Create()
         line:SetPoint("TOPLEFT", secHeader, "BOTTOMLEFT", 0, -3)
         line:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = line
-        CreateDefaultBtn(c, secHeader, {
-            "sectionColorCombat", "sectionColorAppearance", "sectionColorActive", "sectionColorPriority",
-            "sectionColorTalentBuilds", "sectionColorVisibility", "sectionColorImportance",
-            "sectionColorAdvanced", "sectionColorProfiles",
-        })
+        CreateDefaultBtn(c, secHeader, CONFIG_RESET_GROUPS["Section Colors"])
     end
     y = y - 18
 
@@ -2997,7 +3151,7 @@ function NS.Config:Create()
     do
     local c, y = c, y -- Keep callbacks bound to this section.
     local genHdr = CreateSubHeader(c, "GENERAL", y)
-    CreateDefaultBtn(c, genHdr, {"modifierScaling", "locked"})
+    CreateDefaultBtn(c, genHdr, CONFIG_RESET_GROUPS["Moving The Button"])
     y = y - 18
     local modScaleRow = NS.CreateToggle(c, "Modifier Scaling", "modifierScaling", y)
     NS.AddTooltip(modScaleRow, "Modifier Scaling", {
@@ -3034,7 +3188,7 @@ function NS.Config:Create()
         dbgLine:SetPoint("TOPLEFT", dbgHdr, "BOTTOMLEFT", 0, -3)
         dbgLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = dbgLine
-        CreateDefaultBtn(c, dbgHdr, {"debug", "debugSpellUpdates", "debugAnimClone", "debugOther"})
+        CreateDefaultBtn(c, dbgHdr, CONFIG_RESET_GROUPS["Debug Messages"])
     end
     y = y - 18
 
@@ -3131,7 +3285,7 @@ function NS.Config:Create()
         themeLine:SetPoint("TOPLEFT", themeHdr, "BOTTOMLEFT", 0, -3)
         themeLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = themeLine
-        CreateDefaultBtn(c, themeHdr, {"themePreset"})
+        CreateDefaultBtn(c, themeHdr, CONFIG_RESET_GROUPS["Color Theme"])
     end
     y = y - 18
 
@@ -3170,7 +3324,7 @@ function NS.Config:Create()
         ldbLine:SetPoint("TOPLEFT", ldbHeader, "BOTTOMLEFT", 0, -3)
         ldbLine:SetPoint("RIGHT", c, "RIGHT", -14, 0)
         subHeaderLines[#subHeaderLines + 1] = ldbLine
-        CreateDefaultBtn(c, ldbHeader, {"showMinimapButton", "ldbShowText", "minimapIconSize", "minimapIconOffsetX", "minimapIconOffsetY"})
+        CreateDefaultBtn(c, ldbHeader, CONFIG_RESET_GROUPS["Minimap"])
     end
     y = y - 18
 
@@ -3344,116 +3498,8 @@ function NS.Config:Create()
     -- Diagnostic report popup (reused, created on first click)
     local diagPopup = nil
 
-    local function BuildDiagReport()
-        UpdateAddOnMemoryUsage(ADDON_NAME)
-        local memKB = GetAddOnMemoryUsage(ADDON_NAME)
-        local memStr = memKB >= 1024
-            and string.format("%.2f MB", memKB / 1024)
-            or string.format("%.0f KB", memKB)
-
-        local rate = NS.db.updateRate or 0.1
-        local elapsed = GetTime() - (NS._loadTime or GetTime())
-        local mins = math.floor(elapsed / 60)
-        local secs = math.floor(elapsed % 60)
-        local uptimeStr = mins >= 60
-            and string.format("%dh %dm %ds", math.floor(mins / 60), mins % 60, secs)
-            or string.format("%dm %ds", mins, secs)
-
-        local frameCount = 0
-        if NS.mainButton then frameCount = frameCount + 1 end
-        if NS.secureButton then frameCount = frameCount + 1 end
-        if NS._priorityIcons then frameCount = frameCount + #NS._priorityIcons end
-        if NS.Config and NS.Config.frame then frameCount = frameCount + 1 end
-
-        local keys = NS._overrideKeys
-        local keybindStr = "Inactive"
-        if keys and #keys > 0 then
-            keybindStr = "Intercepting [KEYBIND: " .. table.concat(keys, ", ") .. "]"
-            if NS._overrideSlot then
-                local bar = math.floor((NS._overrideSlot - 1) / 12) + 1
-                local btn = ((NS._overrideSlot - 1) % 12) + 1
-                keybindStr = keybindStr .. " [ACTION BAR: " .. bar .. "] [ACTION BAR SLOT: " .. btn .. "]"
-            end
-        else
-            local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
-            if reason then keybindStr = "Paused: " .. reason end
-        end
-
-        local profName = NS.GetActiveProfileName and NS:GetActiveProfileName() or "Default"
-
-        local name, realm = UnitFullName("player")
-        local charKey = (name or "?") .. " - " .. (realm or GetRealmName() or "?")
-        local _, class = UnitClass("player")
-        local spec = GetSpecialization and GetSpecialization() or 0
-        local specName = spec > 0 and (select(2, GetSpecializationInfo(spec)) or "?") or "?"
-        local level = UnitLevel("player") or "?"
-
-        local sbaAvail = "No"
-        if NS.C_AssistedCombat and NS.C_AssistedCombat.IsAvailable then
-            local ok, avail = pcall(NS.C_AssistedCombat.IsAvailable)
-            if ok then sbaAvail = avail and "Yes" or "No" end
-        end
-
-        local gcCount = collectgarbage("count")
-        local gcStr = string.format("%.2f MB", gcCount / 1024)
-
-        -- Cache diagnostics
-        local cacheDiag = NS.GetCacheDiagnostics and NS.GetCacheDiagnostics() or {}
-        local cdEntries = cacheDiag.cooldownEntries or 0
-        local texEntries = cacheDiag.textureEntries or 0
-        local resEntries = cacheDiag.resolveEntries or 0
-        local cdDirty = cacheDiag.cooldownDirty and "Yes" or "No"
-
-        local lines = {
-            "=== BetterSBA Diagnostic Report ===",
-            "Version: " .. (NS.VERSION or "?"),
-            "Date: " .. date("%Y-%m-%d %H:%M:%S"),
-            "",
-            "--- Character ---",
-            "Character: " .. charKey,
-            "Class: " .. (class or "?") .. " (" .. specName .. ")",
-            "Level: " .. level,
-            "Profile: " .. profName,
-            "",
-            "--- Performance ---",
-            "Addon Memory: " .. memStr,
-            "Lua GC Total: " .. gcStr,
-            "Update Rate: " .. string.format("%.0f ms (%.0f Hz)", rate * 1000, 1 / rate),
-            "Managed Frames: " .. frameCount,
-            "Session Uptime: " .. uptimeStr,
-            "",
-            "--- Cache ---",
-            "GC Policy: Native (no forced collection)",
-            "Cooldown Cache: " .. cdEntries .. " entries (dirty: " .. cdDirty .. ")",
-            "Texture Cache: " .. texEntries .. " entries",
-            "Resolve Cache: " .. resEntries .. " entries",
-            "",
-            "--- Keybind ---",
-            "Override Status: " .. keybindStr,
-            "SBA Available: " .. sbaAvail,
-            "",
-            "--- Settings ---",
-            "Enabled: " .. tostring(NS.db.enabled),
-            "Locked: " .. tostring(NS.db.locked),
-            "Show Priority: " .. tostring(NS.db.showPriority),
-            "Button Size: " .. tostring(NS.db.buttonSize),
-            "Scale: " .. tostring(NS.db.scale),
-            "Combat Only: " .. tostring(NS.db.onlyInCombat),
-            "Targeting: " .. tostring(NS.db.enableTargeting),
-            "Pet Attack: " .. tostring(NS.db.enablePetAttack),
-            "Channel Protect: " .. tostring(NS.db.enableChannelProtection),
-            "",
-            "--- Client ---",
-            "Interface: " .. (select(4, GetBuildInfo()) or "?"),
-            "Build: " .. (select(1, GetBuildInfo()) or "?"),
-            "Locale: " .. (GetLocale() or "?"),
-            "================================",
-        }
-        return table.concat(lines, "\n")
-    end
-
     local function ShowDiagPopup()
-        local report = BuildDiagReport()
+        local report = NS.BuildConfigDiagnosticReport(true)
 
         if not diagPopup then
             local p = NS.CreateFrame("Frame", "BetterSBA_DiagPopup", f, "BackdropTemplate")

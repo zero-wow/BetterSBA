@@ -52,6 +52,9 @@ GUI\StudioComicLettering.lua
 GUI\StudioComic.lua
 GUI\StudioSettings.lua
 GUI\ConfigSimple.lua
+GUI\FocusSettings.lua
+GUI\FocusTalentLibrary.lua
+GUI\FocusTools.lua
 GUI\SBATalentSuggestions.lua
 GUI\TalentTreeButton.lua
 

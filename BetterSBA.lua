@@ -332,6 +332,8 @@ function NS:RegisterSlashCommands()
             end
         elseif msg == "new" then
             NS.SwitchSettingsPanel("studio")
+        elseif msg == "focus" or msg == "simple" then
+            NS.SwitchSettingsPanel("focus")
         elseif msg == "classic" then
             NS.SwitchSettingsPanel("classic")
         else

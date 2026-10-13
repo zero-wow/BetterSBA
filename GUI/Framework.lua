@@ -2098,6 +2098,33 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
 
     local W, H = 320, 420
     local f = NS.CreatePanel("BetterSBA_PaletteEditor", NS.UIParent, W, H)
+    local owner, profile = configPanel or NS.UIParent, NS.db
+    local closed = false
+    local activeColor
+    local function CloseColor(session)
+        session = session or activeColor
+        if activeColor == session then activeColor = nil end
+        if session and session.picker.cancelFunc == session.cancel then session.picker:Hide() end
+    end
+    local function ContextIsCurrent()
+        return NS.db == profile and owner:IsVisible()
+    end
+    local function CanEdit()
+        if not closed and f:IsVisible() and ContextIsCurrent() then return true end
+        f:Hide()
+        return false
+    end
+    owner._betterSBAPaletteEditor = f
+    if not owner._betterSBAPaletteHideHook then
+        owner._betterSBAPaletteHideHook = true
+        owner:HookScript("OnHide", function(parent)
+            if parent._betterSBAPaletteEditor then parent._betterSBAPaletteEditor:Hide() end
+        end)
+    end
+    local parentScale = NS.UIParent:GetEffectiveScale()
+    local scale = parentScale > 0 and owner:GetEffectiveScale() / parentScale or 1
+    f:SetScale(math.max(.01, math.min(scale, (NS.UIParent:GetWidth() - 32) / W,
+        (NS.UIParent:GetHeight() - 32) / H)))
     f:SetPoint("CENTER")
     f:SetFrameStrata("FULLSCREEN_DIALOG")
     f:SetFrameLevel(200)
@@ -2169,6 +2196,7 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
         end
     end
     favStar:SetScript("OnClick", function()
+        if not CanEdit() then return end
         if currentPaletteName == "" then return end
         NS:SetPaletteFavorite(currentPaletteName, not NS:IsPaletteFavorite(currentPaletteName))
         RefreshFavStar()
@@ -2325,33 +2353,52 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
 
             -- Click to open color picker
             sw:SetScript("OnClick", function()
-                if isBuiltin then return end
+                if not CanEdit() or isBuiltin or not ColorPickerFrame then return end
+                CloseColor()
+                local picker = ColorPickerFrame
+                local session = { picker = picker, opening = true }
+                activeColor = session
+                local colorTarget = currentPaletteName
                 local prevR, prevG, prevB = clr[1], clr[2], clr[3]
+                local function IsCurrent()
+                    if activeColor ~= session or picker.cancelFunc ~= session.cancel then return false end
+                    if not CanEdit() or currentPaletteName ~= colorTarget or not picker:IsShown() then
+                        CloseColor(session)
+                        return false
+                    end
+                    return true
+                end
                 local function Apply()
-                    local r, g, b = ColorPickerFrame:GetColorRGB()
+                    if session.opening or not IsCurrent() then return end
+                    local r, g, b = picker:GetColorRGB()
                     editColors[i] = { r, g, b }
                     RefreshSwatches()
                     RefreshPreview()
+                end
+                session.cancel = function()
+                    if IsCurrent() then
+                        editColors[i] = { prevR, prevG, prevB }
+                        RefreshSwatches()
+                        RefreshPreview()
+                    end
+                    CloseColor(session)
                 end
                 local info = {
                     r = prevR, g = prevG, b = prevB, opacity = 1,
                     hasOpacity = false,
                     swatchFunc = Apply,
-                    cancelFunc = function()
-                        editColors[i] = { prevR, prevG, prevB }
-                        RefreshSwatches()
-                        RefreshPreview()
-                    end,
+                    cancelFunc = session.cancel,
                 }
-                if ColorPickerFrame.SetupColorPickerAndShow then
-                    ColorPickerFrame:SetupColorPickerAndShow(info)
+                if picker.SetupColorPickerAndShow then
+                    picker:SetupColorPickerAndShow(info)
                 else
-                    ColorPickerFrame:SetColorRGB(prevR, prevG, prevB)
-                    ColorPickerFrame.hasOpacity = false
-                    ColorPickerFrame.func = Apply
-                    ColorPickerFrame.cancelFunc = info.cancelFunc
-                    ColorPickerFrame:Show()
+                    picker.hasOpacity = false
+                    picker.func = Apply
+                    picker.cancelFunc = info.cancelFunc
+                    picker:SetColorRGB(prevR, prevG, prevB)
+                    picker:Show()
                 end
+                session.opening = false
             end)
 
             -- Remove button
@@ -2404,6 +2451,7 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
     end
 
     local function LoadPalette(name)
+        CloseColor()
         currentPaletteName = name
         isBuiltin = NS:IsBuiltinPalette(name)
         listText:SetText(name .. (isBuiltin and " (built-in)" or ""))
@@ -2432,7 +2480,7 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
     end
 
     -- Palette list dropdown popup
-    local listDropdown = NS.CreateFrame("Frame", nil, NS.UIParent, "BackdropTemplate")
+    local listDropdown = NS.CreateFrame("Frame", nil, f, "BackdropTemplate")
     listDropdown:SetWidth(W - 20)
     listDropdown:SetBackdrop(BACKDROP_PANEL)
     listDropdown:SetBackdropColor(NS.unpack(T.BG_DARK))
@@ -2442,34 +2490,64 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
     listDropdown:SetPoint("TOPLEFT", listBtn, "BOTTOMLEFT", 0, -2)
     listDropdown:Hide()
     listDropdown:EnableMouse(true)
+    -- This picker edits a draft, so the settings dropdown (which writes NS.db
+    -- on selection) cannot be used here. Keep its scroll-frame pattern locally.
+    local ROW_H, MAX_ROWS = 20, 10
+    local listScroll = NS.CreateFrame("ScrollFrame", nil, listDropdown)
+    listScroll:SetPoint("TOPLEFT", 2, -2)
+    listScroll:SetSize(W - 24, ROW_H)
+    local listChild = NS.CreateFrame("Frame", nil, listScroll)
+    listChild:SetWidth(W - 24)
+    listScroll:SetScrollChild(listChild)
+    listScroll:EnableMouseWheel(true)
+    listScroll:SetScript("OnMouseWheel", function(self, delta)
+        local limit = math.max(0, listChild:GetHeight() - self:GetHeight())
+        self:SetVerticalScroll(math.max(0, math.min(limit, self:GetVerticalScroll() - delta * ROW_H * 3)))
+    end)
+    local scrollHint = listDropdown:CreateFontString(nil, "OVERLAY")
+    scrollHint:SetFont(NS.GetConfigFontPath(), 9, "")
+    scrollHint:SetPoint("BOTTOMLEFT", 6, 3)
+    scrollHint:SetPoint("RIGHT", -6, 0)
+    scrollHint:SetTextColor(NS.unpack(T.TEXT_DIM))
+    scrollHint:SetText("Scroll for more palettes")
+    local listEntries = {}
+    f._paletteListButton, f._paletteList = listBtn, listDropdown
+    listDropdown._scroll, listDropdown._child, listDropdown._entries = listScroll, listChild, listEntries
 
     listBtn:SetScript("OnClick", function()
+        if not CanEdit() then return end
         if listDropdown:IsShown() then
             listDropdown:Hide()
             return
         end
-        -- Rebuild entries
-        local children = { listDropdown:GetChildren() }
-        for _, child in NS.ipairs(children) do child:Hide() end
-
         local palettes = NS:GetPaletteList()
-        local ROW_H = 20
-        listDropdown:SetHeight(#palettes * ROW_H + 4)
+        local visibleHeight = math.max(ROW_H, math.min(#palettes, MAX_ROWS) * ROW_H)
+        local overflow = #palettes > MAX_ROWS
+        listChild:SetHeight(math.max(ROW_H, #palettes * ROW_H))
+        listScroll:SetHeight(visibleHeight)
+        listScroll:SetVerticalScroll(0)
+        listDropdown:SetHeight(visibleHeight + 4 + (overflow and 18 or 0))
+        scrollHint:SetShown(overflow)
 
         for i, name in NS.ipairs(palettes) do
-            local entry = NS.CreateFrame("Button", nil, listDropdown)
-            entry:SetHeight(ROW_H)
-            entry:SetPoint("TOPLEFT", 2, -(i-1) * ROW_H - 2)
-            entry:SetPoint("RIGHT", listDropdown, "RIGHT", -2, 0)
-
-            local hl = entry:CreateTexture(nil, "HIGHLIGHT")
-            hl:SetAllPoints()
-            hl:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.5)
-
-            local entryText = entry:CreateFontString(nil, "OVERLAY")
-            entryText:SetFont(NS.GetConfigFontPath(), 10, "")
-            entryText:SetPoint("LEFT", 8, 0)
-            entryText:SetJustifyH("LEFT")
+            local entry = listEntries[i]
+            if not entry then
+                entry = NS.CreateFrame("Button", nil, listChild)
+                entry:SetSize(W - 24, ROW_H)
+                entry:SetPoint("TOPLEFT", 0, -(i - 1) * ROW_H)
+                local hl = entry:CreateTexture(nil, "HIGHLIGHT")
+                hl:SetAllPoints()
+                hl:SetColorTexture(T.BG_HOVER[1], T.BG_HOVER[2], T.BG_HOVER[3], 0.5)
+                entry._text = entry:CreateFontString(nil, "OVERLAY")
+                entry._text:SetFont(NS.GetConfigFontPath(), 10, "")
+                entry._text:SetPoint("LEFT", 8, 0)
+                entry._text:SetWidth(W - 40)
+                entry._text:SetWordWrap(false)
+                entry._text:SetMaxLines(1)
+                entry._text:SetJustifyH("LEFT")
+                listEntries[i] = entry
+            end
+            local entryText = entry._text
             local displayName = name
             if NS:IsBuiltinPalette(name) then displayName = name .. " *" end
             entryText:SetText(displayName)
@@ -2480,10 +2558,13 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
             end
 
             entry:SetScript("OnClick", function()
+                if not CanEdit() then return end
                 LoadPalette(name)
                 listDropdown:Hide()
             end)
+            entry:Show()
         end
+        for i = #palettes + 1, #listEntries do listEntries[i]:Hide() end
         listDropdown:Show()
     end)
 
@@ -2494,6 +2575,7 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
     local btnSpacing = 70
 
     local saveBtn = CreateTextButton(f, "SAVE", function()
+        if not CanEdit() then return end
         if isBuiltin then return end
         local name = nameBox:GetText():trim()
         if name == "" then return end
@@ -2516,11 +2598,11 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
         NS.db[dbKey] = name
         currentPaletteName = name
         f:Hide()
-        if onClose then onClose() end
     end)
     saveBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 10, 10)
 
     local copyBtn = CreateTextButton(f, "COPY", function()
+        if not CanEdit() then return end
         local baseName = currentPaletteName
         local copyName = baseName .. " (Copy)"
         local n = 1
@@ -2538,6 +2620,7 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
     copyBtn:SetPoint("LEFT", saveBtn, "RIGHT", 10, 0)
 
     local deleteBtn = CreateTextButton(f, "DELETE", function()
+        if not CanEdit() then return end
         if isBuiltin then return end
         NS:DeletePalette(currentPaletteName)
         LoadPalette("Confetti")
@@ -2546,7 +2629,6 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
 
     local cancelBtn = CreateTextButton(f, "CANCEL", function()
         f:Hide()
-        if onClose then onClose() end
     end)
     cancelBtn:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 10)
 
@@ -2592,8 +2674,12 @@ function NS.ShowPaletteEditor(configPanel, dbKey, onClose, createMode)
 
     paletteEditorFrame = f
     f:HookScript("OnHide", function()
+        closed = true
+        CloseColor()
         listDropdown:Hide()
-        if onClose then onClose() end
-        paletteEditorFrame = nil
+        if owner._betterSBAPaletteEditor == f then owner._betterSBAPaletteEditor = nil end
+        if paletteEditorFrame == f then paletteEditorFrame = nil end
+        if ContextIsCurrent() and onClose then onClose() end
     end)
+    return f
 end

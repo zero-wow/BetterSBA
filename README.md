@@ -297,10 +297,32 @@ Those controls only affect the virtual animation clone. They do not change the s
 
 ## Focus Mode And Class Info
 
-Open **Overview → Focus Mode** for a separate, quiet settings window. Choose a
-talent build, turn **Automatic Points** on when wanted, and adjust the basic
-button controls. **Details** explains a stopped talent route; **Advanced
-Settings** returns to the full comic interface. Both views use the same settings.
+Type **`/bsba focus`** (or **`/bsba simple`**) to open the quiet settings window.
+**Overview → Focus Mode** also opens it. Middle-clicking the live button reopens
+the last chosen settings experience. **`/bsba new`** opens the comic interface;
+**`/bsba classic`** opens Classic.
+
+The home screen keeps build selection, Automatic Points and everyday button
+controls together. **Details** explains a stopped talent route. **All Settings**
+opens short topic menus, with at most five settings per page and **Find a Setting**
+to jump to a control. Both interfaces edit the same saved settings.
+
+Focus includes combat helpers and trinket approvals, button/queue placement,
+visibility, colors/fonts, motion and particle settings, profiles, key capture,
+palette editing, effect previews, group resets and an on-demand diagnostic report.
+The build library supports filtering, imports, editing/copying personal builds,
+source notes and explicit application. Choosing a leveling route while automatic
+spending is active asks first; resetting/rebuilding talents requires confirmation.
+**Advanced Settings** remains an optional exit to the comic interface.
+
+Local UI tests cover navigation, shared setting behavior, stale profile/dialog
+guards, draft preservation and fitting to a 480×320 viewport. These are mocked
+layout checks, not proof of WoW rendering or protected talent operations. Reload
+and check Focus in the game after maintenance before treating it as verified.
+
+Focus regression entry points: `tests/test_focus_settings.lua`,
+`tests/test_focus_talent_library.lua`, `tests/test_focus_tools.lua`,
+`tests/test_settings_presentation.lua` and `tests/test_config_simple.lua`.
 
 **Class Info** opens the available simulation comparisons without changing any
 talents or settings. Initial Windwalker results use public example gear with the
