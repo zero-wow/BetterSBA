@@ -366,8 +366,17 @@ local function BuildTalentPage(self)
     picker:SetFrameLevel(pickerOverlay:GetFrameLevel() + 1)
     picker:EnableMouse(true)
     if self.Comic then self.Comic.DecorateDialog(picker,230) end
-    local pickerTitle = Label(picker, "Choose a Build", 21, C.bright, 350, "TOPLEFT", picker, "TOPLEFT", 16, -12)
+    local pickerTitle = Label(picker, "Choose a Build", 21, C.bright, 270, "TOPLEFT", picker, "TOPLEFT", 16, -12)
     if self.Comic then self.Comic.StyleHeading(pickerTitle,21) end
+    view._suggestions = Action(picker, "Best Tested for SBA", 304, -11, 180, 22, function()
+        if NS.ShowSBATalentSuggestions then
+            NS.ShowSBATalentSuggestions(pickerOverlay, NS.GetTalentBuildCurrentSpecID(), function(entry)
+                pickerOverlay:Hide()
+                self.notice:SetText("Selected " .. entry.name .. ".")
+                self:Refresh()
+            end)
+        end
+    end, "quiet")
     Label(picker, "Builds for your current specialization", 10, C.dim, 400,
         "TOPLEFT", picker, "TOPLEFT", 16, -39)
     local pickerMessage = Label(picker, "", 10, C.accent, 460,

@@ -104,11 +104,21 @@ function NS.GetTalentClassInfoText(specID)
     text[#text + 1] = "SimC Default Rotation is its normal damage rotation. It is not GSE, GRIP-EMS, or a measurement of how a player performs."
     text[#text + 1] = "\nCustom Button Layouts - Not Tested"
     text[#text + 1] = "One-button and two-button macro layouts, GSE, and GRIP-EMS have not been modeled or compared."
+    text[#text + 1] = "Sequence click behavior has been checked separately: a failed cast can still move the sequence to its next step. Damage comparisons still need cooldown, channel and input timing models."
     text[#text + 1] = "\nTest Conditions"
     text[#text + 1] = "Level " .. data.level .. " with the public " .. data.profile .. " example gear; " .. data.fightStyle .. " fights, full raid buffs, and spell queue disabled."
     text[#text + 1] = data.iterations .. " requested iterations; " .. data.measuredSamples .. " measured samples per mode."
     text[#text + 1] = "SimulationCraft " .. data.engineVersion .. " (" .. data.engineRevision .. "); live build " .. data.patch .. "." .. data.clientBuild .. "; hotfix " .. data.hotfixDate .. "."
     text[#text + 1] = "Talents: the supplied September 10 Windwalker SBA Meta Target replaces the example profile's original talents. The exact export is stored with these results. Selecting another build does not update this comparison."
+    if NS.GetBestTestedSBABuild and NS.SBA_TALENT_SEARCH_DATA and NS.SBA_TALENT_SEARCH_DATA[specID] then
+        text[#text + 1] = "\nSeparate SBA Talent Search"
+        text[#text + 1] = "This search uses an altered example profile with Rune of Unleashed Fire omitted. Its DPS values are separate from the rotation comparisons above."
+        for _, targets in ipairs({ 1, 5 }) do
+            local suggestion = NS.GetBestTestedSBABuild(specID, targets)
+            text[#text + 1] = "\n" .. suggestion.details .. "\nStatus: " .. suggestion.reason
+        end
+        text[#text + 1] = "Open Choose a Build, then Best Tested for SBA, to review a choice. Viewing this evidence never selects a build."
+    end
     text[#text + 1] = "\nYour Choice"
     text[#text + 1] = "Class Info does not select this build or spend points. Choose a route and Auto-Spend separately."
     return table.concat(text, "\n")

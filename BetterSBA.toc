@@ -18,6 +18,7 @@ Core\Constants.lua
 Core\TalentBuildData.lua
 Core\TalentBuildProvenance.lua
 Core\TalentAnalysisData.lua
+Core\SBATalentSearchData.lua
 Core\LazyGripTalentBuildData.lua
 Core\TalentPriorityData.lua
 Core\ManualCooldownData.lua
@@ -51,6 +52,7 @@ GUI\StudioComicLettering.lua
 GUI\StudioComic.lua
 GUI\StudioSettings.lua
 GUI\ConfigSimple.lua
+GUI\SBATalentSuggestions.lua
 GUI\TalentTreeButton.lua
 
 # Main

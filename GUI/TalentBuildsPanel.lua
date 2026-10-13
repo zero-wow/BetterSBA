@@ -271,6 +271,20 @@ local function EnsureURLPopup(owner)
     return popup
 end
 
+local function ShowFittedInfoPopup(popup, owner)
+    -- Like dropdowns, this UIParent-owned dialog follows its owner's effective
+    -- scale, then fits inside the current screen with room around its edges.
+    local uiScale = NS.UIParent:GetEffectiveScale()
+    local scale = uiScale and uiScale > 0 and owner:GetEffectiveScale() / uiScale or 1
+    local width, height = NS.UIParent:GetWidth(), NS.UIParent:GetHeight()
+    if width and width > 32 then scale = math.min(scale, (width - 32) / popup:GetWidth()) end
+    if height and height > 32 then scale = math.min(scale, (height - 32) / popup:GetHeight()) end
+    popup:SetScale(math.max(.01, scale))
+    popup:ClearAllPoints()
+    popup:SetPoint("CENTER", owner, "CENTER", 0, 0)
+    popup:Show()
+end
+
 local function ShowURLPopup(owner, row)
     if not row then return end
     local popup = EnsureURLPopup(owner)
@@ -286,6 +300,7 @@ local function ShowURLPopup(owner, row)
         or (row.verificationStatus == "guide-adapted" and "Guide-adapted: source-informed targeted choice")
         or (row.verificationStatus == "guide-inferred" and "Guide discusses SBA for this spec; exact import is unverified")
         or (row.verificationStatus == "user-provided" and "User-provided import: SBA suitability is not independently verified")
+        or (row.verificationStatus == "simulation-tested" and "Example-gear SBA simulation: live talent legality remains unverified")
         or (row.verificationStatus == "legacy-unverified" and "Legacy entry: SBA suitability unverified")
         or "SBA suitability unverified"
     local priorityNote = row.verificationStatus == "user-provided"
@@ -304,9 +319,7 @@ local function ShowURLPopup(owner, row)
     popup._hint:SetText(hasSourceURL and "Ctrl+C copies the page URL for manual review."
         or "This build has no source URL; review its provenance and compatibility notes below.")
     popup._editBox:SetCursorPosition(0)
-    popup:ClearAllPoints()
-    popup:SetPoint("CENTER", owner, "CENTER", 0, 0)
-    popup:Show()
+    ShowFittedInfoPopup(popup, owner)
     if hasSourceURL then
         popup._editBox:SetFocus()
         popup._editBox:HighlightText()
@@ -330,9 +343,7 @@ function NS.ShowTalentClassInfo(owner, specID)
         or "Not Tested\nNo comparison results are available for this specialization yet.")
     popup._sourceContent:SetHeight(math.max(224, popup._provenance:GetStringHeight() + 6))
     popup._sourceScroll:SetVerticalScroll(0)
-    popup:ClearAllPoints()
-    popup:SetPoint("CENTER", owner, "CENTER", 0, 0)
-    popup:Show()
+    ShowFittedInfoPopup(popup, owner)
 end
 
 local function SetFittedText(label, value)

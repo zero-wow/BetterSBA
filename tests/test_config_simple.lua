@@ -68,6 +68,11 @@ assert(simple.views.main:IsShown() and not simple.views.details:IsShown(),
     "technical/source detail must stay hidden on entry")
 click(simple.auto)
 assert(simple.view == "picker" and not info.enabled, "automatic points without a build must open the picker")
+local suggestedOwner, suggestedSpec
+NS.ShowSBATalentSuggestions = function(owner, specID) suggestedOwner, suggestedSpec = owner, specID end
+click(simple.suggestions)
+assert(suggestedOwner == simple.views.picker and suggestedSpec == 269 and not selectedID,
+    "Focus suggestions must open a preview without changing the selected route")
 assert(simple.pickerRows[1]._label:GetText():find("Outdated", 1, true),
     "old builds must remain identifiable before selection")
 click(simple.nextPage)
@@ -162,7 +167,7 @@ for _, state in ipairs({ {hasMismatch=true}, {hasPoints=true}, {settled=false}, 
 end
 for _, button in ipairs({ simple.close, simple.choose, simple.auto, simple.spend, simple.detailsButton,
     simple.classInfo, simple.advanced, simple.previous, simple.nextPage, simple.pickerBack,
-    simple.detailsBack, simple.talentOptions }) do
+    simple.detailsBack, simple.talentOptions, simple.suggestions }) do
     inside(button, simple.frame, "focus action")
     assert(button._label:GetStringWidth() <= button._label:GetWidth(), "action labels must fit")
 end

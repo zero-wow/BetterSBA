@@ -240,6 +240,11 @@ assert(talents._picker:IsShown() and talents._pickerRows[1]:IsShown(),
     "changing the build must expose current-spec targets")
 assert(talents._pickerCard:GetHeight() == 185,
     "the build picker must not reserve four empty rows for a single build")
+local suggestedOwner, suggestedSpec
+NS.ShowSBATalentSuggestions = function(owner, specID) suggestedOwner, suggestedSpec = owner, specID end
+talents._suggestions:GetScript("OnClick")(talents._suggestions)
+assert(suggestedOwner == talents._picker and suggestedSpec == 250 and not info.buildID,
+    "Studio suggestions must open a preview without changing the selected route")
 talents._pickerRows[1]:GetScript("OnClick")(talents._pickerRows[1])
 assert(info.buildID == "one" and not talents._picker:IsShown(),
     "choosing a build must save its leveling target")
@@ -399,6 +404,9 @@ for _, size in ipairs({ {900, 600}, {1120, 620}, {1300, 900} }) do
     inside(talents._browse, studio.content, "build library")
     inside(talents._spend, talents._route, "spend button")
     inside(talents._pickerCard, studio.content, "build picker dialog")
+    inside(talents._suggestions, talents._pickerCard, "optional SBA suggestions")
+    assert(talents._suggestions._label:GetStringWidth() <= talents._suggestions._label:GetWidth(),
+        "the SBA suggestions launcher must keep its full label")
     studio:OpenStudioChoices("Cast Animation", {"Drift", "Pulse"}, "Pulse", function() end)
     inside(studio._choicePopup.card, studio.content, "choice dialog")
     studio._choicePopup.overlay:Hide()

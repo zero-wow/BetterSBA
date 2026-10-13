@@ -325,6 +325,74 @@ private profiles and raw reports must never be committed. The runner limits CPU
 threads and per-mode wall time, records input hashes and model-warning counts,
 and rejects unsupported profile directives. It does not find a global optimum.
 
+## Best Tested For SBA — Initial Windwalker Search
+
+Open **Choose a Build → Best Tested for SBA** in Studio or Focus Mode. Choose
+**One Target** or **Five Targets**, review the result, then explicitly choose
+that build. Opening this view changes nothing. Automatic Points stays in its
+existing state; when it is On, the preview warns that choosing another route
+can spend points or rebuild immediately. Ties require selecting a row. Stale,
+missing, edited, or single-candidate evidence cannot choose a winner.
+
+The initial search compares two distinct Windwalker targets on live data
+12.1.0.69933, SimC af05b9e, 2,000 requested iterations (1,999 measured samples),
+180 seconds, full raid buffs, no spell queue. It retains the September 10 target's
+complete class and hero allocation and copies the complete specialization plan
+from the pinned public MID2 profile to create one new candidate. The LazyGrip
+specialization plan was identical to the original and was deduplicated.
+
+The public example Omnium configuration omits **Rune of Unleashed Fire**. This
+eliminated its logged model warning but changes the profile; do not compare these
+numbers directly with the earlier unaltered-profile rotation comparisons.
+
+| Scenario | Original target | Adapted spec target | Leading tested candidate |
+|---|---:|---:|---|
+| One target | 155,678 ± 334 | 167,804 ± 371 | Adapted specialization plan |
+| Five targets | 377,565 ± 583 | 365,005 ± 765 | Original target |
+
+Intervals are simultaneous 95% confidence intervals for mean simulated DPS
+(Bonferroni normal intervals), not individual-fight ranges. These are fixed
+example-gear estimates, not personalized DPS or an exhaustive optimum. Different
+gear/encounters can change the ranking. Specialization utility can differ even
+when class and hero allocations are retained.
+
+**Legality remains a separate check.** SimC accepted an impossible all-talents
+profileset during the proof. The decoder/graft checks the pinned serialization,
+identities, ranks, unchanged non-spec bits and equal paid spec-rank totals; its
+source table lacks prerequisite edges/currency conditions. New hybrids still
+need live validation. Final selection rechecks the catalog export and current
+client; existing talent spending uses Blizzard's purchase/commit checks.
+
+Development: `scripts/sba_talent_candidates.py` exposes pinned Windwalker
+decode/roundtrip/spec-graft helpers; `scripts/run_sba_talent_search.py --help`
+compares explicit JSON candidates against a local example profile. Class/hero
+allocations, engine revision, decoder table hash, exact exports and live build
+must agree. Outputs remain outside this repository. The search never uploads
+profiles and never changes game settings. Other specs and exhaustive/legal-graph
+candidate generation remain unimplemented.
+
+## Macro Comparison Progress
+
+`scripts/sba_sequence_trace.py --help` implements a bounded, source-checked input
+trace for GSE 3.3.34 and GRIP-EMS 2.4.20. The compiler matched 108 combinations
+against installed source. Failed cast attempts still advance ordinary steps;
+provider reverse-priority ordering differs. Attempts and next indices are
+recorded separately, with explicit click edges and channel/freeze/pause guards.
+
+This is a trace model, **not a damage simulator**. It rejects unsupported resets,
+timers, macro conditionals, nested/custom/random programs, queues and other
+unmodeled behavior. Reports stay local and outside the addon, and the tool does
+not read SavedVariables or execute casts. Faithful GCD/resource/channel/queue
+integration is still required before showing estimated GSE/GRIP DPS or recommending
+one/two-button layouts. The default SimC APL is not such a model.
+
+A bounded native input-event prototype was prepared outside this repository.
+Its modified core file compiled, but the full experimental engine did not finish
+building within the time window, so no native trace runs or execution counts
+were measured. Source and logs are preserved locally. Queue behavior and actual
+channel interruption remain unsupported; conservative channel blocking is not
+proof of the game's behavior. No experimental build process remains active.
+
 ## Runtime Performance Review — October 12, 2026
 
 The review covered all 38 Lua files loaded by the TOC plus `Bindings.xml`:

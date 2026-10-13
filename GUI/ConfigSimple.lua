@@ -154,8 +154,17 @@ function Simple:Create()
         NS.ConfigStudio:SelectPage("Overview")
     end)
 
-    Label(picker, "Choose a Build", 0, 0, 420, 20)
-    Label(picker, "Builds for the specialization you are playing.", 0, -32, 600, 12, "muted")
+    Label(picker, "Choose a Build", 0, 0, 330, 20)
+    self.suggestions = Button(picker, "Best Tested for SBA", 400, 0, 200, function()
+        if NS.ShowSBATalentSuggestions then
+            NS.ShowSBATalentSuggestions(picker, NS.GetTalentBuildCurrentSpecID(), function(_, enabled)
+                self:SelectView("main")
+                self:Report(true, enabled and "Build selected. Automatic Points is still on."
+                    or "Build selected. Turn on Automatic Points when you are ready.")
+            end)
+        end
+    end)
+    Label(picker, "Builds for the specialization you are playing.", 0, -40, 600, 12, "muted")
     self.pickerRows = {}
     for index = 1, 4 do
         local row = Button(picker, "", 0, -66 - (index - 1) * 60, 600, function()
