@@ -167,42 +167,6 @@ function NS.RefreshLDBTooltipNextSpell()
 end
 
 ----------------------------------------------------------------
--- Intercept block reason (vehicle, mounted, skyriding, etc.)
-----------------------------------------------------------------
-function NS.GetInterceptBlockReason()
-    if UnitInVehicle and UnitInVehicle("player") then
-        return "Vehicle"
-    end
-    if HasVehicleActionBar and HasVehicleActionBar() then
-        return "Vehicle"
-    end
-    if HasOverrideActionBar and HasOverrideActionBar() then
-        return "Override Bar"
-    end
-    if IsPossessBarVisible and IsPossessBarVisible() then
-        return "Possess Bar"
-    end
-    if NS.IsSkyridingActive and NS.IsSkyridingActive() then
-        return "Skyriding"
-    end
-    if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then
-        return "Flight Form"
-    end
-    if HasBonusActionBar and HasBonusActionBar()
-        and not (NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()) then
-        if IsMounted and IsMounted() then
-            return "Skyriding"
-        end
-        return "Bonus Bar"
-    end
-    if IsMounted and IsMounted() and not (IsFlying and IsFlying())
-        and not (NS.db and NS.db.enableDismount) then
-        return "Mounted"
-    end
-    return nil
-end
-
-----------------------------------------------------------------
 -- Update LDB text based on intercept state
 ----------------------------------------------------------------
 -- Cached LDB text to avoid re-creating the same string every tick.
@@ -213,7 +177,8 @@ local ldbCachedClickSlot = nil -- last active click-intercept slot
 local ldbCachedReason = nil   -- last pause reason (nil, "Skyriding", etc.)
 local ldbCachedText = nil     -- last computed text
 
-function NS.UpdateLDBText()
+-- A false snapshot means "checked and unblocked"; nil asks for a fresh check.
+function NS.UpdateLDBText(reasonSnapshot)
     local dataObj = NS.ldbDataObj
     if not dataObj then return end
     if not NS.db.ldbShowText then
@@ -229,7 +194,9 @@ function NS.UpdateLDBText()
     local keys = NS._overrideKeys
     local slot = NS._overrideSlot
     local clickSlot = NS.GetClickInterceptSlot and NS.GetClickInterceptSlot()
-    local reason = NS.GetInterceptBlockReason()
+    local reason = reasonSnapshot
+    if reason == nil then reason = NS.GetInterceptBlockReason() end
+    if reason == false then reason = nil end
 
     -- Skip rebuild if inputs haven't changed (avoids string garbage)
     if keys == ldbCachedKeys and slot == ldbCachedSlot and clickSlot == ldbCachedClickSlot

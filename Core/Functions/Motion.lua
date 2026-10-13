@@ -295,8 +295,6 @@ local function OrbitUpdate(self, delta)
     local y = -math.cos(angle) * self._orbitRadius
     self.edge:ClearAllPoints()
     self.edge:SetPoint("CENTER", self, "CENTER", x, y)
-    self.orbitCore:ClearAllPoints()
-    self.orbitCore:SetPoint("CENTER", self, "CENTER", x, y)
 end
 
 local function RunOrbit(duration, intensity)
@@ -315,7 +313,9 @@ local function RunOrbit(duration, intensity)
     spark.edge:Show()
     spark.orbitCore:SetVertexColor(r, g, b, 1)
     spark.orbitCore:ClearAllPoints()
-    spark.orbitCore:SetPoint("CENTER", spark, "CENTER", 0, -motion.width / 2 + 3)
+    -- The core follows the glint through its anchor; only the glint needs
+    -- per-frame geometry changes while both retain the same smooth path.
+    spark.orbitCore:SetPoint("CENTER", spark.edge, "CENTER", 0, 0)
     spark.orbitCore:Show()
     ConfigureLayer(spark, duration, 0, 0.95 * intensity, 0, 1, 0, 0, "IN_OUT")
     PlayLayer(spark)

@@ -19,6 +19,13 @@ end
 -- does zero API calls, zero CleanNumber/tostring, zero closures.
 local sortKeys = {}  -- reusable: sortKeys[spellID] = { base, isNext }
 
+local function ComparePriority(a, b)
+    local ka, kb = sortKeys[a], sortKeys[b]
+    if ka.isNext ~= kb.isNext then return ka.isNext end
+    if ka.base ~= kb.base then return ka.base > kb.base end
+    return a < b
+end
+
 local function SortByPriority(spells, nextSpellID)
     -- Fill sort buffer (reuse table to avoid GC)
     for i = 1, #sortBuffer do sortBuffer[i] = nil end
@@ -35,16 +42,9 @@ local function SortByPriority(spells, nextSpellID)
         k.isNext = (sid == nextSpellID)
     end
 
-    table.sort(sortBuffer, function(a, b)
-        local ka, kb = sortKeys[a], sortKeys[b]
-        -- Next-cast spell always first
-        if ka.isNext ~= kb.isNext then return ka.isNext end
-        -- The remaining cooldown may be secret. Use stable base importance for
-        -- non-next entries instead of making a local readiness prediction.
-        if ka.base ~= kb.base then return ka.base > kb.base end
-        -- Tiebreaker: spell ID (prevents flickering from unstable sort)
-        return a < b
-    end)
+    -- Base importance and spell ID keep the non-next order stable, without
+    -- interpreting secret remaining cooldowns or allocating a comparator.
+    table.sort(sortBuffer, ComparePriority)
 
     return sortBuffer
 end
@@ -74,6 +74,35 @@ local function HideAllGlows()
         if icon then
             icon._wantGlow = false
         end
+    end
+end
+
+local function ShowSpellTooltip(self)
+    if self.spellID then
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetSpellByID(self.spellID)
+        GameTooltip:Show()
+    end
+end
+
+local function HideSpellTooltip()
+    GameTooltip:Hide()
+end
+
+local function PaintPriorityBorder(icon, r, g, b, a)
+    if icon.Border then
+        if r then
+            icon.Border:SetVertexColor(r, g, b, a)
+            icon.Border:Show()
+        else
+            icon.Border:Hide()
+        end
+    elseif icon.borderTex then
+        if not r then
+            local color = NS.db.priorityBorderColor
+            r, g, b, a = color[1], color[2], color[3], color[4]
+        end
+        icon.borderTex:SetColorTexture(r, g, b, a or 1)
     end
 end
 
@@ -203,6 +232,9 @@ function NS:CreatePriorityDisplay()
         icon.hotkey:SetTextColor(0.9, 0.9, 0.9, 1)
 
         icon.spellID = nil
+        icon:EnableMouse(true)
+        icon:SetScript("OnEnter", ShowSpellTooltip)
+        icon:SetScript("OnLeave", HideSpellTooltip)
         icon:Hide()
         priorityIcons[i] = icon
 
@@ -506,39 +538,17 @@ function NS.UpdatePriorityDisplay()
                 end
             end
 
-            if NS.db.importanceBorders then
-                -- Importance borders ON: use spell's importance color for ALL icons
-                local borderColor = NS.GetSpellBorderColor(spellID)
-                if borderColor then
-                    if icon.Border then
-                        icon.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-                        icon.Border:Show()
-                    elseif icon.borderTex then
-                        icon.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
-                    end
-                else
-                    if icon.Border then
-                        icon.Border:Hide()
-                    elseif icon.borderTex then
-                        local pbc = NS.db.priorityBorderColor
-                        icon.borderTex:SetColorTexture(pbc[1], pbc[2], pbc[3], pbc[4] or 1)
-                    end
-                end
-            elseif isNext then
-                -- Importance borders OFF + next-cast: use neon highlight
-                if icon.Border then
-                    icon.Border:SetVertexColor(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 1)
-                    icon.Border:Show()
-                elseif icon.borderTex then
-                    icon.borderTex:SetColorTexture(T.NEON_NEXT[1], T.NEON_NEXT[2], T.NEON_NEXT[3], 1)
-                end
+            -- Resolve the final color once. The active glow used to repaint
+            -- qualifying icons in a second loop after the base border pass.
+            if NS.db.showActiveGlow and icon._wantGlow then
+                PaintPriorityBorder(icon, icon._glowR, icon._glowG, icon._glowB, 1)
             else
-                -- Importance borders OFF + not next: default border
-                if icon.Border then
-                    icon.Border:Hide()
-                elseif icon.borderTex then
-                    local pbc = NS.db.priorityBorderColor
-                    icon.borderTex:SetColorTexture(pbc[1], pbc[2], pbc[3], pbc[4] or 1)
+                local color = NS.db.importanceBorders and NS.GetSpellBorderColor(spellID)
+                    or (not NS.db.importanceBorders and isNext and T.NEON_NEXT)
+                if color then
+                    PaintPriorityBorder(icon, color[1], color[2], color[3], color[4] or 1)
+                else
+                    PaintPriorityBorder(icon)
                 end
             end
 
@@ -569,41 +579,6 @@ function NS.UpdatePriorityDisplay()
                 NS.ClearButtonPressVisual(icon)
             end
             icon:Hide()
-        end
-    end
-
-    -- Active spell highlight: bright border color on qualifying icons (zero-alloc)
-    -- Uses the existing borderTex/Border — no Blizzard overlay glow frames needed
-    if NS.db.showActiveGlow then
-        for gi = 1, MAX_PRIORITY_ICONS do
-            local icon = priorityIcons[gi]
-            if icon._wantGlow then
-                if icon.Border then
-                    icon.Border:SetVertexColor(icon._glowR, icon._glowG, icon._glowB, 1)
-                    icon.Border:Show()
-                elseif icon.borderTex then
-                    icon.borderTex:SetColorTexture(icon._glowR, icon._glowG, icon._glowB, 1)
-                end
-            end
-        end
-    end
-
-    -- Tooltip on individual icons
-    for i = 1, MAX_PRIORITY_ICONS do
-        local icon = priorityIcons[i]
-        if not icon._tooltipHooked then
-            icon:EnableMouse(true)
-            icon:SetScript("OnEnter", function(self)
-                if self.spellID then
-                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetSpellByID(self.spellID)
-                    GameTooltip:Show()
-                end
-            end)
-            icon:SetScript("OnLeave", function()
-                GameTooltip:Hide()
-            end)
-            icon._tooltipHooked = true
         end
     end
 

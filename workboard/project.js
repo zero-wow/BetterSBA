@@ -6,9 +6,10 @@ window.WORKBOARD_PROJECT = {
   subtitle: "Retail Addon · Development Workboard",
   updated: "2026-10-12",
   defaultTheme: "alliance",
-  spotlight: "A11",
+  spotlight: "P11",
   repository: "https://github.com/zero-wow/BetterSBA",
   activity: [
+    { date: "Oct 12", id: "P11", text: "Audited every runtime Lua module. Removed repeated talent inspections and unchanged label writes, pooled particles without scans, shared duplicate helpers, and fixed stale cooldown entries and catalog sorting. Local call-count checks pass; actual in-game profiling remains." },
     { date: "Oct 12", id: "A11", text: "Added optional Focus Mode with a compact build picker, shared automatic points, and an Advanced Settings exit. Local UI checks pass; in-game review remains." },
     { date: "Oct 12", id: "A12", text: "Installed official SimulationCraft locally and ran Windwalker one/five-target comparisons. Class Info exposes provisional example-gear estimates. Sequence layouts are still Not Tested." },
     { date: "Oct 12", id: "A03", text: "Added June 23 Windwalker guide routes, preserved the September 10 route, and mapped post dates to verified regional patch releases. Author patch and publication era remain distinct." },
@@ -17,6 +18,7 @@ window.WORKBOARD_PROJECT = {
     { date: "Sep 25", id: "F01", text: "Removed doubled switch and heading text layers; regenerated comic lettering and checked header gutters locally. In-game check remains." }
   ],
   items: [
+    { id: "P11", lane: "Polish", title: "Whole-Addon Performance And Reuse", priority: "High", state: "Verify", summary: "Reduce duplicate work across the runtime while preserving smooth motion and current recommendations.", doneWhen: "The reviewed optimizations pass regression checks and real-client combat, animation and CPU-profile checks.", evidence: "All 38 TOC Lua files and Bindings.xml reviewed. Studio talent reads 80 to 20 across 20 refreshes; unchanged text writes 220 to 0. Talent event burst 100 to 1 refresh; priority border writes 1200 to 600. Mock counts only: no FPS claim. README records coverage and remaining live checks." },
     { id: "A01", lane: "Add", title: "Middle-Click Settings Access", priority: "High", state: "Verify", summary: "Open the saved configuration panel from the live button.", doneWhen: "Middle-click toggles settings and never runs the SBA macro or cast press visual.", evidence: "Implemented in GUI/MainButton.lua; startup mock passes. In-game check remains." },
     { id: "A02", lane: "Add", title: "Per-Spec Route Defaults", priority: "High", state: "Done", summary: "Remember a preferred SBA talent route for each specialization.", doneWhen: "Changing specs restores that spec's route without changing another spec's choice.", evidence: "Character-local state is keyed by spec in TalentLeveling.lua. The talent-leveling test switches from Arcane to Fire and back, confirming both routes remain independent." },
     { id: "A03", lane: "Add", title: "Talent Source Freshness Labels", priority: "High", state: "Verify", summary: "Distinguish source post date, declared patch, publication-era patch, and catalog review date.", doneWhen: "Older-patch builds show Outdated; unknown dates and release transitions remain honest.", evidence: "Regional release timeline and runtime client-patch comparison implemented. June guide routes are Outdated, September route preserves its ID. Provenance, catalog and popup mock tests pass; game check remains." },

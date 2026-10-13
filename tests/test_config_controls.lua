@@ -16,6 +16,7 @@ local NS = {
     GetConfigFontPath=function() return "Fonts\\FRIZQT__.TTF" end,
     GetConfigFontOutline=function() return "" end,
     C_Timer_After=function() end,
+    math_floor=math.floor,
 }
 
 assert(loadfile("GUI/Framework.lua"))("BetterSBA", NS)
@@ -95,4 +96,44 @@ local narrowOptions = NS.CreateOptionsDropdown(parent, "Narrow", "optionChoice",
 assert(narrowOptions:GetHeight() == 38 and narrowOptions.btn:GetWidth() == 240,
     "narrow paired OptionsDropdown controls must retain their stacked layout")
 
+local sliderChanges = 0
+NS.db.slider = 0
+local slider = NS.CreateSlider(parent, "Slider", "slider", 0, 100, 1, -130,
+    function() sliderChanges = sliderChanges + 1 end)
+local track
+for _, child in ipairs(slider._children) do
+    if child:GetScript("OnMouseDown") then track = child; break end
+end
+assert(track, "slider drag track missing")
+track:SetWidth(300)
+track.GetLeft = function() return 0 end
+track.GetEffectiveScale = function() return 1 end
+local cursorX = 150
+GetCursorPosition = function() return cursorX, 0 end
+track:GetScript("OnMouseDown")(track, "LeftButton")
+assert(NS.db.slider == 50, "drag start must apply the cursor value immediately")
+sliderChanges = 0
+for _ = 1, 60 do track:GetScript("OnUpdate")(track, 1/60) end
+print("Stationary slider x60: " .. sliderChanges .. " change callbacks")
+assert(sliderChanges == 0, "stationary dragging must not repeatedly apply the same setting")
+cursorX = 150.1
+track:GetScript("OnUpdate")(track, 1/60)
+assert(sliderChanges == 0, "sub-step pointer movement must not repeat the same setting")
+cursorX = 153
+track:GetScript("OnUpdate")(track, 1/60)
+assert(NS.db.slider == 51, "drag motion must keep full frame-rate responsiveness")
+track:SetWidth(600)
+cursorX = 306
+local beforeResize = sliderChanges
+track:GetScript("OnUpdate")(track, 1/60)
+assert(NS.db.slider == 51 and sliderChanges == beforeResize + 1,
+    "track resizing must refresh thumb geometry even when the rounded value stays the same")
+track:GetScript("OnMouseUp")(track)
+assert(not track:GetScript("OnUpdate"), "releasing the slider must stop its update script")
+track:GetScript("OnMouseDown")(track, "LeftButton")
+track:Hide()
+assert(not track:GetScript("OnUpdate"), "hiding the slider must stop its update script")
+local beforeRefresh = sliderChanges
+slider.Refresh()
+assert(sliderChanges == beforeRefresh + 1, "explicit refresh must preserve the caller's callback")
 print("config control regressions passed")

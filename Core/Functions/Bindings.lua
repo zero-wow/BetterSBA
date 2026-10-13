@@ -116,36 +116,44 @@ function NS.GetFormActionBarBaseSlot()
     return nil
 end
 
-function NS.IsInterceptBlocked()
+----------------------------------------------------------------
+-- Intercept block reason (vehicle, mounted, skyriding, etc.)
+----------------------------------------------------------------
+function NS.GetInterceptBlockReason()
     if UnitInVehicle and UnitInVehicle("player") then
-        return true
+        return "Vehicle"
     end
     if HasVehicleActionBar and HasVehicleActionBar() then
-        return true
+        return "Vehicle"
     end
     if HasOverrideActionBar and HasOverrideActionBar() then
-        return true
+        return "Override Bar"
     end
     if IsPossessBarVisible and IsPossessBarVisible() then
-        return true
+        return "Possess Bar"
     end
     if NS.IsSkyridingActive and NS.IsSkyridingActive() then
-        return true
+        return "Skyriding"
     end
     if NS.IsFlightTravelFormActive and NS.IsFlightTravelFormActive() then
-        return true
+        return "Flight Form"
     end
-    -- A normal ground mount can safely retain the SBA binding when the macro
-    -- is configured to dismount first. Skyriding and replacement bars still
-    -- use their own blocking checks.
+    if HasBonusActionBar and HasBonusActionBar()
+        and not (NS.GetFormActionBarBaseSlot and NS.GetFormActionBarBaseSlot()) then
+        if IsMounted and IsMounted() then
+            return "Skyriding"
+        end
+        return "Bonus Bar"
+    end
     if IsMounted and IsMounted() and not (IsFlying and IsFlying())
         and not (NS.db and NS.db.enableDismount) then
-        return true
+        return "Mounted"
     end
-    if HasBonusActionBar and HasBonusActionBar() and not NS.GetFormActionBarBaseSlot() then
-        return true
-    end
-    return false
+    return nil
+end
+
+function NS.IsInterceptBlocked()
+    return NS.GetInterceptBlockReason() ~= nil
 end
 
 local function IsSlotOnActiveFormBar(slot)
@@ -420,23 +428,7 @@ function NS.ScanKeybinds()
             end
         end
 
-    -- Dominos
-    elseif NS.C_AddOns.IsAddOnLoaded("Dominos") then
-        for i = 1, 180 do
-            local actionType, id = NS.GetActionInfo(i)
-            if actionType == "spell" and id and not keybindCache[id] then
-                local barIndex = NS.math_floor((i - 1) / 12)
-                local btnIndex = ((i - 1) % 12) + 1
-                if BINDING_BARS[barIndex + 1] then
-                    local key = NS.GetBindingKey(BINDING_BARS[barIndex + 1] .. btnIndex)
-                    if key then
-                        keybindCache[id] = NS.FormatKeybind(key)
-                    end
-                end
-            end
-        end
-
-    -- Default Blizzard bars
+    -- Dominos and default Blizzard bars share the same binding mapping.
     else
         for i = 1, 180 do
             local actionType, id = NS.GetActionInfo(i)
@@ -756,15 +748,7 @@ local function FindSBABarButton(slot)
     end
 
     if _G["ElvUI"] and _G["ElvUI_Bar1Button1"] then
-        for bar = 1, 15 do
-            for btn = 1, 12 do
-                local elvBtn = _G["ElvUI_Bar" .. bar .. "Button" .. btn]
-                if elvBtn and elvBtn._state_action == slot then
-                    return elvBtn
-                end
-            end
-        end
-        return nil
+        return FindElvUIButtonForSlot(slot)
     end
 
     local onFormBar, _, btnIndex = IsSlotOnActiveFormBar(slot)

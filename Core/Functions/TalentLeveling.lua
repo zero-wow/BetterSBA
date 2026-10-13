@@ -128,6 +128,14 @@ local function AssignGuidance(ordered, map, configID, guidance)
     end
 end
 
+local function NodeComesBefore(a, aID, b, bID)
+    local ay, by = a.posY or 0, b.posY or 0
+    if ay ~= by then return ay < by end
+    local ax, bx = a.posX or 0, b.posX or 0
+    if ax ~= bx then return ax < bx end
+    return aID < bID
+end
+
 -- Collapse tiered import rows into total paid ranks. Tiered nodes advance their
 -- entry automatically; SetSelection is exclusively for real choice nodes.
 local function Targets(entry, configID)
@@ -173,11 +181,7 @@ local function Targets(entry, configID)
         if pa ~= pb then return pa < pb end
         local sa, sb = a.score or 0, b.score or 0
         if sa ~= sb then return sa > sb end
-        local ay, by = a.node.posY or 0, b.node.posY or 0
-        if ay ~= by then return ay < by end
-        local ax, bx = a.node.posX or 0, b.node.posX or 0
-        if ax ~= bx then return ax < bx end
-        return a.nodeID < b.nodeID
+        return NodeComesBefore(a.node, a.nodeID, b.node, b.nodeID)
     end)
     return map, ordered, deferred
 end
@@ -274,9 +278,11 @@ local function Inspect(options)
     -- Missing future ranks are normal while leveling. Only allocations outside
     -- the selected target (including conflicting choices) are mismatches.
     for _, nodeID in ipairs(nodes) do
-        local node = C_Traits.GetNodeInfo(configID, nodeID)
+        local target = map[nodeID]
+        -- Targets read these nodes during this same inspection, with no talent
+        -- mutation in between. Never retain node snapshots across inspections.
+        local node = target and target.node or C_Traits.GetNodeInfo(configID, nodeID)
         if node and (node.ranksPurchased or 0) > 0 then
-            local target = map[nodeID]
             if not target or node.ranksPurchased > target.ranks or
                 (IsChoice(node, configID) and (not node.activeEntry or node.activeEntry.entryID ~= target.entries[1].entryID)) then
                 differences[#differences + 1] = tostring(nodeID) .. ":" .. tostring(node.ranksPurchased)
@@ -325,12 +331,15 @@ local function Inspect(options)
             if Enum.TraitNodeType.Tiered and node.type == Enum.TraitNodeType.Tiered and node.nextEntry then
                 entryID = node.nextEntry.entryID
             end
-            local name = NodeName(configID, target.nodeID, entryID)
-            if info.nextName == "—" then info.nextName = name end
+            local name
+            if info.nextName == "—" then
+                name = NodeName(configID, target.nodeID, entryID)
+                info.nextName = name
+            end
             if hasPoints and node.canPurchaseRank and node.isAvailable ~= false
                 and C_Traits.CanPurchaseRank(configID, target.nodeID, entryID)
                 and CanAfford(configID, target.nodeID, currencies) then
-                info.nextName, info.canSpend = name, true
+                info.nextName, info.canSpend = name or NodeName(configID, target.nodeID, entryID), true
                 info.pick = { nodeID = target.nodeID, entryID = entryID, before = node.ranksPurchased,
                     choice = IsChoice(node, configID, entryID) }
                 info.status = info.enabled and "An available point is ready to spend automatically."
@@ -980,7 +989,7 @@ function NS.RequestTalentSBAUndo()
             for _, currency in ipairs(C_Traits.GetTreeCurrencyInfo(request.configID, request.treeID, false) or {}) do
                 currencies[currency.traitCurrencyID] = currency.quantity or 0
             end
-            local candidates = {}
+            local pick
             for nodeID, desired in pairs(request.expected) do
                 local node = C_Traits.GetNodeInfo(request.configID, nodeID)
                 assert(desired.ranks == 0 or (node and type(node.ranksPurchased) == "number"),
@@ -994,20 +1003,13 @@ function NS.RequestTalentSBAUndo()
                     if entryID and node.canPurchaseRank and node.isAvailable ~= false
                         and C_Traits.CanPurchaseRank(request.configID, nodeID, entryID)
                         and CanAfford(request.configID, nodeID, currencies) then
-                        candidates[#candidates + 1] = { nodeID = nodeID, node = node,
-                            entryID = entryID, choice = choice }
+                        if not pick or NodeComesBefore(node, nodeID, pick.node, pick.nodeID) then
+                            pick = { nodeID = nodeID, node = node, entryID = entryID, choice = choice }
+                        end
                     end
                 end
             end
-            if #candidates == 0 then break end
-            table.sort(candidates, function(a, b)
-                local ay, by = a.node.posY or 0, b.node.posY or 0
-                if ay ~= by then return ay < by end
-                local ax, bx = a.node.posX or 0, b.node.posX or 0
-                if ax ~= bx then return ax < bx end
-                return a.nodeID < b.nodeID
-            end)
-            local pick = candidates[1]
+            if not pick then break end
             local before = pick.node.ranksPurchased
             if pick.choice and (not pick.node.activeEntry or pick.node.activeEntry.entryID ~= pick.entryID) then
                 assert(C_Traits.SetSelection(request.configID, pick.nodeID, pick.entryID) ~= false,

@@ -312,12 +312,11 @@ local function ReadLoadoutContent(importStream, treeID)
             nodeID = treeNodes[i],
         }
     end
-    return results
+    return results, treeNodes
 end
 
-local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent, includeDeferred)
+local function ConvertToImportLoadoutEntryInfo(configID, treeNodes, loadoutContent, includeDeferred)
     local results = {}
-    local treeNodes = C_Traits.GetTreeNodes(treeID)
     if not treeNodes then return nil, "Talent tree unavailable" end
     for i = 1, #treeNodes do
         local encoded = loadoutContent[i]
@@ -389,7 +388,9 @@ local function ConvertToImportLoadoutEntryInfo(configID, treeID, loadoutContent,
     return results
 end
 
-local function BuildImportEntryInfo(importString, specID, configID, includeDeferred)
+-- Validation and import decode the same header/content against one node order.
+-- This snapshot is local to the call; locked entries/ranks are read live below.
+local function ReadValidatedLoadout(importString, specID)
     if not importString or importString == "" then
         return nil, "Build string missing"
     end
@@ -398,6 +399,10 @@ local function BuildImportEntryInfo(importString, specID, configID, includeDefer
     end
     if not ExportUtil or not ExportUtil.MakeImportDataStream then
         return nil, "Import stream unavailable"
+    end
+    if not specID then return nil, "Specialization unavailable" end
+    if not C_ClassTalents or not C_ClassTalents.GetTraitTreeForSpec then
+        return nil, "Talent API unavailable"
     end
     local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
     if not treeID then
@@ -423,56 +428,23 @@ local function BuildImportEntryInfo(importString, specID, configID, includeDefer
     if not IsHashValid(treeHash, treeID) then
         return nil, "Build string tree hash does not match"
     end
-    local okContent, loadoutContent = pcall(ReadLoadoutContent, importStream, treeID)
+    local okContent, loadoutContent, treeNodes = pcall(ReadLoadoutContent, importStream, treeID)
     if not okContent then return nil, "Invalid or incomplete build content" end
+    return loadoutContent, treeNodes
+end
+
+local function BuildImportEntryInfo(importString, specID, configID, includeDeferred)
+    local loadoutContent, treeNodes = ReadValidatedLoadout(importString, specID)
+    if not loadoutContent then return nil, treeNodes end
     local okEntries, entries, errorText = pcall(ConvertToImportLoadoutEntryInfo,
-        configID, treeID, loadoutContent, includeDeferred)
+        configID, treeNodes, loadoutContent, includeDeferred)
     if not okEntries then return nil, "Unable to read build nodes" end
     return entries, errorText
 end
 
 function NS.ValidateTalentBuildImportString(importString, specID)
-    if not importString or importString == "" then
-        return false, "Build string missing"
-    end
-    if importString:match("^!GRIP%d+!") or importString:match("^!EMS%d+!") then
-        return false, "This is a GRIP-EMS rotation sequence. Copy the separate Talent build string from its LazyGrip page."
-    end
-    if not specID then
-        return false, "Specialization unavailable"
-    end
-    if not ExportUtil or not ExportUtil.MakeImportDataStream then
-        return false, "Import stream unavailable"
-    end
-    if not C_ClassTalents or not C_ClassTalents.GetTraitTreeForSpec then
-        return false, "Talent API unavailable"
-    end
-
-    local treeID = C_ClassTalents.GetTraitTreeForSpec(specID)
-    if not treeID then
-        return false, "Talent tree unavailable"
-    end
-
-    local okImport, importStream = (NS.pcall or pcall)(ExportUtil.MakeImportDataStream, importString)
-    if not okImport or not importStream then
-        return false, "Invalid build string"
-    end
-
-    local okHeader, headerValid, serializationVersion, stringSpecID, treeHash = (NS.pcall or pcall)(ReadLoadoutHeader, importStream)
-    if not okHeader or not headerValid then
-        return false, "Invalid build string"
-    end
-    if serializationVersion ~= LoadoutSerializationVersion then
-        return false, "Build string version mismatch"
-    end
-    if stringSpecID ~= specID then
-        return false, "Build is for a different specialization"
-    end
-    if not IsHashValid(treeHash, treeID) then
-        return false, "Build string tree hash does not match"
-    end
-    local okContent = pcall(ReadLoadoutContent, importStream, treeID)
-    if not okContent then return false, "Invalid or incomplete build content" end
+    local content, errorText = ReadValidatedLoadout(importString, specID)
+    if not content then return false, errorText end
     return true, nil
 end
 

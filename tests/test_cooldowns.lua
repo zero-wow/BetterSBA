@@ -1,11 +1,15 @@
-local calls = { charge = {}, cooldown = {}, base = {} }
+local calls = { charge = {}, cooldown = {}, base = {}, info = {} }
 local chargeDuration = { kind = "charge" }
 local normalDurationA = { kind = "normal-a" }
 local normalDurationB = { kind = "normal-b" }
 local normalRevision = 1
 
 C_Spell = {
-    GetSpellCooldown = function() return nil end,
+    GetSpellCooldown = function(spellID)
+        calls.info[spellID] = (calls.info[spellID] or 0) + 1
+        if spellID == 202 then return { startTime = normalRevision, duration = 60 } end
+        return nil
+    end,
     GetSpellChargeDuration = function(spellID)
         calls.charge[spellID] = (calls.charge[spellID] or 0) + 1
         if spellID == 101 then return chargeDuration end
@@ -71,6 +75,34 @@ normalRevision = 2
 assert(ns.GetCooldownDurationCached(202) == normalDurationB, "invalidation replaces native duration object")
 ns.EndUpdate()
 assert(calls.charge[202] == 2 and calls.cooldown[202] == 2, "invalidation refreshes duration cache")
+
+-- A display tick may skip a spell (hidden button, different recommendation,
+-- closed reminder). EndUpdate must not make that spell's older data current.
+local info = ns.GetCooldownCached(202)
+assert(info.startTime == 2)
+normalRevision = 1
+ns.InvalidateCooldownCache()
+ns.BeginUpdate()
+ns.EndUpdate()
+assert(ns.GetCooldownDurationCached(202) == normalDurationA, "unread duration must refresh after EndUpdate")
+assert(ns.GetCooldownCached(202) == info and info.startTime == 1, "unread info must refresh, preserving table identity")
+
+-- An event can invalidate after a lookup without another BeginUpdate.
+normalRevision = 2
+ns.InvalidateCooldownCache()
+assert(ns.GetCooldownDurationCached(202) == normalDurationB, "same-tick duration invalidation must refresh")
+assert(ns.GetCooldownCached(202).startTime == 2, "same-tick info invalidation must refresh")
+assert(ns.GetCooldownCached(909) == nil)
+local infoCalls, durationCalls, nilCalls = calls.info[202], calls.cooldown[202], calls.info[909]
+for i = 1, 20 do
+    ns.BeginUpdate() -- Deliberately no EndUpdate, like a hidden display.
+    assert(ns.GetCooldownCached(202) == info)
+    assert(ns.GetCooldownDurationCached(202) == normalDurationB)
+    assert(ns.GetCooldownCached(909) == nil)
+end
+assert(calls.info[202] == infoCalls and calls.cooldown[202] == durationCalls and calls.info[909] == nilCalls,
+    "unchanged revisions need no repeated API calls, including nil results and early-return updates")
+ns.EndUpdate()
 
 -- Exercise the real priority update: unknown/restricted cooldowns must not be
 -- converted into a ready glow. Blizzard's explicit next-cast remains distinct.

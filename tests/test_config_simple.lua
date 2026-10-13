@@ -11,20 +11,29 @@ for index = 1, 6 do
 end
 entries[7] = { id = "other-spec", specID = 270, name = "Mistweaver" }
 local studioHidden, classicHidden, advancedPage, updateCount, spendCount, selectedID = false, false, nil, 0, 0, nil
+local talentReads, catalogReads = 0, 0
 local NS = {
     UIParent = ui.uiParent, CreateFrame = ui.createFrame, unpack = table.unpack,
     db = { enabled = true, locked = false, showPriority = false },
     ConfigStudio = {
+        UI = { SetTextIfChanged = function(label, value)
+            if label:GetText() == value then return false end
+            label:SetText(value)
+            return true
+        end },
         Hide = function() studioHidden = true end,
         SelectPage = function(_, page) advancedPage = page end,
     },
     Config = { Hide = function() classicHidden = true end },
     SwitchSettingsPanel = function(which) assert(which == "studio"); studioHidden = false end,
     ToggleSettingsPanel = function() studioHidden = not studioHidden end,
-    GetTalentLevelingInfo = function() return info end,
+    GetTalentLevelingInfo = function() talentReads = talentReads + 1; return info end,
     GetTalentBuildCurrentSpecID = function() return 269 end,
     GetTalentBuildClassToken = function() return "MONK" end,
-    GetTalentBuildEntriesForClass = function() return entries end,
+    GetTalentBuildEntriesForClass = function() catalogReads = catalogReads + 1; return entries end,
+    FindTalentBuildByID = function(id)
+        for _, entry in ipairs(entries) do if entry.id == id then return entry end end
+    end,
     GetTalentBuildSourceInfo = function(entry)
         return { label = entry.outdated and "Outdated" or "Current Patch", outdated = entry.outdated,
             summary = "Source posted June 23, 2026. " .. string.rep("Source evidence. ", 100) }
@@ -79,6 +88,47 @@ info.canSpend = true
 simple:Refresh()
 click(simple.spend)
 assert(spendCount == 1 and simple.message:GetText() == "Spending points.")
+local stableWrites = 0
+local function CountTextWrites(node)
+    if rawget(node, "_kind") == "FontString" then
+        local setText = node.SetText
+        node.SetText = function(self, value) stableWrites = stableWrites + 1; setText(self, value) end
+    end
+    for _, child in ipairs(rawget(node, "_children") or {}) do CountTextWrites(child) end
+end
+CountTextWrites(simple.frame)
+stableWrites, talentReads, catalogReads = 0, 0, 0
+for _ = 1, 20 do simple:Refresh() end
+print(("Stable Focus refresh x20: %d talent reads, %d catalog scans, %d text writes")
+    :format(talentReads, catalogReads, stableWrites))
+assert(talentReads == 20 and catalogReads == 0 and stableWrites == 0,
+    "unchanged Focus refresh must retain fresh state without rewriting text or filtering the catalog")
+entries[1].outdated = false
+simple:Refresh()
+assert(simple.nextTalent:GetText() == "Next: Rising Sun Kick", "changed source status must appear immediately")
+entries[1].outdated = true
+simple:Refresh()
+click(simple.choose)
+stableWrites, talentReads, catalogReads = 0, 0, 0
+for _ = 1, 20 do simple:Refresh() end
+print(("Stable Focus picker x20: %d talent reads, %d catalog scans, %d text writes")
+    :format(talentReads, catalogReads, stableWrites))
+assert(talentReads == 0 and catalogReads == 20 and stableWrites == 0,
+    "the picker must refresh catalog data without inspecting talents or rewriting identical labels")
+local firstName = entries[1].name
+entries[1].name = "Renamed Build"
+simple:Refresh()
+assert(simple.pickerRows[1]._label:GetText():find("Renamed Build", 1, true),
+    "the reused picker list must still notice renamed catalog entries")
+entries[1].name = firstName
+local currentSpec = NS.GetTalentBuildCurrentSpecID
+NS.GetTalentBuildCurrentSpecID = function() return 270 end
+simple:Refresh()
+assert(simple.pickerRows[1].entry.id == "other-spec" and not simple.pickerRows[2]:IsShown(),
+    "reusing picker storage must remove entries that no longer match the specialization")
+NS.GetTalentBuildCurrentSpecID = currentSpec
+simple:Refresh()
+click(simple.pickerBack)
 click(simple.settings.locked)
 click(simple.settings.showPriority)
 assert(NS.db.locked and NS.db.showPriority and updateCount == 3,
@@ -91,6 +141,12 @@ assert(simple.view == "details" and not simple.views.main:IsShown()
     and simple.detailText:GetText():find("Source posted June 23", 1, true),
     "source evidence must be available only after opening Details")
 assert(simple.scrollHint:IsShown(), "long details must expose a scroll cue")
+stableWrites = 0
+for _ = 1, 20 do simple:Refresh() end
+assert(stableWrites == 0, "unchanged details must preserve their rendered text")
+info.status = "Updated talent state"
+simple:Refresh()
+assert(simple.detailText:GetText():find(info.status, 1, true), "details must update when the talent state changes")
 simple.detailScroll:GetScript("OnMouseWheel")(simple.detailScroll, -100)
 assert(simple.detailScroll:GetVerticalScroll() == simple.detailChild:GetHeight() - simple.detailScroll:GetHeight(),
     "detail scrolling must stop at the end of its content")

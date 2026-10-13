@@ -756,7 +756,8 @@ function NS.UpdateNow()
     NS.BeginUpdate()
 
     -- Detect special bar / mounted → normal transition and re-establish keybind override
-    local onSpecialBar = NS.IsInterceptBlocked and NS.IsInterceptBlocked()
+    local blockReason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+    local onSpecialBar = blockReason ~= nil
     if wasOnSpecialBar and not onSpecialBar then
         wasOnSpecialBar = false
         if not NS.InCombatLockdown() then
@@ -817,7 +818,7 @@ function NS.UpdateNow()
     -- Pause overlay + LDB status sync (runs even when button is hidden/alpha 0
     -- so the LDB text and pause reason stay current during skyriding, etc.)
     if btn.pauseOverlay then
-        local reason = NS.GetInterceptBlockReason and NS.GetInterceptBlockReason()
+        local reason = blockReason
         if reason then
             btn.pauseOverlay:Show()
             if btn.pauseOverlay.currentReason ~= reason and btn.pauseOverlay.reasonText then
@@ -827,18 +828,21 @@ function NS.UpdateNow()
             end
         else
             btn.pauseOverlay:Hide()
-            btn.pauseOverlay.currentReason = nil
-            if btn.pauseOverlay.reasonText then
-                btn.pauseOverlay.reasonText:SetText("")
+            if btn.pauseOverlay.currentReason ~= nil then
+                btn.pauseOverlay.currentReason = nil
+                if btn.pauseOverlay.reasonText then btn.pauseOverlay.reasonText:SetText("") end
             end
         end
         -- Keep LDB text in sync with pause state
-        if NS.UpdateLDBText then NS.UpdateLDBText() end
+        if NS.UpdateLDBText then NS.UpdateLDBText(blockReason or false) end
     end
 
     UpdateVisibility()
 
-    if not btn:IsVisible() or btn:GetAlpha() == 0 then return end
+    if not btn:IsVisible() or btn:GetAlpha() == 0 then
+        NS.EndUpdate()
+        return
+    end
 
     local spellID = NS.GetDisplaySpell()
     UpdateButton(btn, spellID)
@@ -851,11 +855,10 @@ function NS.UpdateNow()
         NS.UpdatePriorityDisplay()
     end
 
-    -- Read the manual spell while cooldown caches are still marked dirty for
-    -- this tick, so its reminder cannot reuse a pre-event cached cooldown.
+    -- The reminder shares the current cooldown revision with the main display.
     if NS.UpdateManualCooldownReminder then NS.UpdateManualCooldownReminder() end
 
-    -- Clear cooldown dirty flag — all queries this tick have refreshed
+    -- Finish update diagnostics.
     NS.EndUpdate()
 end
 

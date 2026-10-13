@@ -381,7 +381,8 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
     thumb:SetSize(10, 10)
     thumb:SetVertexColor(0.9, 0.95, 1, 1)
 
-    local function SetValue(val)
+    local lastTrackWidth
+    local function SetValue(val, skipUnchanged)
         val = math.max(min, math.min(max, val))
         if step >= 1 then
             val = NS.math_floor(val / step + 0.5) * step
@@ -389,9 +390,11 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
             val = NS.math_floor(val / step + 0.5) * step
             val = tonumber(string.format("%.2f", val))
         end
+        local trackWidth = track:GetWidth() - 2
+        if skipUnchanged and NS.db[dbKey] == val and lastTrackWidth == trackWidth then return end
+        lastTrackWidth = trackWidth
         NS.db[dbKey] = val
         local pct = (val - min) / (max - min)
-        local trackWidth = track:GetWidth() - 2
         if trackWidth > 0 then
             fillBar:SetWidth(math.max(1, pct * trackWidth))
             thumb:ClearAllPoints()
@@ -406,24 +409,19 @@ function NS.CreateSlider(parent, label, dbKey, min, max, step, yOffset, onChange
     end
 
     local dragging = false
+    local function UpdateFromCursor(frame)
+        if not dragging then return end
+        local width = frame:GetWidth()
+        if not width or width <= 0 then return end
+        local cx = select(1, GetCursorPosition()) / frame:GetEffectiveScale()
+        local pct = math.max(0, math.min(1, (cx - frame:GetLeft()) / width))
+        SetValue(min + pct * (max - min), true)
+    end
     track:SetScript("OnMouseDown", function(self, button)
         if button == "LeftButton" then
             dragging = true
-            self:SetScript("OnUpdate", function(frame)
-                if not dragging then return end
-                local cx = select(1, GetCursorPosition()) / frame:GetEffectiveScale()
-                local left = frame:GetLeft()
-                local width = frame:GetWidth()
-                if width and width > 0 then
-                    local pct = math.max(0, math.min(1, (cx - left) / width))
-                    SetValue(min + pct * (max - min))
-                end
-            end)
-            local cx = select(1, GetCursorPosition()) / self:GetEffectiveScale()
-            local left = self:GetLeft()
-            local width = self:GetWidth()
-            local pct = math.max(0, math.min(1, (cx - left) / width))
-            SetValue(min + pct * (max - min))
+            self:SetScript("OnUpdate", UpdateFromCursor)
+            UpdateFromCursor(self)
         end
     end)
     track:SetScript("OnEnter", function(self) SetFieldHover(self, true) end)

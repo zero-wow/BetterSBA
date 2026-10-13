@@ -749,7 +749,8 @@ function NS.Config:Create()
                 if scrollRange <= 0 or trackH <= thumbH then return end
                 local scrollPerPixel = scrollRange / (trackH - thumbH)
                 local newScroll = thumbScrollStart + delta * scrollPerPixel
-                scrollFrame:SetVerticalScroll(math.max(0, math.min(scrollRange, newScroll)))
+                newScroll = math.max(0, math.min(scrollRange, newScroll))
+                if scrollFrame:GetVerticalScroll() ~= newScroll then scrollFrame:SetVerticalScroll(newScroll) end
             end)
             local _, cursorY = GetCursorPosition()
             local scale = self:GetEffectiveScale()

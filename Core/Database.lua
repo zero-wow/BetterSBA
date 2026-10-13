@@ -306,13 +306,7 @@ function NS:CreateProfile(name)
     if self.dbRoot.profiles[name] then return false, "Profile already exists" end
 
     local copy = {}
-    for k, v in NS.pairs(self.db) do
-        if k ~= "minimap" and NS.type(v) == "table" then
-            copy[k] = CopyTable(v)
-        elseif k ~= "minimap" then
-            copy[k] = v
-        end
-    end
+    CopyProfileFields(self.db, copy)
     PrepareProfile(copy)
     AttachGlobalState(self.dbRoot, copy)
     self.dbRoot.profiles[name] = copy

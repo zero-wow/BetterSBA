@@ -117,11 +117,8 @@ local rotationDirty = true      -- event-driven: only refresh when dirty
 local resolveCache = {}         -- [originalSpellID] = resolvedID or CACHE_NIL
 
 ----------------------------------------------------------------
--- Persistent spell texture cache: GetSpellTexture returns a new
--- string on every call (~80 bytes).  With 7 calls per tick (main
--- + 6 priority icons), that's ~5.6 KB/sec of string garbage.
--- Textures never change during gameplay â€” cache permanently and
--- invalidate on spec/talent/spell change events.
+-- Share texture lookups across the main button and priority icons.
+-- Spec/talent/spell changes invalidate these results.
 ----------------------------------------------------------------
 local texCache = {}
 
@@ -142,38 +139,26 @@ function NS.InvalidateTextureCache()
 end
 
 ----------------------------------------------------------------
--- Event-driven cooldown cache: C_Spell.GetSpellCooldown returns
--- a NEW table (~200 bytes) every call â€” pure garbage.  We cache
--- results and ONLY re-query when SPELL_UPDATE_COOLDOWN fires
--- (which marks the cache dirty).  This is safe because WoW fires
--- that event on every GCD, cooldown start, cooldown end, charge
--- gain, haste change, and cooldown reset proc.  Zero API calls
--- between events = zero table garbage between events.
---
--- TAINT FIX: We capture GetSpellCooldown as a file-local at
--- load time.  Looking it up through NS.C_Spell taints the
--- function reference (NS becomes tainted once we touch secure
--- frames), which taints every return value, making comparisons
--- on duration/startTime throw "secret number" errors.  A clean
--- local captured at file load time is never tainted.
+-- Each cooldown entry belongs to an invalidation revision. A spell that
+-- was not queried during an update still refreshes on its next use. Two
+-- invalidations in one display update must also produce fresh results.
+-- Native duration objects stay opaque; caching does not remove API secrecy.
 ----------------------------------------------------------------
 local cdCache = {}
-local cdCacheDirty = true   -- start dirty so first tick queries
-local cdRefreshGen = {}     -- tracks which updateGeneration refreshed each spell
+local cdCacheDirty = true   -- diagnostic: an invalidation awaits a completed update
+local cooldownRevision = 0
+local cdRefreshRevision = {}
 local durationCache = {}    -- [spellID] = LuaDurationObject or CACHE_NIL
-local durationCacheDirty = true
-local durationRefreshGen = {}
+local durationRefreshRevision = {}
 
--- Clean (untainted) references captured at file load time
+-- API references captured at file load time.
 local _GetSpellCooldown = C_Spell and C_Spell.GetSpellCooldown
 local _GetSpellCooldownDuration = C_Spell and C_Spell.GetSpellCooldownDuration
 local _GetSpellChargeDuration = C_Spell and C_Spell.GetSpellChargeDuration
 local _IsPlayerSpell = IsPlayerSpell
 
--- Reusable table pool: instead of storing the API's new table
--- (which becomes garbage), we copy fields into a persistent table.
--- This means each spell has exactly ONE cached table that never
--- gets replaced, so zero table garbage from cooldown queries.
+-- Preserve cached table identity. API calls can still allocate; avoiding
+-- repeated calls between invalidations is the main saving.
 local function _copyCD(dst, src)
     dst.startTime = src.startTime
     dst.duration  = src.duration
@@ -187,19 +172,13 @@ function NS.GetCooldownCached(spellID)
 
     local cached = cdCache[spellID]
 
-    -- Fast path: cache is clean â€” return whatever we have
-    if not cdCacheDirty and cached then
+    -- Reuse only data from the current invalidation revision.
+    if cached and cdRefreshRevision[spellID] == cooldownRevision then
         if cached == CACHE_NIL then return nil end
         return cached
     end
 
-    -- Dirty but already refreshed this spell THIS tick â€” dedup
-    if cdCacheDirty and cached and cdRefreshGen[spellID] == updateGeneration then
-        if cached == CACHE_NIL then return nil end
-        return cached
-    end
-
-    -- Need fresh data: dirty or never cached
+    -- Need fresh data: invalidated or never cached.
     local ok, cdInfo = pcall(_GetSpellCooldown, spellID)
     if ok and cdInfo then
         -- Reuse existing table if we have one, otherwise create once
@@ -209,11 +188,11 @@ function NS.GetCooldownCached(spellID)
             cached = _copyCD({}, cdInfo)
             cdCache[spellID] = cached
         end
-        cdRefreshGen[spellID] = updateGeneration
+        cdRefreshRevision[spellID] = cooldownRevision
         return cached
     end
     cdCache[spellID] = CACHE_NIL
-    cdRefreshGen[spellID] = updateGeneration
+    cdRefreshRevision[spellID] = cooldownRevision
     return nil
 end
 
@@ -224,11 +203,7 @@ function NS.GetCooldownDurationCached(spellID)
     if not spellID then return nil end
 
     local cached = durationCache[spellID]
-    if not durationCacheDirty and cached then
-        if cached == CACHE_NIL then return nil end
-        return cached
-    end
-    if durationCacheDirty and cached and durationRefreshGen[spellID] == updateGeneration then
+    if cached and durationRefreshRevision[spellID] == cooldownRevision then
         if cached == CACHE_NIL then return nil end
         return cached
     end
@@ -244,14 +219,14 @@ function NS.GetCooldownDurationCached(spellID)
     end
 
     durationCache[spellID] = duration or CACHE_NIL
-    durationRefreshGen[spellID] = updateGeneration
+    durationRefreshRevision[spellID] = cooldownRevision
     return duration
 end
 
 -- Called by SPELL_UPDATE_COOLDOWN event handler
 function NS.InvalidateCooldownCache()
+    cooldownRevision = cooldownRevision + 1
     cdCacheDirty = true
-    durationCacheDirty = true
 end
 
 ----------------------------------------------------------------
@@ -279,18 +254,11 @@ function NS.StopGCTicker() end
 
 function NS.BeginUpdate()
     updateGeneration = updateGeneration + 1
-    -- Cooldown cache is event-driven â€” no wipe needed.
-    -- The dirty flag is cleared AFTER all queries in this tick
-    -- have had a chance to refresh, so every GetCooldownCached
-    -- call within this tick sees the dirty flag and re-queries.
 end
 
--- Called at the END of UpdateNow, after all cooldown queries are done.
--- Clears the dirty flag so subsequent ticks reuse cached data until
--- the next SPELL_UPDATE_COOLDOWN event fires.
+-- Retained for update diagnostics; entry freshness is revision-based.
 function NS.EndUpdate()
     cdCacheDirty = false
-    durationCacheDirty = false
 end
 
 -- Call this from event handlers that change the rotation pool
@@ -439,7 +407,7 @@ function NS.CollectNextSpell()
             cachedNextGen = updateGeneration
             return sid
         end
-        NS.DebugPrint("GetNextCastSpell(false):", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
+        NS.DebugPrint("GetNextCastSpell(false):", ok and "returned" or "ERROR", sid)
     else
         NS.DebugPrint("|cFFFF4444GetNextCastSpell does not exist|r")
     end
@@ -454,7 +422,7 @@ function NS.CollectNextSpell()
             cachedNextGen = updateGeneration
             return sid
         end
-        NS.DebugPrint("GetActionSpell():", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
+        NS.DebugPrint("GetActionSpell():", ok and "returned" or "ERROR", sid)
     else
         NS.DebugPrint("|cFFFF4444GetActionSpell does not exist|r")
     end
@@ -469,7 +437,7 @@ function NS.CollectNextSpell()
             cachedNextGen = updateGeneration
             return sid
         end
-        NS.DebugPrint("GetNextCastSpell(true):", ok and ("returned " .. NS.tostring(sid)) or "ERROR")
+        NS.DebugPrint("GetNextCastSpell(true):", ok and "returned" or "ERROR", sid)
     end
 
     -- Last resort: first rotation spell (uses cached rotation if available)

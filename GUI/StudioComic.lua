@@ -40,11 +40,17 @@ function Comic.SetLettering(label, kind, value, size)
         art = label:GetParent():CreateTexture(nil, "OVERLAY", nil, 1)
         label._comicLettering = art
     end
-    art:SetTexture(LETTER_ROOT .. entry.file)
-    art:SetTexCoord(0, entry.u, 0, entry.v)
-    art:ClearAllPoints()
-    art:SetPoint(kind == "button" and "CENTER" or "LEFT", label,
-        kind == "button" and "CENTER" or "LEFT", 0, 0)
+    if art._entry ~= entry then
+        art:SetTexture(LETTER_ROOT .. entry.file)
+        art:SetTexCoord(0, entry.u, 0, entry.v)
+        art._entry = entry
+    end
+    if art._kind ~= kind then
+        art:ClearAllPoints()
+        art:SetPoint(kind == "button" and "CENTER" or "LEFT", label,
+            kind == "button" and "CENTER" or "LEFT", 0, 0)
+        art._kind = kind
+    end
     local width = label:GetWidth()
     if kind == "button" then
         local parentWidth = label:GetParent():GetWidth()
@@ -54,7 +60,11 @@ function Comic.SetLettering(label, kind, value, size)
         or (size or 16) + 3
     local scale = math.min(1, width > 0 and width / entry.width or 1,
         height / entry.height)
-    art:SetSize(entry.width * scale, entry.height * scale)
+    local artWidth, artHeight = entry.width * scale, entry.height * scale
+    if art._width ~= artWidth or art._height ~= artHeight then
+        art:SetSize(artWidth, artHeight)
+        art._width, art._height = artWidth, artHeight
+    end
     art:Show()
     -- SetAlpha(0) alone does not reliably suppress WoW FontString glyphs
     -- after later state/color updates. The art is a sibling on the parent,
@@ -293,14 +303,16 @@ local function styleMini(button)
             4+(button:GetWidth()-18)*position,-2)
     end
     placePip()
+    button:HookScript("OnSizeChanged",placePip)
     local function tick(self,dt)
         local step=math.min(1,(dt or 0)*(motionEnabled() and 14 or 100))
         value=value+(target-value)*step
+        local previousPosition=position
         position=position+(positionTarget-position)*step
         if math.abs(value-target)<.006 then value=target end
         if math.abs(position-positionTarget)<.006 then position=positionTarget end
         glow:SetAlpha(value)
-        placePip()
+        if position~=previousPosition then placePip() end
         if value==target and position==positionTarget then self:SetScript("OnUpdate",nil) end
     end
     button:HookScript("OnEnter",function(self)
@@ -467,6 +479,7 @@ local function styleButton(button, plate, hero)
             glint:SetAlpha(0)
             button:SetScript("OnUpdate",nil)
         end
+        if not motionEnabled() and state.hover==state.target then button:SetScript("OnUpdate",nil) end
     end
     button:HookScript("OnEnter",function()
         state.target=1
@@ -616,7 +629,7 @@ function Comic.StyleNav(button)
         else
             for _,piece in ipairs(plate) do piece:SetAlpha(state.value*.87) end
         end
-        if state.value==state.target and not button._comicActive then self:SetScript("OnUpdate",nil) end
+        if state.value==state.target and (not button._comicActive or not motionEnabled()) then self:SetScript("OnUpdate",nil) end
     end
     button._comicNavState=state
     button:HookScript("OnEnter",function()

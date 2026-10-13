@@ -268,6 +268,62 @@ NS.Config:Show()
 assert(panel:IsVisible() and firstSection:IsVisible() and firstSection:GetAlpha() == 1,
     "opening config must make the selected content immediately visible and opaque")
 
+-- Dragging still samples each frame, but a stationary thumb must not trigger
+-- repeated scroll/layout notifications for the exact same scroll position.
+do
+    local thumb, track
+    for _, child in ipairs(panel._children) do
+        for _, candidate in ipairs(child._children) do
+            if candidate:GetScript("OnMouseDown") and candidate:GetScript("OnMouseUp") then
+                thumb, track = candidate, child
+                break
+            end
+        end
+        if thumb then break end
+    end
+    assert(thumb, "classic scrollbar drag control missing")
+    local scroll = NS.Config.scrollFrame
+    local content = rawget(scroll, "_scrollChild")
+    local overrides = {}
+    local function override(widget, method, value)
+        overrides[#overrides + 1] = { widget, method, rawget(widget, method) }
+        widget[method] = value
+    end
+    override(track, "GetHeight", function() return 200 end)
+    override(thumb, "GetHeight", function() return 50 end)
+    override(thumb, "GetEffectiveScale", function() return 1 end)
+    override(scroll, "GetHeight", function() return 100 end)
+    override(content, "GetHeight", function() return 400 end)
+    local cursorY, writes = 100, 0
+    local getCursor = GetCursorPosition
+    GetCursorPosition = function() return 0, cursorY end
+    local setScroll, savedScroll = scroll.SetVerticalScroll, scroll:GetVerticalScroll()
+    scroll:SetVerticalScroll(0)
+    override(scroll, "SetVerticalScroll", function(self, value)
+        writes = writes + 1
+        setScroll(self, value)
+    end)
+    thumb:GetScript("OnMouseDown")(thumb, "LeftButton")
+    for _ = 1, 60 do thumb:GetScript("OnUpdate")(thumb, 1/60) end
+    assert(writes == 0, "stationary scrollbar drag must not repeat scroll notifications")
+    print("Stationary scrollbar x60: " .. writes .. " scroll writes")
+    cursorY = 75
+    thumb:GetScript("OnUpdate")(thumb, 1/60)
+    assert(writes == 1 and scroll:GetVerticalScroll() == 50,
+        "scrollbar movement must remain immediately responsive")
+    cursorY = -1000
+    thumb:GetScript("OnUpdate")(thumb, 1/60)
+    assert(scroll:GetVerticalScroll() == 300, "scrollbar dragging must still clamp at the content end")
+    thumb:GetScript("OnMouseUp")(thumb, "LeftButton")
+    assert(not thumb:GetScript("OnUpdate"), "released scrollbar must stop its drag loop")
+    thumb:GetScript("OnMouseDown")(thumb, "LeftButton")
+    thumb:GetScript("OnHide")(thumb)
+    assert(not thumb:GetScript("OnUpdate"), "hidden scrollbar must stop its drag loop")
+    for _, saved in ipairs(overrides) do rawset(saved[1], saved[2], saved[3]) end
+    GetCursorPosition = getCursor
+    scroll:SetVerticalScroll(savedScroll)
+end
+
 -- Multiple HookScript registrations must all survive, and pixels refreshes
 -- must preserve each manually anchored section-header ruler.
 local title = assert(findTextWidget(panel, "Combat Assist"), "page title missing")

@@ -45,4 +45,17 @@ vehicle = true
 assert(NS.IsInterceptBlocked() == true,
     "vehicle action bars must stay blocked")
 
+assert(NS.GetInterceptBlockReason() == "Vehicle", "routing and displayed pause reason share one guard")
+vehicle, mounted = false, false
+HasOverrideActionBar = function() return true end
+assert(NS.IsInterceptBlocked() and NS.GetInterceptBlockReason() == "Override Bar")
+HasOverrideActionBar = function() return false end
+IsPossessBarVisible = function() return true end
+assert(NS.IsInterceptBlocked() and NS.GetInterceptBlockReason() == "Possess Bar")
+IsPossessBarVisible = function() return false end
+HasBonusActionBar = function() return true end
+assert(NS.IsInterceptBlocked() and NS.GetInterceptBlockReason() == "Bonus Bar")
+NS.GetFormActionBarBaseSlot = function() return 72 end
+assert(not NS.IsInterceptBlocked() and NS.GetInterceptBlockReason() == nil, "normal form page stays usable")
+
 print("mount interception regression: ok")

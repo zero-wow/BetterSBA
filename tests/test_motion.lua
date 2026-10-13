@@ -21,7 +21,7 @@ local function object(parent, kind)
     function o:SetFrameLevel(level) self.frameLevel=level end
     function o:SetTexture(texture) self.texture=texture end
     function o:SetSize(width,height) self.width,self.height=width,height end
-    function o:SetPoint(...) self.point={...} end
+    function o:SetPoint(...) self.point={...}; self.pointCalls=(rawget(self,"pointCalls") or 0)+1 end
     function o:SetRotation(angle) self.rotation=angle end
     function o:SetOffset(x,y) self.offsetX,self.offsetY=x,y end
     function o:SetDuration(value) self.duration=value end
@@ -60,10 +60,13 @@ assert(sweep.scripts.OnUpdate and sweep.orbitCore.shown
     and sweep.edge.texture == "Interface\\AddOns\\BetterSBA\\IMG\\Button\\Glow"
     and all[3]:GetFrameLevel() > ns.mainButton:GetFrameLevel(),
     "Orbit needs a visible glint and rim above the button")
+local corePointCalls = sweep.orbitCore.pointCalls
 sweep.scripts.OnUpdate(sweep, sweep._orbitDuration / 4)
 assert(math.abs(sweep.edge.point[4] - sweep._orbitRadius) < .01
     and math.abs(sweep.edge.point[5]) < .01
-    and sweep.orbitCore.point[4] == sweep.edge.point[4],
+    and sweep.orbitCore.point[2] == sweep.edge
+    and sweep.orbitCore.point[4] == 0 and sweep.orbitCore.point[5] == 0
+    and sweep.orbitCore.pointCalls == corePointCalls,
     "Orbit glint must travel around the button, not remain at the lower edge")
 ns.db.motionPreset="Sheen"
 assert(ns.PlayMotionFeedback(1) and sweep.edge.rotation == math.pi / 9

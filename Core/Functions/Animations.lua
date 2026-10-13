@@ -478,6 +478,27 @@ local function ApplyAnimHotkey(anim, spellID)
     end
 end
 
+-- Both clone directions share background, importance and Masque skin policy.
+local function ApplyCloneAppearance(anim, spellID)
+    if not NS.masque and anim.bg then
+        local color = NS.db.buttonBgColor
+        anim.bg:SetColorTexture(color[1], color[2], color[3], color[4] or 0.6)
+    end
+    local color = NS.db.importanceBorders and spellID and NS.GetSpellBorderColor(spellID)
+    if color then
+        if anim.Border then
+            anim.Border:SetVertexColor(color[1], color[2], color[3], color[4])
+            anim.Border:Show()
+        elseif anim.borderTex then
+            anim.borderTex:SetColorTexture(color[1], color[2], color[3], color[4] or 1)
+        end
+    elseif not NS.masque and anim.borderTex then
+        local border = NS.THEME.BORDER
+        anim.borderTex:SetColorTexture(border[1], border[2], border[3], 1)
+    end
+    if anim._usesMasque then NS.masqueAnimGroup:ReSkin() end
+end
+
 function NS.RefreshAnimHotkeys()
     for _, f in NS.ipairs(animPool) do
         if f.hotkey then
@@ -745,20 +766,12 @@ local function AcquireAnimFrame()
         f._spellID = nil
         f._inUse = false
 
-        if srcBtn then
-            if isIncoming then
-                local targetAlpha = InCombatLockdown()
-                    and (NS.db.alphaCombat or 1)
-                    or  (NS.db.alphaOOC or 1)
-                srcBtn:SetAlpha(targetAlpha)
-                NS._recreateFading = false
-                elseif not hasPeer then
-                local targetAlpha = InCombatLockdown()
-                    and (NS.db.alphaCombat or 1)
-                    or  (NS.db.alphaOOC or 1)
-                srcBtn:SetAlpha(targetAlpha)
-                NS._recreateFading = false
-                end
+        if srcBtn and (isIncoming or not hasPeer) then
+            local targetAlpha = InCombatLockdown()
+                and (NS.db.alphaCombat or 1)
+                or  (NS.db.alphaOOC or 1)
+            srcBtn:SetAlpha(targetAlpha)
+            NS._recreateFading = false
         end
     end)
 
@@ -856,34 +869,7 @@ function NS.PlayCastAnimation(spellID)
     anim.icon:SetTexture(tex)
 
     -- 3. Importance border color + backdrop (ColorTexture API â€” no BackdropTemplate)
-    if not NS.masque and anim.bg then
-        local bgColor = NS.db.buttonBgColor
-        anim.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
-    end
-    if NS.db.importanceBorders and spellID then
-        local borderColor = NS.GetSpellBorderColor(spellID)
-        if borderColor then
-            if anim.Border then
-                anim.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-                anim.Border:Show()
-            elseif anim.borderTex then
-                anim.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
-            end
-        else
-            if not NS.masque and anim.borderTex then
-                anim.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
-            end
-        end
-    else
-        if not NS.masque and anim.borderTex then
-            anim.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
-        end
-    end
-
-    -- 5. ReSkin Masque at current size
-    if anim._usesMasque then
-        NS.masqueAnimGroup:ReSkin()
-    end
+    ApplyCloneAppearance(anim, spellID)
 
     -- 6. Keybind text
     ApplyAnimHotkey(anim, spellID)
@@ -990,32 +976,7 @@ function NS.PlayCastAnimation(spellID)
             incoming:SetPoint("CENTER", btn, "CENTER", ox, oy)
             incoming.icon:SetTexture(nextTex)
 
-            -- Background + importance border
-            if not NS.masque and incoming.bg then
-                local bgColor = NS.db.buttonBgColor
-                incoming.bg:SetColorTexture(bgColor[1], bgColor[2], bgColor[3], bgColor[4] or 0.6)
-            end
-            if NS.db.importanceBorders and nextSpellID then
-                local borderColor = NS.GetSpellBorderColor(nextSpellID)
-                if borderColor then
-                    if incoming.Border then
-                        incoming.Border:SetVertexColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
-                        incoming.Border:Show()
-                    elseif incoming.borderTex then
-                        incoming.borderTex:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], borderColor[4] or 1)
-                    end
-                else
-                    if not NS.masque and incoming.borderTex then
-                        incoming.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
-                    end
-                end
-            else
-                if not NS.masque and incoming.borderTex then
-                    incoming.borderTex:SetColorTexture(NS.THEME.BORDER[1], NS.THEME.BORDER[2], NS.THEME.BORDER[3], 1)
-                end
-            end
-
-            if incoming._usesMasque then NS.masqueAnimGroup:ReSkin() end
+            ApplyCloneAppearance(incoming, nextSpellID)
 
             ApplyAnimHotkey(incoming, nextSpellID)
             DebugAnimClone("IN", incoming, nextSpellID, btn)

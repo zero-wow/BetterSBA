@@ -3,6 +3,8 @@ local ADDON_NAME, NS = ...
 local T = NS.THEME
 local panelStates = setmetatable({}, { __mode = "k" })
 local refreshFrame
+local refreshScheduled
+local RATING_WEIGHTS = { S = 5, A = 4, B = 3, C = 2, D = 1 }
 local TITLE_FONT_SIZE = 14
 local SUBTITLE_FONT_SIZE = 9
 local LABEL_FONT_SIZE = 10
@@ -1093,11 +1095,20 @@ local function EnsureRefreshFrame()
     refreshFrame:RegisterEvent("PLAYER_LEVEL_UP")
     refreshFrame:RegisterEvent("TRAIT_CONFIG_UPDATED")
     refreshFrame:SetScript("OnEvent", function()
-        RefreshAllPanels()
+        if refreshScheduled then return end
+        refreshScheduled = true
+        -- Staging several ranks can emit a burst of trait events. Rebuild
+        -- visible panels once after the burst, using the latest live state.
+        NS.C_Timer_After(0, function()
+            if not refreshScheduled then return end
+            refreshScheduled = nil
+            RefreshAllPanels()
+        end)
     end)
 end
 
 function NS.RefreshTalentBuildPanels()
+    refreshScheduled = nil
     RefreshAllPanels()
 end
 
@@ -1755,15 +1766,16 @@ function NS.BuildTalentBuildsConfigSection(parent)
             local aValue = NormalizeText(GetColumnValue(a, sortColumn))
             local bValue = NormalizeText(GetColumnValue(b, sortColumn))
             if sortColumn == "rating" then
-                local weights = { S = 5, A = 4, B = 3, C = 2, D = 1 }
-                aValue = weights[a.rating or ""] or 0
-                bValue = weights[b.rating or ""] or 0
+                aValue = RATING_WEIGHTS[a.rating or ""] or 0
+                bValue = RATING_WEIGHTS[b.rating or ""] or 0
                 if aValue ~= bValue then
-                    return sortAscending and (aValue > bValue) or (aValue < bValue)
+                    if sortAscending then return aValue > bValue end
+                    return aValue < bValue
                 end
             end
             if aValue ~= bValue then
-                return sortAscending and (aValue < bValue) or (aValue > bValue)
+                if sortAscending then return aValue < bValue end
+                return aValue > bValue
             end
             return NormalizeText(a.name) < NormalizeText(b.name)
         end)
@@ -2178,7 +2190,11 @@ function NS.BuildTalentBuildsConfigSection(parent)
     function state:Refresh()
         self.rows = self:CollectRows()
         self:UpdateFilterButtons()
-        self.filteredRows = self:FilterRows(self:GetSortedRows(CopyTable(self.rows)))
+        -- Sorting changes only the outer order; metadata and talent plans are
+        -- read-only here and do not need a recursive copy on every refresh.
+        local sortedRows = {}
+        for i = 1, #self.rows do sortedRows[i] = self.rows[i] end
+        self.filteredRows = self:FilterRows(self:GetSortedRows(sortedRows))
         self.selectedRow = self:EnsureSelectedRow()
         self:UpdateHeaderSort()
         self:UpdateRows()

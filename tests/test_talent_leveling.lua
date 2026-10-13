@@ -948,4 +948,63 @@ do
         "an immediately refused commit must recover without a switch toggle")
 end
 
+-- One inspection reads each live target once, plus off-target nodes for the
+-- mismatch guard. Nothing is retained for later calls or rank changes.
+do
+    local h = makeHarness({ treeNodes = { 1, 2, 3 } })
+    h.nodes[3] = { ranksPurchased = 0, type = 1 }
+    h:selectTarget("A")
+    local reads = 0
+    local readNode = C_Traits.GetNodeInfo
+    C_Traits.GetNodeInfo = function(...)
+        reads = reads + 1
+        return readNode(...)
+    end
+    check(h:info().pick.nodeID == 1 and reads == 3, "inspection must read each of three nodes once")
+    h.nodes[1].ranksPurchased = 1
+    check(h:info().pick.nodeID == 2 and reads == 6, "later inspection must observe the purchased rank")
+    h.nodes[3].ranksPurchased = 1
+    check(h:info().hasMismatch, "off-target purchases must still block spending")
+end
+
+-- Resolve only the displayed next talent when a route has no available points.
+do
+    local h = makeHarness()
+    h.rows, h.treeNodes = {}, {}
+    for i = 1, 40 do
+        h.rows[i] = { nodeID = i, ranksPurchased = 1, selectionEntryID = i * 100 + 1 }
+        h.treeNodes[i] = i
+        h.nodes[i] = { ranksPurchased = 0, canPurchaseRank = false, posY = i, type = 1 }
+    end
+    h.currencies[10][1].quantity = 0
+    h:selectTarget("A")
+    local names = 0
+    C_Traits.GetDefinitionInfo = function(entryID) names = names + 1; return { spellID = entryID } end
+    local info = h:info()
+    check(not info.canSpend and info.nextName == "Spell 101" and names == 1,
+        "forty blocked ranks should resolve only the one displayed name")
+end
+
+-- Undo uses the same position/ID order without sorting an entire candidate list
+-- for each restored rank, including equal positions encountered in any order.
+do
+    local h = makeRespecHarness()
+    h.treeNodes = { 1, 2, 99, 98, 97 }
+    for _, id in ipairs({ 99, 98, 97 }) do
+        h.nodes[id] = { ranksPurchased = 1, type = 1, canPurchaseRank = true,
+            entryIDs = { id * 100 + 1 }, posY = id == 97 and 2 or 1, posX = 1 }
+        h.costs[id] = { { ID = 1, amount = 1 } }
+    end
+    check(h.NS.RequestTalentSBARespec(), "ordering fixture must respec")
+    h:confirm()
+    h.purchaseOrder = {}
+    local sortCalls, realSort = 0, table.sort
+    table.sort = function(...) sortCalls = sortCalls + 1; return realSort(...) end
+    local ok, message = h.NS.RequestTalentSBAUndo()
+    table.sort = realSort
+    check(ok, message)
+    check(table.concat(h.purchaseOrder, ",") == "98,99,97" and sortCalls == 0,
+        "undo must keep position/ID order without candidate sorts")
+end
+print("talent inspection: node reads 5 -> 3; blocked-name lookups 40 -> 1; undo candidate sorts 0")
 print("talent leveling mock: guided spending, warning deduplication, transactional respec, budget/rollback and commit safety passed")

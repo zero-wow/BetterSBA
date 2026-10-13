@@ -44,21 +44,42 @@ local function Label(parent, value, size, color, width, point, relative, relativ
     return f
 end
 
+local function SetTextIfChanged(label, value)
+    if label:GetText() == value then return false end
+    label:SetText(value)
+    return true
+end
+
+-- Refit only when the input or its actual font/space changed. The rendered
+-- value check also invalidates this cache if another UI path edits the label.
+local function NeedsTextLayout(label, value, width)
+    local font, size, flags = label:GetFont()
+    if label._fitValue == value and label._fitWidth == width
+        and label._fitFont == font and label._fitSize == size and label._fitFlags == flags
+        and label._fitRendered == label:GetText() then return false end
+    label._fitValue, label._fitWidth = value, width
+    label._fitFont, label._fitSize, label._fitFlags = font, size, flags
+    return true
+end
+
 local function FitText(label, value, width)
     value = tostring(value or "")
+    if not NeedsTextLayout(label, value, width) then return end
     label:SetText(value)
-    if label:GetStringWidth() <= width then return end
+    if label:GetStringWidth() <= width then label._fitRendered = value; return end
     while #value > 1 do
         value = value:sub(1, -2)
         label:SetText(value .. "…")
-        if label:GetStringWidth() <= width then return end
+        if label:GetStringWidth() <= width then break end
     end
+    label._fitRendered = label:GetText()
 end
 
 local function WrapRouteName(label, measure, value, width)
     value = tostring(value or "No Build Selected")
+    if not NeedsTextLayout(label, value, width) then return end
     measure:SetText(value)
-    if measure:GetStringWidth() <= width then label:SetText(value); return end
+    if measure:GetStringWidth() <= width then label:SetText(value); label._fitRendered = value; return end
     local lines = { "", "" }
     local current = 1
     for word in value:gmatch("%S+") do
@@ -76,6 +97,7 @@ local function WrapRouteName(label, measure, value, width)
         measure:SetText(lines[2] .. "…")
     end
     label:SetText(lines[1] .. "\n" .. lines[2])
+    label._fitRendered = label:GetText()
 end
 
 local function Surface(parent, x, y, w, h, fill)
@@ -135,8 +157,13 @@ local function Action(parent, value, x, y, w, h, callback, tone)
 end
 
 local function SetActionText(button, value)
-    button._label:SetText(value)
-    if Studio.Comic then Studio.Comic.SetLettering(button._label, "button", value) end
+    local changed = SetTextIfChanged(button._label, value)
+    local width, height, labelWidth = button:GetWidth(), button:GetHeight(), button._label:GetWidth()
+    if Studio.Comic and (changed or button._letteringWidth ~= width
+        or button._letteringHeight ~= height or button._letteringLabelWidth ~= labelWidth) then
+        Studio.Comic.SetLettering(button._label, "button", value)
+        button._letteringWidth, button._letteringHeight, button._letteringLabelWidth = width, height, labelWidth
+    end
 end
 
 local function Caption(parent, value, x, y)
@@ -170,8 +197,11 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
     local stateText = Label(track, "Off", 10, C.dim, 34, "CENTER", track, "CENTER", 0, 0)
     stateText:SetJustifyH("CENTER")
     if Studio.Comic then Studio.Comic.StyleButtonText(stateText, 11) end
-    row.Refresh = function()
-        local on = getter() == true
+    row.Refresh = function(value)
+        local on = value
+        if on == nil then on = getter() == true else on = on == true end
+        if row._renderedState == on then return end
+        row._renderedState = on
         track:SetBackdropColor(NS.unpack(on and C.accent or C.rail))
         if Studio.Comic then Studio.Comic.SetToggleState(track,on) end
         stateText:SetText(on and "On" or "Off")
@@ -186,7 +216,8 @@ local function Setting(parent, name, note, y, getter, setter, copyWidth)
 end
 
 Studio.UI = { Surface = Surface, Action = Action, Label = Label,
-    Paint = Paint, FitText = FitText, SetActionText = SetActionText, colors = C }
+    Paint = Paint, FitText = FitText, SetActionText = SetActionText,
+    SetTextIfChanged = SetTextIfChanged, colors = C }
 
 local function OpenClassic(section, makeDefault)
     if makeDefault then NS.db.configExperience = "classic" end
@@ -433,7 +464,7 @@ local function BuildTalentPage(self)
         WrapRouteName(routeName, routeNameMeasure, info.targetName, routeName:GetWidth())
         SetActionText(change, info.buildID and info.targetName ~= "No Build Selected"
             and "Change Build" or "Choose a Build")
-        routeDetail:SetText((info.specName and ("Active Specialization: " .. info.specName)
+        SetTextIfChanged(routeDetail, (info.specName and ("Active Specialization: " .. info.specName)
             or "Current specialization") .. "  •  Auto-Spend: " .. (info.enabled and "On" or "Off"))
         local headline
         if not info.buildID or info.targetName == "No Build Selected" then
@@ -450,11 +481,11 @@ local function BuildTalentPage(self)
             headline = "No Unspent Points"
         end
         FitText(state, headline, state:GetWidth())
-        status:SetText(view._selectionError or info.status or "Choose a build to get started.")
+        SetTextIfChanged(status, view._selectionError or info.status or "Choose a build to get started.")
         FitText(next, "Next Talent: " .. (info.nextName or "—"), next:GetWidth())
-        auto.Refresh()
-        warn.Refresh()
-        autoRebuild.Refresh()
+        auto.Refresh(info.enabled == true)
+        warn.Refresh(info.warningEnabled == true)
+        autoRebuild.Refresh(info.autoRespecEnabled == true)
         local undoInfo = NS.GetTalentSBAUndoInfo()
         undo:SetAlpha(undoInfo.canUndo and 1 or .45)
         undo:SetEnabled(undoInfo.canUndo == true)
@@ -683,7 +714,7 @@ end
 function Studio:Refresh()
     if not self.frame then return end
     if self.profileLabel and NS.GetActiveProfileName then
-        self.profileLabel:SetText("Profile: " .. NS:GetActiveProfileName())
+        SetTextIfChanged(self.profileLabel, "Profile: " .. NS:GetActiveProfileName())
     end
     local current = self.pages[self.page]
     if current and current.Refresh then current.Refresh() end

@@ -1,14 +1,16 @@
 local ADDON_NAME, NS = ...
 
 local PARTICLE_POOL = {}          -- recycled frame pool
+local FREE_PARTICLES = {}         -- available frames; acquire without scanning active particles
 local MAX_PARTICLES = 96          -- hard bound even during rapid cast/preview bursts
 
 local function AcquireParticle()
-    for _, p in NS.ipairs(PARTICLE_POOL) do
-        if not p._inUse then
-            p._inUse = true
-            return p
-        end
+    local count = #FREE_PARTICLES
+    if count > 0 then
+        local p = FREE_PARTICLES[count]
+        FREE_PARTICLES[count] = nil
+        p._inUse = true
+        return p
     end
     if #PARTICLE_POOL >= MAX_PARTICLES then return nil end
     local f = NS.CreateFrame("Frame", nil, NS.UIParent)
@@ -33,11 +35,13 @@ local function AcquireParticle()
 end
 
 function NS.ResetParticlePool()
+    for i = #FREE_PARTICLES, 1, -1 do FREE_PARTICLES[i] = nil end
     for _, p in NS.ipairs(PARTICLE_POOL) do
         if p._ag then p._ag:Stop() end
         p:Hide()
         p:ClearAllPoints()
         p._inUse = false
+        FREE_PARTICLES[#FREE_PARTICLES + 1] = p
     end
 end
 
@@ -161,7 +165,10 @@ function NS.FireParticleBurst(btn, styleName, paletteName, gcdScale)
                 p:Hide()
                 p:ClearAllPoints()
                 p:SetScale(1)
-                p._inUse = false
+                if p._inUse then
+                    p._inUse = false
+                    FREE_PARTICLES[#FREE_PARTICLES + 1] = p
+                end
             end)
             p._ag = ag
         end

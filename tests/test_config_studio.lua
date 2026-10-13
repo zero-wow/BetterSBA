@@ -18,6 +18,7 @@ local info = {
 }
 local classicShown = false
 local activeProfile = "Default"
+local talentReads = 0
 local NS = {
     UIParent = ui.uiParent, db = db, unpack = table.unpack,
     defaults = { enabled = true, showPriority = true, enableTargeting = true,
@@ -37,7 +38,7 @@ local NS = {
         Toggle = function() classicShown = not classicShown end,
         SelectSection = function() end,
     },
-    GetTalentLevelingInfo = function() return info end,
+    GetTalentLevelingInfo = function() talentReads = talentReads + 1; return info end,
     GetTalentSBAUndoInfo = function() return { canUndo = false } end,
     GetTalentBuildEntriesForClass = function()
         return { { id = "one", name = "Blood Leveling", specID = 250 } }
@@ -255,6 +256,57 @@ assert(studio.notice:GetText() == "Auto-Spend is On for this route."
     "the Auto-Spend row must be clickable and confirm its new state")
 talents._autoRebuild:GetScript("OnClick")(talents._autoRebuild)
 assert(info.autoRespecEnabled, "Auto-Rebuild switch must save its state")
+local stableTextWrites, stableLettering = 0, 0
+local function CountTextWrites(node)
+    if rawget(node, "_kind") == "FontString" then
+        local setText = node.SetText
+        node.SetText = function(self, value) stableTextWrites = stableTextWrites + 1; setText(self, value) end
+    end
+    for _, child in ipairs(rawget(node, "_children") or {}) do CountTextWrites(child) end
+end
+CountTextWrites(studio.frame)
+local setLettering = studio.Comic.SetLettering
+studio.Comic.SetLettering = function(...)
+    stableLettering = stableLettering + 1
+    return setLettering(...)
+end
+studio:Refresh()
+stableTextWrites, stableLettering, talentReads = 0, 0, 0
+for _ = 1, 20 do studio:Refresh() end
+print(("Stable Studio refresh x20: %d talent reads, %d text writes, %d lettering updates")
+    :format(talentReads, stableTextWrites, stableLettering))
+assert(talentReads == 20 and stableTextWrites == 0 and stableLettering == 0,
+    "unchanged talent refresh must inspect once and leave rendered text alone")
+local fitLabel = studio.frame:CreateFontString(nil, "OVERLAY")
+fitLabel.GetFont = function(self) return self._font.path, self._font.size, self._font.flags end
+fitLabel:SetFont("Fonts\\FRIZQT__.TTF", 12, "")
+local fitValue = "A Long Talent Description"
+studio.UI.FitText(fitLabel, fitValue, 40)
+assert(fitLabel:GetText() ~= fitValue, "narrow text must still fit its available space")
+studio.UI.FitText(fitLabel, fitValue, 300)
+assert(fitLabel:GetText() == fitValue, "wider layout must invalidate fitted text")
+fitLabel:SetFont("Fonts\\FRIZQT__.TTF", 40, "")
+studio.UI.FitText(fitLabel, fitValue, 300)
+assert(fitLabel:GetText() ~= fitValue, "font changes must invalidate fitted text")
+fitLabel:SetText("Edited elsewhere")
+studio.UI.FitText(fitLabel, fitValue, 300)
+assert(fitLabel:GetText() ~= "Edited elsewhere", "external text edits must invalidate the layout cache")
+fitLabel:Hide()
+local changeWidth = talents._change:GetWidth()
+talents._change:SetWidth(changeWidth + 10)
+stableLettering = 0
+studio.UI.SetActionText(talents._change, "Change Build")
+assert(stableLettering == 1, "button resizing must refresh its image lettering")
+talents._change:SetWidth(changeWidth)
+studio.UI.SetActionText(talents._change, "Change Build")
+local routeWidth = talents._routeName:GetWidth()
+talents._routeName:SetWidth(100)
+studio:Refresh()
+assert(talents._routeName:GetText() ~= info.targetName, "narrow route names must be laid out again")
+talents._routeName:SetWidth(routeWidth)
+studio:Refresh()
+assert(talents._routeName:GetText():gsub("\n", " ") == info.targetName,
+    "route names must recover their full text when space returns")
 NS.PreviewMotionFeedback = function() return true end
 studio:SelectPage("Motion")
 local motion = studio.pages.Motion

@@ -3,6 +3,7 @@ local ADDON_NAME, NS = ...
 -- An optional calm view of the same settings and talent actions as Studio.
 local Simple = {}
 NS.ConfigSimple = Simple
+local SetTextIfChanged = NS.ConfigStudio.UI.SetTextIfChanged
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local COLOR = {
     background = { .055, .065, .08, 1 }, button = { .10, .13, .17, 1 },
@@ -43,7 +44,10 @@ local function Button(parent, text, x, y, width, callback)
 end
 
 local function SetEnabled(button, enabled)
-    button:SetEnabled(enabled == true)
+    enabled = enabled == true
+    if button._simpleEnabled == enabled then return end
+    button._simpleEnabled = enabled
+    button:SetEnabled(enabled)
     button:SetAlpha(enabled and 1 or .5)
 end
 
@@ -52,6 +56,8 @@ local function Info()
 end
 
 local function SelectedEntry(info)
+    if not info.buildID then return end
+    if NS.FindTalentBuildByID then return NS.FindTalentBuildByID(info.buildID) end
     if not NS.GetTalentBuildEntriesForClass then return end
     for _, entry in ipairs(NS.GetTalentBuildEntriesForClass(NS.GetTalentBuildClassToken()) or {}) do
         if entry.id == info.buildID then return entry end
@@ -218,9 +224,10 @@ end
 
 function Simple:Refresh()
     if not self.frame then return end
-    local info = Info()
     if self.view == "picker" then
-        local matches = {}
+        local matches = self._pickerMatches or {}
+        self._pickerMatches = matches
+        for index = #matches, 1, -1 do matches[index] = nil end
         local spec = NS.GetTalentBuildCurrentSpecID()
         for _, entry in ipairs(NS.GetTalentBuildEntriesForClass(NS.GetTalentBuildClassToken()) or {}) do
             if entry.specID == spec then matches[#matches + 1] = entry end
@@ -233,35 +240,38 @@ function Simple:Refresh()
             row:SetShown(entry ~= nil)
             if entry then
                 local source = NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(entry)
-                row._label:SetText((source and (source.label .. "  ·  ") or "") .. entry.name)
+                SetTextIfChanged(row._label, (source and (source.label .. "  ·  ") or "") .. entry.name)
             end
         end
-        self.pageLabel:SetText(#matches == 0 and "No builds available." or (self.pickerPage .. " / " .. pages))
+        SetTextIfChanged(self.pageLabel, #matches == 0 and "No builds available." or (self.pickerPage .. " / " .. pages))
         SetEnabled(self.previous, self.pickerPage > 1)
         SetEnabled(self.nextPage, self.pickerPage < pages)
         return
     end
+    local info = Info()
     local entry = SelectedEntry(info)
     if self.view == "details" then
         local source = entry and NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(entry)
-        self.detailText:SetText(table.concat({ info.targetName or "No build selected.",
+        local changed = SetTextIfChanged(self.detailText, table.concat({ info.targetName or "No build selected.",
             info.status or "Choose a build to get started.",
             source and source.summary or "Source information is unavailable.",
             info.detail or "", "Automatic points use only talents your level can learn. Higher-level talents wait until they unlock.",
             "Talent Options opens the full panel for rebuild, undo and warning settings." }, "\n\n"))
-        local height = self.detailText:GetStringHeight() + 12
-        self.detailText:SetHeight(height)
-        self.detailChild:SetHeight(height)
-        self.scrollHint:SetShown(height > self.detailScroll:GetHeight())
-        self.detailScroll:SetVerticalScroll(math.min(self.detailScroll:GetVerticalScroll(),
-            math.max(0, height - self.detailScroll:GetHeight())))
+        if changed then
+            local height = self.detailText:GetStringHeight() + 12
+            self.detailText:SetHeight(height)
+            self.detailChild:SetHeight(height)
+            self.scrollHint:SetShown(height > self.detailScroll:GetHeight())
+            self.detailScroll:SetVerticalScroll(math.min(self.detailScroll:GetVerticalScroll(),
+                math.max(0, height - self.detailScroll:GetHeight())))
+        end
         return
     end
     local selected = info.buildID ~= nil and info.targetName ~= "No Build Selected"
-    self.buildName:SetText(selected and (info.targetName or "Selected Build") or "Choose a build to get started.")
-    self.choose._label:SetText(selected and "Change Build" or "Choose a Build")
-    self.auto._label:SetText(info.enabled and "On" or "Off")
-    self.status:SetText(not selected and "Choose a build, then turn on Automatic Points."
+    SetTextIfChanged(self.buildName, selected and (info.targetName or "Selected Build") or "Choose a build to get started.")
+    SetTextIfChanged(self.choose._label, selected and "Change Build" or "Choose a Build")
+    SetTextIfChanged(self.auto._label, info.enabled and "On" or "Off")
+    SetTextIfChanged(self.status, not selected and "Choose a build, then turn on Automatic Points."
         or info.hasMismatch and "Your talents need attention. Open Details."
         or info.canSpend and (info.enabled and "A point is ready to spend automatically." or "You have a point ready to spend.")
         or info.hasPoints and "Your next talent unlocks later. Your points will wait."
@@ -269,11 +279,11 @@ function Simple:Refresh()
         or info.enabled and "All set. New points will be spent automatically."
         or "Automatic points are off. You can turn them on above.")
     local source = entry and NS.GetTalentBuildSourceInfo and NS.GetTalentBuildSourceInfo(entry)
-    self.nextTalent:SetText(source and source.outdated and "Outdated build — open Details before using it."
+    SetTextIfChanged(self.nextTalent, source and source.outdated and "Outdated build — open Details before using it."
         or (info.nextName and info.nextName ~= "—" and ("Next: " .. info.nextName) or ""))
     SetEnabled(self.spend, info.canSpend or info.canRespec)
     SetEnabled(self.classInfo, NS.ShowTalentClassInfo ~= nil)
-    for key, button in pairs(self.settings) do button._label:SetText(NS.db[key] and "On" or "Off") end
+    for key, button in pairs(self.settings) do SetTextIfChanged(button._label, NS.db[key] and "On" or "Off") end
 end
 
 function Simple:Show()

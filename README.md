@@ -325,6 +325,55 @@ private profiles and raw reports must never be committed. The runner limits CPU
 threads and per-mode wall time, records input hashes and model-warning counts,
 and rejects unsupported profile directives. It does not find a global optimum.
 
+## Runtime Performance Review — October 12, 2026
+
+The review covered all 38 Lua files loaded by the TOC plus `Bindings.xml`:
+startup/events, defaults, profiles and palettes; spell/cooldown/binding/trinket
+logic; talent catalogs, provenance, analysis, transactions and panels; Classic,
+Studio, Focus Mode and shared controls; animation, particles, fonts, skins,
+priority icons and manual reminders. The one-line compatibility loader and
+static generated catalogs were included. Bundled binary fonts/art were not
+rewritten. Review coverage is not proof that no further optimization exists.
+
+The changes remove repeated work without lowering animation frame rates or the
+configured recommendation update rate. Measurements below are deterministic
+mock call counts, **not measured in-game CPU time, memory savings or FPS**.
+
+| Scenario | Before | After |
+|---|---:|---:|
+| 20 unchanged Studio talent refreshes: talent inspections | 80 | 20 |
+| Same refreshes: text writes / lettering rebuilds | 220 / 80 | 0 / 0 |
+| 20 unchanged Focus main refreshes: text writes | 160 | 0 |
+| 20 Focus picker refreshes: unnecessary talent inspections | 20 | 0 |
+| Talent import: tree enumerations per decode | 2 | 1 |
+| One three-node talent inspection: node reads | 5 | 3 |
+| 40 blocked future ranks: displayed-name lookups | 40 | 1 |
+| Burst of 100 trait events: catalog refreshes | 100 | 1 |
+| 60 stationary slider frames: change callbacks | 60 | 0 |
+| 100 six-icon priority refreshes: border writes | 1,200 | 600 |
+
+Cooldown cache freshness now follows each invalidation, including spells skipped
+by the previous display update and two events in one update. Native duration
+objects remain opaque. Tests also cover nil/error caching and unchanged reads.
+A shared pause-reason function now serves routing, the button and broker status.
+Unchanged labels retain their rendering, while changed text, font or available
+space invalidates layout. Particles use a bounded free list, and the Orbit core
+follows its glint's anchor instead of both being repositioned each frame.
+
+Shared helpers now handle import decoding, node ordering, clone decoration,
+priority borders, profile copying and identical action-bar binding paths.
+The catalog's ascending-sort comparator was also corrected. Distinct secure
+input paths, talent transactions and tree-menu construction remain separate
+where combining them would risk behavior for little runtime benefit. A scoped
+`jscpd` scan at 10 lines / 90 tokens found about 1.2% exact duplicated lines;
+that is a screening metric, not a performance score or a completeness guarantee.
+
+Regression entry points: `tests/test_update_work.lua`,
+`tests/test_cooldowns.lua`, `tests/test_talent_panel_performance.lua`,
+`tests/test_render_updates.lua`, the existing talent transaction/profile suites,
+and Studio/Focus/control layout tests. Real client profiling, combat/taint,
+rapid-cast animation and both-faction visual checks remain to be performed in WoW.
+
 ## Profile System
 
 - **Global Default** &mdash; all characters share the "Default" profile unless overridden

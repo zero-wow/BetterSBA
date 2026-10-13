@@ -302,4 +302,23 @@ NS.db.talentBuildsEnabled = false
 NS.RefreshTalentBuildRuntimeState()
 assert(warningWithdrawn and next(runtimeFrame.events) == nil, "disabled talent assistance must withdraw warnings and events")
 
+-- Decode against one node order per call, then read again on the next call so
+-- a newly unlocked hero node cannot be hidden by an old snapshot.
+local treeReads = 0
+local liveNodes = { 7001 }
+C_Traits.GetTreeNodes = function() treeReads = treeReads + 1; return liveNodes end
+C_Traits.GetNodeInfo = function(_, nodeID)
+    return { type = 0, entryIDs = { nodeID + 1000 }, maxRanks = 1 }
+end
+encodedContent, encodedBits = { 1, 1, 0, 0 }, 4
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "same-export" }, 42))
+assert(treeReads == 1 and #rows == 1, "one decode must enumerate the tree once")
+liveNodes = { 7001, 7002 }
+encodedContent, encodedBits = { 1, 1, 0, 0, 1, 1, 0, 0 }, 8
+rows = assert(NS.DecodeTalentBuildTarget({ specID = 100, importString = "same-export" }, 42))
+assert(treeReads == 2 and #rows == 2 and rows[2].nodeID == 7002,
+    "the next decode must read current nodes rather than reuse an old tree")
+assert(NS.ValidateTalentBuildImportString("same-export", 100) and treeReads == 3,
+    "validation shares the bounded decoder and reads the current tree")
+print("talent decoder: tree enumeration 2 -> 1 per decode; next-call changes observed")
 print("talent regression mocks: ok")
