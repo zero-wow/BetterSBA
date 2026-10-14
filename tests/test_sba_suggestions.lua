@@ -13,6 +13,13 @@ assert(published.state == "ready" and published.candidateCount == 2
     "shipped single-target evidence must resolve the adapted catalog entry")
 assert(ns.GetBestTestedSBABuild(269, 5).choices[1].buildID == "USER-SBA-269-META-20260924",
     "shipped five-target evidence must resolve the original user target")
+version, build = "12.1.5", "70391"
+for _, targets in ipairs({1, 5}) do
+    local historical = ns.GetBestTestedSBABuild(269, targets)
+    assert(historical.state == "stale" and #historical.choices == 0,
+        "12.1.0 example results must not offer a recommended build on 12.1.5")
+end
+version, build = "12.1.0", "69933"
 local entries = {
     a = { id = "a", specID = 269, classToken = "MONK", name = "Anchor", importString = "code-a" },
     b = { id = "b", specID = 269, classToken = "MONK", name = "Candidate", importString = "code-b" },

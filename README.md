@@ -28,6 +28,22 @@ It also gives you a **rotation queue display** showing your full SBA spell pool 
 
 ---
 
+## Retail 12.1.5 compatibility — October 14, 2026
+
+The manifest includes interface `120105` for client `12.1.5.70391`. The reviewed
+SBA, spell, talent and import calls match the corresponding
+[Blizzard UI source](https://github.com/Gethe/wow-ui-source/tree/18c6d677b605b312f3d813d498404631fb941977).
+The [12.1.5 release](https://worldofwarcraft.blizzard.com/en-us/news/24307306/midnights-1215-content-update-is-now-live)
+is recorded as October 13 in the US and October 14 in the EU; maintenance-day
+posts remain ambiguous without a more precise timestamp.
+
+Existing 12.1.0 simulation results remain historical and need a retest. They do
+not offer a Best Tested selection on 12.1.5. A saved automatic talent target
+from an older client still pauses until the user reviews and reselects it.
+Local checks do not establish in-game rendering, secure casting or talent
+spending behavior on the new patch. Saved settings and the addon version are
+preserved.
+
 ## Screenshots
 
 <p align="center">

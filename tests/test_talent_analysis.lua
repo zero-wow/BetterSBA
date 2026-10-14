@@ -30,7 +30,7 @@ contains(matching, "confidence intervals for mean simulated DPS")
 GetBuildInfo = function() return "12.1.0", "69934" end
 contains(NS.GetTalentClassInfoText(269), "Status: Needs Retest")
 
-GetBuildInfo = function() return "12.1.5" end
+GetBuildInfo = function() return "12.1.5", "70391", "", 120105 end
 local newer = NS.GetTalentClassInfoText(269)
 contains(newer, "Status: Needs Retest")
 contains(newer, "historical results are not a current recommendation")

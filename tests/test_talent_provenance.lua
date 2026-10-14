@@ -16,7 +16,29 @@ assert(NS.GetTalentPatchAtPublication("2026-08-12") == nil)
 assert(NS.GetTalentPatchAtPublication("2026-08-12", "US") == "12.1.0")
 assert(NS.GetTalentPatchAtPublication("2026-08-11", "EU") == "12.0.7")
 assert(NS.GetTalentPatchAtPublication("2026-10-14") == nil,
-    "announced patches and future dates must not become confirmed publication metadata")
+    "a regionless maintenance-day post must remain ambiguous")
+assert(NS.GetTalentPatchAtPublication("2026-10-14", "US") == "12.1.5")
+assert(NS.GetTalentPatchAtPublication("2026-10-13", "EU") == "12.1.0")
+assert(NS.GetTalentPatchAtPublication("2026-10-13", "US") == nil)
+assert(NS.GetTalentPatchAtPublication("2026-10-14", "EU") == nil)
+assert(NS.GetTalentPatchAtPublication("2026-10-15", "US") == nil,
+    "dates beyond the review horizon must remain unverified")
+
+-- A later review date alone must not confirm an announced release or assign
+-- the previous patch to posts whose release-era is still unknown.
+local timeline = NS.TALENT_PATCH_TIMELINE
+local reviewDate = timeline.reviewedThrough
+local release = timeline.releases[#timeline.releases]
+timeline.reviewedThrough, release.scheduled = "2026-10-20", true
+local patch, reason = NS.GetTalentPatchAtPublication("2026-10-14", "US")
+assert(patch == nil and reason == "Release Date Unverified")
+patch, reason = NS.GetTalentPatchAtPublication("2026-10-13", "US")
+assert(patch == nil and reason == "Patch Transition Date")
+assert(NS.GetTalentPatchAtPublication("2026-10-13", "EU") == "12.1.0")
+assert(NS.GetTalentPatchAtPublication("2026-10-15") == nil)
+release.scheduled = nil
+assert(NS.GetTalentPatchAtPublication("2026-10-15") == "12.1.5")
+timeline.reviewedThrough = reviewDate
 
 local byID = {}
 for _, entry in ipairs(NS.TALENT_BUILD_CATALOG.entries) do byID[entry.id] = entry end

@@ -3,15 +3,14 @@ local ADDON_NAME, NS = ...
 -- Regional live-release dates, reviewed against Blizzard announcements.
 -- Never use catalog ingestion/review dates as source publication dates.
 NS.TALENT_PATCH_TIMELINE = {
-    reviewedThrough = "2026-10-12",
+    reviewedThrough = "2026-10-14",
     releases = {
         { patch = "12.0.0", us = "2026-01-20", eu = "2026-01-21", article = "24244455" },
         { patch = "12.0.1", us = "2026-02-10", eu = "2026-02-11", article = "24247153", euArticle = "24257263" },
         { patch = "12.0.5", us = "2026-04-21", eu = "2026-04-22", article = "24272610" },
         { patch = "12.0.7", us = "2026-06-16", eu = "2026-06-17", article = "24280281" },
         { patch = "12.1.0", us = "2026-08-11", eu = "2026-08-12", article = "24294370", euArticle = "24295086" },
-        -- Announced dates are retained for review, not treated as observed releases.
-        { patch = "12.1.5", us = "2026-10-13", eu = "2026-10-14", article = "24307306", scheduled = true },
+        { patch = "12.1.5", us = "2026-10-13", eu = "2026-10-14", article = "24307306" },
     },
 }
 
@@ -42,13 +41,17 @@ function NS.GetTalentPatchAtPublication(publishedAt, region)
     if region and region ~= "US" and region ~= "EU" then return nil, "Region Not Reviewed" end
     local found
     for _, release in ipairs(timeline.releases) do
-        if not release.scheduled then
-            local boundary = region == "US" and release.us or region == "EU" and release.eu
-            -- Screenshots show local dates, without server region/timezone.
-            -- A maintenance-day post alone cannot establish pre/post-update.
-            if boundary and date == boundary or not boundary and date >= release.us and date <= release.eu then
-                return nil, "Patch Transition Date"
-            end
+        local boundary = region == "US" and release.us or region == "EU" and release.eu
+        -- Screenshots show local dates, without server region/timezone.
+        -- A maintenance-day post alone cannot establish pre/post-update.
+        if boundary and date == boundary or not boundary and date >= release.us and date <= release.eu then
+            return nil, "Patch Transition Date"
+        end
+        if release.scheduled then
+            -- Reviewing today must not silently assign yesterday's patch when
+            -- an announced release has not yet been confirmed.
+            if date > (boundary or release.eu) then return nil, "Release Date Unverified" end
+        else
             if date > (boundary or release.eu) then found = release.patch end
         end
     end
